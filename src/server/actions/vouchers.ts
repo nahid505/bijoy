@@ -1,0 +1,92 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { VOUCHER_TYPES, type VoucherTypeKey } from "@/lib/accounting";
+import { cashVoucherSchema, journalVoucherSchema, stockJournalSchema, tradeVoucherSchema } from "@/lib/validation";
+import { prisma } from "@/lib/db";
+import { assertPermission, ForbiddenError, getContext } from "../auth";
+import { audit } from "../audit";
+import { flash } from "../flash";
+import { guard, parseJsonPayload, toResult, UserError, type ActionState } from "../action-utils";
+import { voucherPermission } from "../voucher-permissions";
+import { smsForCancelledInvoice, smsForVoucher } from "../sms/events";
+import { deleteVoucher, saveCashVoucher, saveJournalVoucher, saveStockJournal, saveTradeVoucher, voucherSnapshot } from "../services/voucher";
+
+type EditableType = Exclude<VoucherTypeKey, "OPENING">;
+
+/**
+ * Create (id = null) or edit any voucher type. Payload is JSON in the "payload" field.
+ * Optional "then": "print" → open the printable invoice/receipt, "pos" → back to a fresh POS screen.
+ */
+export async function saveVoucherAction(type: EditableType, id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const result = await guard(async () => {
+    const ctx = await assertPermission(voucherPermission(type, id ? "edit" : "create"));
+    const before = id ? await voucherSnapshot(ctx.business.id, id) : null;
+    const editId = id ?? undefined;
+    let voucher;
+    switch (type) {
+      case "SALES":
+      case "PURCHASE":
+      case "SALES_RETURN":
+      case "PURCHASE_RETURN":
+        voucher = await saveTradeVoucher(ctx.svc, type, parseJsonPayload(tradeVoucherSchema, fd), editId);
+        break;
+      case "RECEIPT":
+      case "PAYMENT":
+        voucher = await saveCashVoucher(ctx.svc, type, parseJsonPayload(cashVoucherSchema, fd), editId);
+        break;
+      case "JOURNAL":
+        voucher = await saveJournalVoucher(ctx.svc, parseJsonPayload(journalVoucherSchema, fd), editId);
+        break;
+      case "STOCK_JOURNAL":
+        voucher = await saveStockJournal(ctx.svc, parseJsonPayload(stockJournalSchema, fd), editId);
+        break;
+      default:
+        throw new UserError("অজানা ভাউচার");
+    }
+    await audit({
+      businessId: ctx.business.id, userId: ctx.user.id, action: id ? "UPDATE" : "CREATE", entity: "Voucher", entityId: voucher.id,
+      details: { type, voucherNo: voucher.voucherNo, amount: Number(voucher.amount), ...(before ? { before } : {}) },
+    });
+    return voucher;
+  });
+  if (!result.ok) return toResult(result);
+  const v = result.data;
+  // The voucher is committed. SMS is queued separately and never affects it (errors are logged).
+  if (!id) {
+    const c = await getContext();
+    if (c) await smsForVoucher(prisma, c.business.id, v.id, c.user.id);
+  }
+  await flash(`${VOUCHER_TYPES[type].long} ${v.voucherNo} সংরক্ষণ হয়েছে`);
+  revalidatePath("/", "layout");
+  const then = fd.get("then");
+  if (then === "print") redirect(`/vouchers/v/${v.id}/print`);
+  if (then === "pos") redirect(`/pos?last=${v.id}`);
+  redirect(`/vouchers/v/${v.id}`);
+}
+
+export async function deleteVoucherAction(id: string, _prev: ActionState, _fd: FormData): Promise<ActionState> {
+  let slug = "";
+  let label = "";
+  const cancelled: { v: (Parameters<typeof smsForCancelledInvoice>[2] & { businessId: string; userId: string }) | null } = { v: null };
+  const result = await guard(async () => {
+    const base = await getContext();
+    if (!base) throw new ForbiddenError();
+    const v = await prisma.voucher.findFirst({ where: { id, businessId: base.business.id }, select: { type: true } });
+    if (!v || v.type === "OPENING") throw new UserError("ভাউচার পাওয়া যায়নি");
+    const ctx = await assertPermission(voucherPermission(v.type, "delete"));
+    const before = await voucherSnapshot(ctx.business.id, id); // full posting snapshot kept in the audit log
+    const party = await prisma.voucher.findFirst({ where: { id, businessId: ctx.business.id }, select: { partyAccountId: true, date: true } });
+    const deleted = await deleteVoucher(ctx.svc, id);
+    cancelled.v = { id, type: deleted.type, voucherNo: deleted.voucherNo, amount: Number(deleted.amount), date: party?.date ?? deleted.date, partyAccountId: party?.partyAccountId ?? null, businessId: ctx.business.id, userId: ctx.user.id };
+    slug = VOUCHER_TYPES[deleted.type].slug;
+    label = `${VOUCHER_TYPES[deleted.type].long} ${deleted.voucherNo}`;
+    await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: "DELETE", entity: "Voucher", entityId: id, details: { type: deleted.type, voucherNo: deleted.voucherNo, amount: Number(deleted.amount), before } });
+  });
+  if (!result.ok) return toResult(result);
+  if (cancelled.v) await smsForCancelledInvoice(prisma, cancelled.v.businessId, cancelled.v, cancelled.v.userId); // after the delete committed
+  await flash(`${label} মুছে ফেলা হয়েছে — স্টক ও হিসাব পুনর্গণনা করা হয়েছে`);
+  revalidatePath("/", "layout");
+  redirect(`/vouchers/${slug}`);
+}

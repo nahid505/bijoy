@@ -1,0 +1,126 @@
+@import "tailwindcss";
+
+/* ── Bijoy Lenden design tokens ─────────────────────────────────────────
+   Ink-navy chrome, ledger-paper canvas, a single green accent for money-in
+   and a muted red for money-out. Dense, ruled, tabular — accounting first. */
+@theme {
+  /* ── typography (the only place fonts are set) ──
+     Inter has no Bengali glyphs, so the browser draws Latin letters and digits in Inter and every
+     Bengali character in Noto Sans Bengali — one stack, balanced mixed text everywhere. */
+  --font-sans: var(--font-latin), var(--font-bengali), "Noto Sans Bengali", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  /* Bengali needs room for vowel signs above / below (ি ী ু ূ ৃ): ≥ 1.5 line height on small sizes */
+  --text-xs--line-height: 1.125rem;
+  --text-sm--line-height: 1.3125rem;
+  --text-base--line-height: 1.5rem;
+  /* calmer weights for Bengali: semibold for emphasis, bold is not heavy */
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 650;
+
+  --color-brand-50: #eefaf5;
+  --color-brand-100: #d3f1e3;
+  --color-brand-200: #a6e2c8;
+  --color-brand-500: #16a06e;
+  --color-brand-600: #0e8a5d;
+  --color-brand-700: #0b6f4b;
+  --color-brand-800: #0a573c;
+  --color-brand-900: #083f2c;
+
+  --color-ink-50: #f2f5f9;
+  --color-ink-100: #e3e9f1;
+  --color-ink-200: #c5d0de;
+  --color-ink-400: #7f93ab;
+  --color-ink-600: #3c5170;
+  --color-ink-700: #2a3d59;
+  --color-ink-800: #1b2b43;
+  --color-ink-900: #12203a;
+  --color-ink-950: #0b1528;
+
+  --color-paper: #f5f6f2;
+  --color-rule: #e2e5df;
+  --color-debit: #1d4f91;
+  --color-credit: #9a2c2c;
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-paper text-slate-800 antialiased;
+  line-height: 1.5;
+  text-rendering: optimizeLegibility;
+  font-optical-sizing: auto;
+}
+@utility btn {
+  @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3.5 py-2 text-sm font-medium transition
+    focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1
+    disabled:cursor-not-allowed disabled:opacity-60;
+}
+
+@utility input {
+  @apply block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-800
+    placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/25
+    disabled:bg-slate-100 disabled:text-slate-500;
+}
+
+/* Panel = ledger card */
+@utility panel {
+  @apply rounded-lg border border-rule bg-white;
+  /* grid/flex children default to min-width:auto — wide content (tables, code) must scroll
+     inside the panel instead of widening the page on phones */
+  min-width: 0;
+}
+
+@layer components {
+  .btn-primary { @apply btn bg-brand-600 text-white shadow-sm hover:bg-brand-700; }
+  .btn-secondary { @apply btn border border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50; }
+  .btn-danger { @apply btn bg-red-700 text-white hover:bg-red-800; }
+  .btn-ghost { @apply btn text-slate-600 hover:bg-slate-100; }
+  .btn-sm { @apply px-2.5 py-1 text-xs; }
+
+  .input-num { @apply input text-right tabular-nums; }
+  .label { @apply mb-1 block text-xs font-semibold tracking-wide text-slate-600; }
+
+  .panel-head {
+    @apply flex items-center justify-between gap-3 border-b border-rule bg-ink-50/60 px-4 py-2.5;
+  }
+  .panel-title { @apply text-sm font-semibold text-ink-800; }
+  .card { @apply panel; }
+
+  /* Ruled ledger table */
+  .table { @apply w-full border-collapse text-left text-sm; }
+  .table thead th {
+    @apply whitespace-nowrap border-b-2 border-ink-200 bg-ink-50 px-3 py-2 text-xs font-semibold text-ink-700;
+  }
+  .table tbody td { @apply border-b border-rule px-3 py-2 align-top; }
+  .table tbody tr:nth-child(even) td { @apply bg-slate-50/40; }
+  .table tbody tr:hover td { @apply bg-brand-50/50; }
+  .table tfoot td {
+    @apply border-t-2 border-double border-ink-600 bg-ink-50 px-3 py-2 font-semibold text-ink-900;
+  }
+  .table .row-group td { @apply bg-ink-50/80 font-semibold text-ink-800; }
+  .table .row-subtotal td { @apply border-t border-ink-200 font-semibold; }
+  .table .row-total td { @apply border-t-2 border-double border-ink-600 bg-ink-50 font-bold text-ink-900; }
+  .num { @apply whitespace-nowrap text-right tabular-nums; }
+  .dr { @apply text-debit; }
+  .cr { @apply text-credit; }
+
+  /* Figure tile used on the dashboard */
+  .figure { @apply flex flex-col justify-between gap-1 border-rule px-4 py-3; }
+  .figure-label { @apply text-xs font-medium text-slate-500; }
+  .figure-value { @apply whitespace-nowrap text-base font-bold tabular-nums text-ink-900 2xl:text-lg; }
+}
+
+/* ── print / PDF ─────────────────────────────────────────────────────── */
+@media print {
+  @page { size: A4; margin: 12mm; }
+  .no-print { display: none !important; }
+  body { background: white; font-size: 11px; }
+  .panel { border-color: #999 !important; }
+  .print-area { box-shadow: none !important; border: none !important; }
+  .table thead th { background: #eee !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .print-only { display: block !important; }
+  a { color: inherit !important; text-decoration: none !important; }
+}
+.print-only { display: none; }

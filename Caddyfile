@@ -1,0 +1,13 @@
+# HTTPS reverse proxy for বিজয় লেনদেন (docker compose --profile https up -d).
+# Caddy obtains and renews certificates automatically for a public APP_DOMAIN; for "localhost"
+# it uses its own local CA. HTTP is redirected to HTTPS.
+{$APP_DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+	# Caddy replaces any client-supplied X-Forwarded-For with the real peer address, so the app
+	# (TRUSTED_PROXY_HOPS=1) sees exactly one trustworthy hop.
+	reverse_proxy app:3000
+}

@@ -1,0 +1,11 @@
+node_modules
+.next
+coverage
+.git
+.env
+.env.*
+!.env.example
+Dockerfile
+docker-compose.yml
+*.md
+backups

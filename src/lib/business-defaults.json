@@ -1,0 +1,444 @@
+{
+  "groups": [
+    {
+      "key": "CASH_IN_HAND",
+      "name": "নগদ তহবিল",
+      "nature": "ASSET",
+      "sort": 10
+    },
+    {
+      "key": "BANK_ACCOUNTS",
+      "name": "ব্যাংক ও মোবাইল ব্যাংকিং",
+      "nature": "ASSET",
+      "sort": 11
+    },
+    {
+      "key": "SUNDRY_DEBTORS",
+      "name": "দেনাদার (কাস্টমার)",
+      "nature": "ASSET",
+      "sort": 12
+    },
+    {
+      "key": "STOCK_IN_HAND",
+      "name": "মজুদ পণ্য",
+      "nature": "ASSET",
+      "sort": 13
+    },
+    {
+      "key": "CURRENT_ASSETS",
+      "name": "অন্যান্য চলতি সম্পদ",
+      "nature": "ASSET",
+      "sort": 14
+    },
+    {
+      "key": "FIXED_ASSETS",
+      "name": "স্থায়ী সম্পদ",
+      "nature": "ASSET",
+      "sort": 15
+    },
+    {
+      "key": "SUNDRY_CREDITORS",
+      "name": "পাওনাদার (সরবরাহকারী)",
+      "nature": "LIABILITY",
+      "sort": 20
+    },
+    {
+      "key": "DUTIES_TAXES",
+      "name": "কর ও শুল্ক",
+      "nature": "LIABILITY",
+      "sort": 21
+    },
+    {
+      "key": "CURRENT_LIABILITIES",
+      "name": "অন্যান্য চলতি দায়",
+      "nature": "LIABILITY",
+      "sort": 22
+    },
+    {
+      "key": "LOANS",
+      "name": "ঋণ",
+      "nature": "LIABILITY",
+      "sort": 23
+    },
+    {
+      "key": "CAPITAL",
+      "name": "মূলধন",
+      "nature": "EQUITY",
+      "sort": 30
+    },
+    {
+      "key": "SALES_ACCOUNTS",
+      "name": "বিক্রয় হিসাব",
+      "nature": "INCOME",
+      "isDirect": true,
+      "sort": 40
+    },
+    {
+      "key": "INDIRECT_INCOME",
+      "name": "অন্যান্য আয়",
+      "nature": "INCOME",
+      "sort": 41
+    },
+    {
+      "key": "DIRECT_EXPENSES",
+      "name": "প্রত্যক্ষ ব্যয় (বিক্রিত পণ্যের ব্যয়)",
+      "nature": "EXPENSE",
+      "isDirect": true,
+      "sort": 50
+    },
+    {
+      "key": "INDIRECT_EXPENSES",
+      "name": "পরিচালন ব্যয়",
+      "nature": "EXPENSE",
+      "sort": 51
+    }
+  ],
+  "accounts": [
+    {
+      "key": "CASH",
+      "name": "নগদ ক্যাশ",
+      "group": "CASH_IN_HAND",
+      "kind": "CASH",
+      "code": "1001",
+      "system": true
+    },
+    {
+      "key": "BANK",
+      "name": "ব্যাংক হিসাব",
+      "group": "BANK_ACCOUNTS",
+      "kind": "BANK",
+      "code": "1101"
+    },
+    {
+      "key": "MOBILE",
+      "name": "মোবাইল ব্যাংকিং (বিকাশ/নগদ)",
+      "group": "BANK_ACCOUNTS",
+      "kind": "BANK",
+      "code": "1102"
+    },
+    {
+      "key": "INVENTORY",
+      "name": "মজুদ পণ্য",
+      "group": "STOCK_IN_HAND",
+      "code": "1301",
+      "system": true
+    },
+    {
+      "key": "ADVANCE",
+      "name": "অগ্রিম প্রদান",
+      "group": "CURRENT_ASSETS",
+      "code": "1401"
+    },
+    {
+      "key": "FURNITURE",
+      "name": "আসবাবপত্র ও সরঞ্জাম",
+      "group": "FIXED_ASSETS",
+      "code": "1501"
+    },
+    {
+      "key": "VAT_PAYABLE",
+      "name": "ভ্যাট প্রদেয়",
+      "group": "DUTIES_TAXES",
+      "code": "2101",
+      "system": true
+    },
+    {
+      "key": "LOAN",
+      "name": "ব্যাংক ঋণ",
+      "group": "LOANS",
+      "code": "2301"
+    },
+    {
+      "key": "CAPITAL",
+      "name": "মালিকের মূলধন",
+      "group": "CAPITAL",
+      "code": "3001",
+      "system": true
+    },
+    {
+      "key": "DRAWINGS",
+      "name": "মালিকের উত্তোলন",
+      "group": "CAPITAL",
+      "code": "3002"
+    },
+    {
+      "key": "OPENING_EQUITY",
+      "name": "প্রারম্ভিক ব্যালেন্স সমন্বয়",
+      "group": "CAPITAL",
+      "code": "3009",
+      "system": true
+    },
+    {
+      "key": "SALES",
+      "name": "পণ্য বিক্রয়",
+      "group": "SALES_ACCOUNTS",
+      "code": "4001",
+      "system": true
+    },
+    {
+      "key": "SALES_RETURN",
+      "name": "বিক্রয় ফেরত",
+      "group": "SALES_ACCOUNTS",
+      "code": "4002",
+      "system": true
+    },
+    {
+      "key": "SERVICE_INCOME",
+      "name": "সেবা চার্জ আয়",
+      "group": "INDIRECT_INCOME",
+      "code": "4101"
+    },
+    {
+      "key": "COMMISSION_INCOME",
+      "name": "কমিশন আয়",
+      "group": "INDIRECT_INCOME",
+      "code": "4102"
+    },
+    {
+      "key": "OTHER_INCOME",
+      "name": "বিবিধ আয়",
+      "group": "INDIRECT_INCOME",
+      "code": "4109"
+    },
+    {
+      "key": "COGS",
+      "name": "বিক্রিত পণ্যের ক্রয়মূল্য",
+      "group": "DIRECT_EXPENSES",
+      "code": "5001",
+      "system": true
+    },
+    {
+      "key": "DISCOUNT_ALLOWED",
+      "name": "প্রদত্ত ছাড়",
+      "group": "INDIRECT_EXPENSES",
+      "code": "5101",
+      "system": true
+    },
+    {
+      "key": "STOCK_ADJUSTMENT",
+      "name": "স্টক সমন্বয় (ঘাটতি/উদ্বৃত্ত)",
+      "group": "INDIRECT_EXPENSES",
+      "code": "5102",
+      "system": true
+    },
+    {
+      "key": "EXPIRY_LOSS",
+      "name": "মেয়াদোত্তীর্ণ পণ্যের ক্ষতি",
+      "group": "INDIRECT_EXPENSES",
+      "code": "5103",
+      "system": true
+    },
+    {
+      "key": "RENT",
+      "name": "দোকান/অফিস ভাড়া",
+      "group": "INDIRECT_EXPENSES",
+      "code": "5201"
+    },
+    {
+      "key": "SALARY",
+      "name": "কর্মচারীর বেতন",
+      "group": "INDIRECT_EXPENSES",
+      "code": "5202"
+    },
+    {
+      "key": "UTILITY",
+      "name": "বিদ্যুৎ, পানি ও গ্যাস বিল",
+      "group": "INDIRECT_EXPENSES",
+      "code": "5203"
+    },
+    {
+      "key": "TRANSPORT",
+      "name": "পরিবহন খরচ",
+      "group": "INDIRECT_EXPENSES",
+      "code": "5204"
+    },
+    {
+      "key": "ENTERTAINMENT",
+      "name": "আপ্যায়ন খরচ",
+      "group": "INDIRECT_EXPENSES",
+      "code": "5205"
+    },
+    {
+      "key": "OFFICE",
+      "name": "অফিস ও বিবিধ খরচ",
+      "group": "INDIRECT_EXPENSES",
+      "code": "5209"
+    }
+  ],
+  "units": [
+    {
+      "name": "পিস"
+    },
+    {
+      "name": "কেজি"
+    },
+    {
+      "name": "গ্রাম",
+      "base": "কেজি",
+      "factor": 0.001
+    },
+    {
+      "name": "লিটার"
+    },
+    {
+      "name": "প্যাকেট"
+    },
+    {
+      "name": "ডজন",
+      "base": "পিস",
+      "factor": 12
+    },
+    {
+      "name": "কার্টন"
+    },
+    {
+      "name": "বস্তা (৫০ কেজি)",
+      "base": "কেজি",
+      "factor": 50
+    }
+  ],
+  "warehouse": "প্রধান গুদাম",
+  "roles": [
+    {
+      "name": "মালিক (Owner)",
+      "description": "সম্পূর্ণ মালিকানা ও সব অনুমতি",
+      "system": true,
+      "permissions": [
+        "*"
+      ]
+    },
+    {
+      "name": "অ্যাডমিন (Admin)",
+      "description": "ব্যবসা সেটিং ও ব্যাকআপ ছাড়া সব কাজ",
+      "permissions": [
+        "dashboard:view",
+        "reports:view",
+        "sales:view",
+        "sales:create",
+        "sales:edit",
+        "sales:delete",
+        "purchases:view",
+        "purchases:create",
+        "purchases:edit",
+        "purchases:delete",
+        "vouchers:view",
+        "vouchers:create",
+        "vouchers:edit",
+        "vouchers:delete",
+        "accounts:view",
+        "accounts:manage",
+        "inventory:view",
+        "inventory:manage",
+        "stock:adjust",
+        "customers:view",
+        "customers:manage",
+        "suppliers:view",
+        "suppliers:manage",
+        "users:manage",
+        "roles:manage",
+        "audit:view",
+        "sms:view",
+        "sms:send",
+        "sms:bulk",
+        "sms:manage"
+      ]
+    },
+    {
+      "name": "ম্যানেজার (Manager)",
+      "description": "দৈনন্দিন ব্যবসা পরিচালনা: বিক্রয়, ক্রয়, আদায়, স্টক ও রিপোর্ট",
+      "permissions": [
+        "dashboard:view",
+        "reports:view",
+        "sales:view",
+        "sales:create",
+        "sales:edit",
+        "sales:delete",
+        "purchases:view",
+        "purchases:create",
+        "purchases:edit",
+        "purchases:delete",
+        "vouchers:view",
+        "vouchers:create",
+        "vouchers:edit",
+        "vouchers:delete",
+        "accounts:view",
+        "inventory:view",
+        "inventory:manage",
+        "stock:adjust",
+        "customers:view",
+        "customers:manage",
+        "suppliers:view",
+        "suppliers:manage",
+        "audit:view",
+        "sms:view",
+        "sms:send",
+        "sms:bulk"
+      ]
+    },
+    {
+      "name": "হিসাবরক্ষক (Accountant)",
+      "description": "ভাউচার, লেজার ও আর্থিক রিপোর্ট",
+      "permissions": [
+        "dashboard:view",
+        "reports:view",
+        "sales:view",
+        "purchases:view",
+        "vouchers:view",
+        "vouchers:create",
+        "vouchers:edit",
+        "vouchers:delete",
+        "accounts:view",
+        "accounts:manage",
+        "inventory:view",
+        "customers:view",
+        "suppliers:view",
+        "audit:view",
+        "sms:view"
+      ]
+    },
+    {
+      "name": "বিক্রয়কর্মী (Salesperson)",
+      "description": "বিক্রয়, বিক্রয় ফেরত, কাস্টমার ও টাকা আদায়",
+      "permissions": [
+        "dashboard:view",
+        "sales:view",
+        "sales:create",
+        "inventory:view",
+        "customers:view",
+        "customers:manage",
+        "vouchers:view",
+        "vouchers:create",
+        "sms:send"
+      ]
+    },
+    {
+      "name": "ক্রয় কর্মকর্তা (Purchase)",
+      "description": "ক্রয়, ক্রয় ফেরত, সরবরাহকারী ও স্টক",
+      "permissions": [
+        "dashboard:view",
+        "purchases:view",
+        "purchases:create",
+        "inventory:view",
+        "inventory:manage",
+        "stock:adjust",
+        "suppliers:view",
+        "suppliers:manage"
+      ]
+    },
+    {
+      "name": "দর্শক (Viewer)",
+      "description": "শুধু দেখা ও রিপোর্ট",
+      "permissions": [
+        "dashboard:view",
+        "reports:view",
+        "sales:view",
+        "purchases:view",
+        "vouchers:view",
+        "accounts:view",
+        "inventory:view",
+        "customers:view",
+        "suppliers:view"
+      ]
+    }
+  ]
+}

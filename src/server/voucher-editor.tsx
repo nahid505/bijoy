@@ -1,0 +1,210 @@
+import "server-only";
+import { daysBetween } from "@/lib/expiry";
+import type { Prisma } from "@prisma/client";
+import { prisma, num } from "@/lib/db";
+import { round3 } from "@/lib/calc";
+import { toDateInput } from "@/lib/format";
+import { VOUCHER_TYPES, type VoucherTypeKey } from "@/lib/accounting";
+import {
+  CashVoucherForm,
+  JournalVoucherForm,
+  StockJournalForm,
+  TradeVoucherForm,
+  type AccountOption,
+  type TradeDefaults,
+} from "@/components/voucher-forms";
+import type { AppContext } from "./auth";
+import { balancesBefore } from "./services/ledger";
+import { availableBatches } from "./services/inventory";
+import { saveVoucherAction } from "./actions/vouchers";
+import { searchParties } from "./lookup";
+
+type EditableType = Exclude<VoucherTypeKey, "OPENING">;
+
+/** Ledger options; `includeInactive` for accounts already used on a voucher being edited. */
+export async function accountOptions(businessId: string, where: Prisma.AccountWhereInput, withBalance = true, includeInactive = false): Promise<AccountOption[]> {
+  const rows = await prisma.account.findMany({
+    where: { businessId, ...(includeInactive ? {} : { isActive: true }), ...where },
+    include: { group: { select: { name: true, sortOrder: true } } },
+    orderBy: [{ group: { sortOrder: "asc" } }, { name: "asc" }],
+  });
+  const bal = withBalance ? await balancesBefore(businessId, undefined, rows.map((r) => r.id)) : new Map<string, number>();
+  return rows.map((r) => ({ id: r.id, name: r.name, group: r.group.name, ...(withBalance ? { balance: bal.get(r.id) ?? 0 } : {}) }));
+}
+
+/**
+ * Units, warehouses, batches and products for inventory forms. With `productIds` only those products
+ * are loaded (voucher forms search the rest on demand); without it, every active product (POS tiles).
+ */
+export async function inventoryOptions(businessId: string, opts: { productIds?: string[] } = {}) {
+  const today = new Date(`${toDateInput()}T00:00:00.000Z`);
+  const [products, units, warehouses, batches] = await Promise.all([
+    prisma.product.findMany({ where: opts.productIds ? { businessId, id: { in: [...new Set(opts.productIds)] } } : { businessId, isActive: true }, orderBy: { name: "asc" } }),
+    prisma.unit.findMany({ where: { businessId }, orderBy: { name: "asc" } }),
+    prisma.warehouse.findMany({ where: { businessId }, orderBy: [{ isDefault: "desc" }, { name: "asc" }] }),
+    availableBatches(prisma, businessId),
+  ]);
+  return {
+    products: products.map((p) => ({
+      id: p.id, name: p.name, code: p.code, barcode: p.barcode, unitId: p.unitId, trackBatch: p.trackBatch,
+      salePrice: num(p.salePrice), wholesalePrice: num(p.wholesalePrice), purchasePrice: num(p.purchasePrice), avgCost: num(p.avgCost), stock: num(p.stock),
+    })),
+    units: units.map((u) => ({ id: u.id, name: u.name, baseUnitId: u.baseUnitId, factor: num(u.factor) })),
+    warehouses: warehouses.map((w) => ({ id: w.id, name: w.name })),
+    batches: batches.map((b) => ({
+      productId: b.productId, warehouseId: b.warehouseId, batchNo: b.batchNo, quantity: b.quantity,
+      expiryDate: b.expiryDate ? toDateInput(b.expiryDate) : null,
+      daysLeft: b.expiryDate ? daysBetween(today, b.expiryDate) : null,
+    })),
+  };
+}
+
+const slugOf = (type: EditableType) => VOUCHER_TYPES[type].slug;
+
+/** Loads options and (for edits / returns) the existing data, then renders the right form. */
+export async function VoucherEditor({
+  ctx,
+  type,
+  voucherId,
+  partyAccountId,
+  fromInvoiceId,
+  mode,
+}: {
+  ctx: AppContext;
+  type: EditableType;
+  voucherId?: string;
+  partyAccountId?: string;
+  fromInvoiceId?: string;
+  mode?: string;
+}) {
+  const businessId = ctx.business.id;
+  const currency = ctx.business.currencySymbol;
+  const action = saveVoucherAction.bind(null, type, voucherId ?? null);
+  const existing = voucherId
+    ? await prisma.voucher.findFirst({
+        where: { id: voucherId, businessId },
+        include: { items: { orderBy: { lineNo: "asc" }, include: { batch: { select: { mfgDate: true } } } }, entries: { orderBy: { lineNo: "asc" } }, payments: { orderBy: { lineNo: "asc" } }, returnOf: { select: { voucherNo: true } } },
+      })
+    : null;
+  const date = existing ? toDateInput(existing.date) : toDateInput();
+  const cancelHref = existing ? `/vouchers/v/${existing.id}` : `/vouchers/${slugOf(type)}`;
+
+  if (type === "SALES" || type === "PURCHASE" || type === "SALES_RETURN" || type === "PURCHASE_RETURN") {
+    const partyKind = type === "SALES" || type === "SALES_RETURN" ? "CUSTOMER" : "SUPPLIER";
+    let defaults: TradeDefaults;
+    if (existing) {
+      defaults = {
+        date, reference: existing.reference ?? "", narration: existing.narration ?? "", partyAccountId: existing.partyAccountId ?? "", warehouseId: existing.warehouseId ?? "",
+        discount: num(existing.discount), vatPercent: num(existing.vatPercent), dueDate: existing.dueDate ? toDateInput(existing.dueDate) : "",
+        returnOfId: existing.returnOfId ?? "", returnOfNo: existing.returnOf?.voucherNo ?? "",
+        payments: existing.payments.map((p) => ({ accountId: p.accountId, amount: num(p.amount), reference: p.reference ?? "" })),
+        items: existing.items.map((i) => ({ productId: i.productId, unitId: i.unitId ?? "", quantity: num(i.quantity), rate: num(i.rate), discount: num(i.discount), batchNo: i.batchNo ?? "", expiryDate: i.expiryDate ? toDateInput(i.expiryDate) : "", mfgDate: i.batch?.mfgDate ? toDateInput(i.batch.mfgDate) : "" })),
+      };
+    } else if (fromInvoiceId && (type === "SALES_RETURN" || type === "PURCHASE_RETURN")) {
+      // Return against an invoice: prefill remaining returnable quantities at the invoiced rates.
+      const original = await prisma.voucher.findFirst({
+        where: { id: fromInvoiceId, businessId, type: type === "SALES_RETURN" ? "SALES" : "PURCHASE" },
+        include: {
+          items: { orderBy: { lineNo: "asc" }, include: { stockMovements: { include: { batch: { select: { batchNo: true, expiryDate: true } } }, orderBy: { createdAt: "asc" } } } },
+          returns: { include: { items: true } },
+        },
+      });
+      const returned = new Map<string, number>();
+      for (const r of original?.returns ?? []) for (const i of r.items) returned.set(i.productId, round3((returned.get(i.productId) ?? 0) + num(i.baseQuantity)));
+      // a FEFO line may have used several batches: offer one return line per batch
+      const parts = (original?.items ?? []).flatMap((i) => {
+        const batched = i.stockMovements.filter((m) => m.batch);
+        return batched.length
+          ? batched.map((m) => ({ item: i, base: num(m.quantityIn) || num(m.quantityOut), batchNo: m.batch!.batchNo, expiry: m.batch!.expiryDate }))
+          : [{ item: i, base: num(i.baseQuantity), batchNo: i.batchNo ?? "", expiry: i.expiryDate }];
+      });
+      const items = parts
+        .map(({ item: i, base, batchNo, expiry }) => {
+          const already = Math.min(returned.get(i.productId) ?? 0, base);
+          returned.set(i.productId, round3((returned.get(i.productId) ?? 0) - already));
+          const leftBase = round3(base - already);
+          const factor = num(i.unitFactor) || 1;
+          return { productId: i.productId, unitId: i.unitId ?? "", quantity: round3(leftBase / factor), rate: num(i.rate), discount: 0, batchNo, expiryDate: expiry ? toDateInput(expiry) : "", maxQty: round3(leftBase / factor) };
+        })
+        .filter((i) => i.quantity > 0);
+      defaults = {
+        date, reference: original?.voucherNo ?? "", narration: original ? `${original.voucherNo} এর বিপরীতে ফেরত` : "", partyAccountId: original?.partyAccountId ?? "",
+        warehouseId: original?.warehouseId ?? "", discount: 0, vatPercent: 0, dueDate: "", returnOfId: original?.id ?? "", returnOfNo: original?.voucherNo ?? "", payments: [], items,
+      };
+    } else {
+      defaults = {
+        date, reference: "", narration: "", partyAccountId: partyAccountId ?? "",
+        warehouseId: "", discount: 0, vatPercent: type === "SALES" ? ctx.business.defaultVatPercent : 0, dueDate: "", returnOfId: "", returnOfNo: "", payments: [], items: [],
+      };
+    }
+    // only the party and products already on the voucher are sent; the pickers search the rest
+    const [parties, cashAccounts, inv] = await Promise.all([
+      defaults.partyAccountId ? searchParties(businessId, partyKind, "", { accountIds: [defaults.partyAccountId] }) : Promise.resolve([]),
+      accountOptions(businessId, { kind: { in: ["CASH", "BANK"] } }),
+      inventoryOptions(businessId, { productIds: defaults.items.map((i) => i.productId) }),
+    ]);
+    if (defaults.partyAccountId && parties.length === 0) defaults = { ...defaults, partyAccountId: "" }; // ?party= of another business / kind
+    return <TradeVoucherForm kind={type} action={action} parties={parties} cashAccounts={cashAccounts} {...inv} defaults={defaults} currency={currency} cancelHref={cancelHref} allowExpiredSale={ctx.business.allowExpiredSale} />;
+  }
+
+  if (type === "RECEIPT" || type === "PAYMENT") {
+    const expenseMode = type === "PAYMENT" && mode === "expense";
+    const cashId = existing?.cashAccountId ?? "";
+    const lineIds = existing ? existing.entries.filter((e) => e.accountId !== cashId).map((e) => e.accountId) : partyAccountId ? [partyAccountId] : [];
+    // cash / bank ledgers are few (they are the default and the quick choices); of the other ledgers only
+    // those already on the voucher are sent — the line pickers search the rest on the server
+    const [cashAccounts, accounts] = await Promise.all([
+      accountOptions(businessId, { kind: { in: ["CASH", "BANK"] } }),
+      lineIds.length ? accountOptions(businessId, { id: { in: lineIds } }, true, true) : Promise.resolve([]),
+    ]);
+    const lines = existing
+      ? existing.entries.filter((e) => e.accountId !== cashId).map((e) => ({ accountId: e.accountId, amount: num(type === "RECEIPT" ? e.credit : e.debit), narration: e.narration ?? "" }))
+      : partyAccountId && accounts.some((a) => a.id === partyAccountId) ? [{ accountId: partyAccountId, amount: 0, narration: "" }] : [];
+    return (
+      <CashVoucherForm
+        kind={type}
+        action={action}
+        cashAccounts={cashAccounts}
+        accounts={accounts}
+        currency={currency}
+        cancelHref={expenseMode ? "/expenses" : cancelHref}
+        expenseMode={expenseMode}
+        defaults={{ date, reference: existing?.reference ?? "", narration: existing?.narration ?? "", cashAccountId: cashId, lines }}
+      />
+    );
+  }
+
+  if (type === "JOURNAL") {
+    const ids = [...new Set(existing?.entries.map((e) => e.accountId) ?? [])];
+    const accounts = ids.length ? await accountOptions(businessId, { id: { in: ids } }, false, true) : [];
+    return (
+      <JournalVoucherForm
+        action={action}
+        accounts={accounts}
+        currency={currency}
+        cancelHref={cancelHref}
+        defaults={{
+          date, reference: existing?.reference ?? "", narration: existing?.narration ?? "",
+          lines: existing?.entries.map((e) => ({ accountId: e.accountId, debit: num(e.debit), credit: num(e.credit), narration: e.narration ?? "" })) ?? [],
+        }}
+      />
+    );
+  }
+
+  const inv = await inventoryOptions(businessId, { productIds: existing?.items.map((i) => i.productId) ?? [] });
+  return (
+    <StockJournalForm
+      action={action}
+      {...inv}
+      currency={currency}
+      cancelHref={cancelHref}
+      defaults={{
+        date, reference: existing?.reference ?? "", narration: existing?.narration ?? "",
+        lines: existing?.items.map((i) => ({
+          productId: i.productId, warehouseId: i.warehouseId ?? "", direction: i.direction === 1 ? 1 : -1, quantity: num(i.quantity), rate: i.direction === 1 ? num(i.rate) : null,
+          batchNo: i.batchNo ?? "", expiryDate: i.expiryDate ? toDateInput(i.expiryDate) : "", mfgDate: i.batch?.mfgDate ? toDateInput(i.batch.mfgDate) : "",
+        })) ?? [],
+      }}
+    />
+  );
+}

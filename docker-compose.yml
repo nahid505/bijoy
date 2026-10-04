@@ -1,0 +1,102 @@
+# বিজয় লেনদেন — local / single-server deployment
+# All secrets come from .env (copy .env.example to .env first).
+
+name: bijoy-lenden
+
+x-database-url: &database-url "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public"
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      # bound to localhost only — not exposed to the network
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    build:
+      context: .
+      target: migrator
+    environment:
+      DATABASE_URL: *database-url
+      SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-অ্যাডমিন}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
+      SEED_BUSINESS_NAME: ${SEED_BUSINESS_NAME:-}
+      SEED_DEMO_BUSINESS_NAME: ${SEED_DEMO_BUSINESS_NAME:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: *database-url
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # daily expiry / low-stock / dues check runs inside this container (see src/server/scheduler.ts)
+      DISABLE_SCHEDULER: ${DISABLE_SCHEDULER:-false}
+      SCHEDULER_INTERVAL_MINUTES: ${SCHEDULER_INTERVAL_MINUTES:-60}
+      CRON_SECRET: ${CRON_SECRET:-}
+      # number of trusted reverse proxies in front of the app (1 with the "https" profile below).
+      # 0 = forwarded headers are ignored for security decisions.
+      TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-0}
+      # SMS (see .env.example). Credentials stay on the server; business API keys are stored encrypted.
+      SMS_PROVIDER: ${SMS_PROVIDER:-}
+      SMS_API_KEY: ${SMS_API_KEY:-}
+      SMS_SENDER_ID: ${SMS_SENDER_ID:-}
+      SMS_ENCRYPTION_KEY: ${SMS_ENCRYPTION_KEY:-}
+      SMS_WEBHOOK_SECRET: ${SMS_WEBHOOK_SECRET:-}
+      SMS_BULKSMSBD_URL: ${SMS_BULKSMSBD_URL:-}
+      SMS_HTTP_URL: ${SMS_HTTP_URL:-}
+      SMS_QUEUE_INTERVAL_SECONDS: ${SMS_QUEUE_INTERVAL_SECONDS:-15}
+      REGISTRATION_OTP: ${REGISTRATION_OTP:-}
+    ports:
+      # localhost only by default. To serve other machines use the "https" profile (recommended)
+      # or set APP_BIND=0.0.0.0 on a trusted network.
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-3000}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # HTTPS reverse proxy (automatic TLS certificates + HSTS). Enable with:
+  #   docker compose --profile https up -d
+  # and set in .env: APP_DOMAIN=your.domain  COOKIE_SECURE=true  TRUSTED_PROXY_HOPS=1
+  proxy:
+    image: caddy:2-alpine
+    profiles: ["https"]
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

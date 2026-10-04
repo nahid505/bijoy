@@ -1,0 +1,62 @@
+"use client";
+
+import Link from "next/link";
+import { ActionForm, Field, SubmitButton, type FormAction } from "./forms";
+
+export interface PartyDefaults {
+  name?: string;
+  mobile?: string | null;
+  email?: string | null;
+  address?: string | null;
+  openingBalance?: number;
+  notes?: string | null;
+  creditLimit?: number;
+  creditDays?: number;
+  groupName?: string | null;
+}
+
+export function PartyForm({
+  action,
+  defaults = {},
+  cancelHref,
+  openingHint,
+  kind = "CUSTOMER",
+}: {
+  action: FormAction;
+  defaults?: PartyDefaults;
+  cancelHref: string;
+  openingHint: string;
+  kind?: "CUSTOMER" | "SUPPLIER";
+}) {
+  return (
+    <ActionForm action={action}>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="নাম *" name="name"><input id="name" name="name" defaultValue={defaults.name} className="input" required maxLength={200} /></Field>
+        <Field label="মোবাইল" name="mobile"><input id="mobile" name="mobile" defaultValue={defaults.mobile ?? ""} className="input" inputMode="tel" placeholder="01XXXXXXXXX" /></Field>
+        <Field label="ইমেইল" name="email"><input id="email" name="email" type="email" defaultValue={defaults.email ?? ""} className="input" /></Field>
+        <Field label="প্রারম্ভিক ব্যালেন্স (৳)" name="openingBalance" hint={openingHint}>
+          <input id="openingBalance" name="openingBalance" type="number" step="0.01" min="0" defaultValue={defaults.openingBalance ?? 0} className="input-num" />
+        </Field>
+        {kind === "CUSTOMER" && (
+          <Field label="কাস্টমার গ্রুপ" name="groupName" hint="যেমন: পাইকারি, খুচরা, এলাকা — গ্রুপে এসএমএস পাঠাতে ব্যবহার হয়">
+            <input id="groupName" name="groupName" maxLength={60} defaultValue={defaults.groupName ?? ""} className="input" />
+          </Field>
+        )}
+        {kind === "CUSTOMER" && (
+          <Field label="ক্রেডিট সীমা (৳)" name="creditLimit" hint="সর্বোচ্চ কত টাকা বাকি রাখা যাবে — ০ = সীমা নেই">
+            <input id="creditLimit" name="creditLimit" type="number" step="0.01" min="0" defaultValue={defaults.creditLimit ?? 0} className="input-num" />
+          </Field>
+        )}
+        <Field label="পরিশোধের মেয়াদ (দিন)" name="creditDays" hint="ইনভয়েসের কত দিন পর বাকি মেয়াদোত্তীর্ণ হবে">
+          <input id="creditDays" name="creditDays" type="number" step="1" min="0" defaultValue={defaults.creditDays ?? 0} className="input-num" />
+        </Field>
+        <Field label="ঠিকানা" name="address" className="sm:col-span-2"><textarea id="address" name="address" rows={2} defaultValue={defaults.address ?? ""} className="input" /></Field>
+        <Field label="নোট" name="notes" className="sm:col-span-2"><textarea id="notes" name="notes" rows={2} defaultValue={defaults.notes ?? ""} className="input" /></Field>
+      </div>
+      <div className="flex gap-2">
+        <SubmitButton>সংরক্ষণ করুন</SubmitButton>
+        <Link prefetch={false} href={cancelHref} className="btn-secondary">বাতিল</Link>
+      </div>
+    </ActionForm>
+  );
+}
