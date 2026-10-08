@@ -9,6 +9,7 @@ import { can } from "@/server/auth";
 import { requirePayroll } from "@/server/payroll-context";
 import { pageOf, readParams, totalPages, type SearchParams } from "@/server/params";
 import { employeePayables } from "@/server/services/payroll";
+import { ci } from "@/lib/dialect";
 
 export const metadata: Metadata = { title: "কর্মচারী" };
 
@@ -29,7 +30,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Se
     ...(status === "current" ? { status: { in: ["ACTIVE", "PROBATION", "ON_LEAVE"] } } : status !== "all" && EMPLOYMENT_STATUS_LABELS[status] ? { status: status as never } : {}),
     ...(p.departmentId ? { departmentId: p.departmentId } : {}),
     ...(q
-      ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { code: { contains: q, mode: "insensitive" } }, { designation: { contains: q, mode: "insensitive" } }, ...(digitsOf(q).length >= 3 ? [{ mobile: { contains: digitsOf(q) } }, { nid: { contains: digitsOf(q) } }] : [])] }
+      ? { OR: [{ name: ci(q) }, { code: ci(q) }, { designation: ci(q) }, ...(digitsOf(q).length >= 3 ? [{ mobile: { contains: digitsOf(q) } }, { nid: { contains: digitsOf(q) } }] : [])] }
       : {}),
   };
   const page = pageOf(p);

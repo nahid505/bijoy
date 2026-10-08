@@ -1,4 +1,4 @@
-// Login brute-force protection, stored in PostgreSQL so it is shared by every app instance and
+// Login brute-force protection, stored in the database so it is shared by every app instance and
 // survives restarts.
 //
 //  • account key  "account:<email>"  — independent of the client address: changing or spoofing
@@ -9,6 +9,7 @@
 // Attempts are reserved atomically BEFORE the password is checked, so parallel guesses cannot
 // race past the limit. A successful login clears the account key.
 import type { Prisma, PrismaClient } from "@prisma/client";
+import { isMySql, rawExec, rawRows, sql } from "@/lib/dialect";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -30,7 +31,8 @@ interface Row {
 export async function reserveAttempt(db: Db, key: string, policy: { max: number; windowMs: number; lockMs: number }, now: Date): Promise<Date | null> {
   const windowFloor = new Date(now.getTime() - policy.windowMs);
   const lockUntil = new Date(now.getTime() + policy.lockMs);
-  const rows = await db.$queryRaw<Row[]>`
+  if (isMySql()) return reserveAttemptLocked(db, key, policy, now);
+  const rows = await rawRows<Row>(db, sql`
     INSERT INTO "AuthThrottle" ("key", "attempts", "windowStart", "lockedUntil", "updatedAt")
     VALUES (${key}, 1, ${now}, NULL, ${now})
     ON CONFLICT ("key") DO UPDATE SET
@@ -46,14 +48,50 @@ export async function reserveAttempt(db: Db, key: string, policy: { max: number;
         WHEN "AuthThrottle"."lockedUntil" IS NOT NULL AND "AuthThrottle"."lockedUntil" > ${now} THEN "AuthThrottle"."lockedUntil"
         ELSE NULL END,
       "updatedAt" = ${now}
-    RETURNING "attempts", "lockedUntil"`;
+    RETURNING "attempts", "lockedUntil"`);
   const row = rows[0];
   if (row.lockedUntil && row.lockedUntil > now) return row.lockedUntil;
   if (row.attempts > policy.max) {
-    await db.$executeRaw`UPDATE "AuthThrottle" SET "lockedUntil" = ${lockUntil} WHERE "key" = ${key}`;
+    await rawExec(db, sql`UPDATE "AuthThrottle" SET "lockedUntil" = ${lockUntil} WHERE "key" = ${key}`);
     return lockUntil;
   }
   return null;
+}
+
+/**
+ * MySQL / MariaDB (no INSERT … ON CONFLICT … RETURNING): the same rules inside a transaction that
+ * holds the row lock, so parallel attempts are still counted one by one.
+ */
+async function reserveAttemptLocked(db: Db, key: string, policy: { max: number; windowMs: number; lockMs: number }, now: Date): Promise<Date | null> {
+  const run = async (tx: Prisma.TransactionClient) => {
+    // ON DUPLICATE KEY UPDATE takes the exclusive row lock at once (INSERT IGNORE would take a shared
+    // lock first, and parallel attempts upgrading it to FOR UPDATE deadlock each other)
+    await rawExec(tx, sql`INSERT INTO "AuthThrottle" ("key", "attempts", "windowStart", "lockedUntil", "updatedAt") VALUES (${key}, 0, ${now}, NULL, ${now}) ON DUPLICATE KEY UPDATE "key" = "key"`);
+    const [cur] = await rawRows<{ attempts: number; windowStart: Date; lockedUntil: Date | null }>(tx, sql`SELECT "attempts", "windowStart", "lockedUntil" FROM "AuthThrottle" WHERE "key" = ${key} FOR UPDATE`);
+    const windowFloor = new Date(now.getTime() - policy.windowMs);
+    const locked = cur.lockedUntil !== null && cur.lockedUntil > now;
+    const reset = !locked && (cur.windowStart < windowFloor || cur.lockedUntil !== null);
+    const attempts = locked ? Number(cur.attempts) : reset ? 1 : Number(cur.attempts) + 1;
+    let lockedUntil: Date | null = locked ? cur.lockedUntil : null;
+    const windowStart = locked ? cur.windowStart : reset ? now : cur.windowStart;
+    if (!locked && attempts > policy.max) lockedUntil = new Date(now.getTime() + policy.lockMs);
+    await tx.authThrottle.update({ where: { key }, data: { attempts, windowStart, lockedUntil, updatedAt: now } });
+    return lockedUntil && lockedUntil > now ? lockedUntil : null;
+  };
+  if (!("$transaction" in db)) return run(db as Prisma.TransactionClient);
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await (db as PrismaClient).$transaction(run);
+    } catch (e) {
+      if (attempt >= 5 || !isDeadlock(e)) throw e;
+    }
+  }
+}
+
+/** MySQL deadlock / lock-wait errors that are safe to retry (the transaction was rolled back). */
+function isDeadlock(e: unknown) {
+  const text = e instanceof Error ? e.message : String(e);
+  return /\b(1213|1205)\b|Deadlock|P2034/.test(text) || (e as { code?: string })?.code === "P2034";
 }
 
 export interface GuardDecision {

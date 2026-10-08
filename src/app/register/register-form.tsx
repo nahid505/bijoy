@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ActionForm, Field, SubmitButton } from "@/components/forms";
 import { useToast } from "@/components/toaster";
+import { BUSINESS_TYPE_LABELS } from "@/lib/business-types";
 import { registerAction, requestRegistrationOtpAction } from "@/server/actions/auth";
 
 const rules = (pw: string) => [
@@ -40,7 +41,7 @@ function SendCodeButton() {
   );
 }
 
-export function RegisterForm({ otpRequired = false }: { otpRequired?: boolean }) {
+export function RegisterForm({ otpRequired = false, plan = null }: { otpRequired?: boolean; plan?: { code: string; label: string } | null }) {
   const [pw, setPw] = useState("");
   const [confirm, setConfirm] = useState("");
   return (
@@ -50,8 +51,20 @@ export function RegisterForm({ otpRequired = false }: { otpRequired?: boolean })
         <label htmlFor="website">Website</label>
         <input id="website" name="website" type="text" tabIndex={-1} autoComplete="off" defaultValue="" />
       </div>
+      {plan && (
+        <p className="rounded-md bg-brand-50 px-3 py-2 text-sm text-brand-800 ring-1 ring-brand-200">
+          নির্বাচিত প্ল্যান: <strong>{plan.label}</strong>
+          <input type="hidden" name="plan" value={plan.code} />
+        </p>
+      )}
       <Field label="ব্যবসার/প্রতিষ্ঠানের নাম *" name="businessName">
         <input id="businessName" name="businessName" required maxLength={120} autoComplete="organization" className="input" placeholder="যেমন: রহমান এন্টারপ্রাইজ" />
+      </Field>
+      <Field label="ব্যবসার ধরন" name="businessType">
+        <select id="businessType" name="businessType" defaultValue="" className="input">
+          <option value="">— নির্বাচন করুন —</option>
+          {Object.entries(BUSINESS_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
       </Field>
       <Field label="মালিকের নাম *" name="ownerName">
         <input id="ownerName" name="ownerName" required maxLength={100} autoComplete="name" className="input" />
@@ -69,6 +82,9 @@ export function RegisterForm({ otpRequired = false }: { otpRequired?: boolean })
       )}
       <Field label="ইমেইল (ঐচ্ছিক)" name="email">
         <input id="email" name="email" type="email" maxLength={200} autoComplete="email" className="input" placeholder="you@example.com" />
+      </Field>
+      <Field label="ঠিকানা (ঐচ্ছিক)" name="address">
+        <input id="address" name="address" maxLength={300} autoComplete="street-address" className="input" />
       </Field>
       <Field label="পাসওয়ার্ড *" name="password">
         <input id="password" name="password" type="password" required minLength={8} maxLength={128} autoComplete="new-password" className="input" value={pw} onChange={(e) => setPw(e.target.value)} aria-describedby="pw-rules" />

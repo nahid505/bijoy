@@ -16,6 +16,7 @@ import { availableBatches } from "./services/inventory";
 import { businessToday } from "./services/notifications";
 import { expiryStatus } from "@/lib/expiry";
 import { ExpiryBadge } from "@/components/expiry-badge";
+import { ci, rawRows, sql } from "@/lib/dialect";
 
 const MOVE_LABELS: Record<string, string> = {
   OPENING: "প্রারম্ভিক", PURCHASE: "ক্রয়", SALE: "বিক্রয়", SALES_RETURN: "বিক্রয় ফেরত", PURCHASE_RETURN: "ক্রয় ফেরত", ADJUSTMENT_IN: "সমন্বয় (আগমন)", ADJUSTMENT_OUT: "সমন্বয় (বাহির)",
@@ -29,11 +30,11 @@ export async function ProductListPage({ searchParams }: { searchParams: SearchPa
   const q = p.q?.trim();
   const businessId = ctx.business.id;
   const lowIds = p.low
-    ? (await prisma.$queryRaw<{ id: string }[]>`SELECT "id" FROM "Product" WHERE "businessId" = ${businessId} AND ("stock" <= "minStock" OR "stock" <= 0)`).map((r) => r.id)
+    ? (await rawRows<{ id: string }>(prisma, sql`SELECT "id" FROM "Product" WHERE "businessId" = ${businessId} AND ("stock" <= "minStock" OR "stock" <= 0)`)).map((r) => r.id)
     : null;
   const where: Prisma.ProductWhereInput = {
     businessId,
-    ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { code: { contains: q, mode: "insensitive" } }, { barcode: { contains: q } }] } : {}),
+    ...(q ? { OR: [{ name: ci(q) }, { code: ci(q) }, { barcode: { contains: q } }] } : {}),
     ...(p.category ? { categoryId: p.category } : {}),
     ...(p.brand ? { brandId: p.brand } : {}),
     ...(p.status === "inactive" ? { isActive: false } : p.status === "all" ? {} : { isActive: true }),
@@ -50,7 +51,7 @@ export async function ProductListPage({ searchParams }: { searchParams: SearchPa
     prisma.product.count({ where }),
     prisma.category.findMany({ where: { businessId }, orderBy: { name: "asc" } }),
     prisma.brand.findMany({ where: { businessId }, orderBy: { name: "asc" } }),
-    prisma.$queryRaw<{ v: string | null; n: bigint }[]>`SELECT SUM("stock" * "avgCost")::text AS v, COUNT(*) AS n FROM "Product" WHERE "businessId" = ${businessId} AND "isActive" = true`,
+    rawRows<{ v: string | null; n: bigint }>(prisma, sql`SELECT SUM("stock" * "avgCost")::text AS v, COUNT(*) AS n FROM "Product" WHERE "businessId" = ${businessId} AND "isActive" = true`),
   ]);
 
   // nearest expiry among in-stock batches of the products on this page

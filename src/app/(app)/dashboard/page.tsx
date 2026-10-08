@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { num } from "@/lib/db";
 import { formatDate, formatMoney, formatQty, MONTH_NAMES, toBnDigits } from "@/lib/format";
 import { GroupedBars } from "@/components/month-bars";
@@ -9,6 +10,8 @@ import { getT } from "@/server/i18n";
 import { dashboardData } from "@/server/services/dashboard";
 import { ensureDailyChecks } from "@/server/services/notifications";
 import { ExpiryBadge } from "@/components/expiry-badge";
+import { AccountSummary, LatestNotifications, RecentPurchases } from "./account-panels";
+import { FEATURES, type FeatureDef } from "@/lib/features";
 
 export const metadata: Metadata = { title: "ড্যাশবোর্ড" };
 
@@ -40,11 +43,14 @@ function Panel({ title, href, linkLabel, children }: { title: string; href?: str
 
 export default async function DashboardPage() {
   const ctx = await requirePermission("dashboard:view");
+  // trial / subscription over: whoever handles billing chooses first — renew, or continue on the free plan
+  if (ctx.subscription?.status === "EXPIRED" && can(ctx, "billing:manage")) redirect("/billing?expired=1");
   const t = await getT();
   const cur = ctx.business.currencySymbol;
   await ensureDailyChecks(ctx.business.id).catch(() => null); // daily alerts, if the scheduler has not run yet today
   const d = await dashboardData(ctx.business.id, ctx.business.fiscalYearStartMonth);
-  const showExpiry = can(ctx, "inventory:view") && (d.expiry.cards.some((c) => c.batches > 0) || d.expiry.attention.length > 0);
+  const modules = (FEATURES as readonly FeatureDef[]).filter((m) => m.home && ctx.features.includes(m.key) && can(ctx, m.home.permission));
+  const showExpiry = can(ctx, "inventory:view") && ctx.features.includes("PRODUCT_EXPIRY") && (d.expiry.cards.some((c) => c.batches > 0) || d.expiry.attention.length > 0);
   const f = d.figures;
 
   const quick = [
@@ -64,6 +70,8 @@ export default async function DashboardPage() {
         <p className="text-sm text-slate-500">{t("হিসাবের সারসংক্ষেপ")} — {formatDate(new Date())}</p>
       </div>
 
+      <AccountSummary ctx={ctx} />
+
       {quick.length > 0 && (
         <section className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7" aria-label={t("দ্রুত কাজ")}>
           {quick.map((q) => (
@@ -77,6 +85,19 @@ export default async function DashboardPage() {
             </Link>
           ))}
         </section>
+      )}
+
+      {/* Active optional modules (Feature Management) — only those this user may open */}
+      {modules.length > 0 && (
+        <nav className="mb-4 flex flex-wrap items-center gap-2 text-sm" aria-label={t("চালু মডিউল")}>
+          <span className="text-xs font-medium text-slate-500">{t("চালু মডিউল")}:</span>
+          {modules.map((m) => (
+            <Link key={m.key} prefetch={false} href={m.home!.href} className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-medium text-ink-800 ring-1 ring-rule hover:bg-brand-50">
+              <span aria-hidden>{m.icon}</span>{m.nameBn}
+            </Link>
+          ))}
+          {can(ctx, "features:view") && <Link prefetch={false} href="/features" className="text-xs text-brand-700 hover:underline">{t("সব ফিচার")} →</Link>}
+        </nav>
       )}
 
       {/* Today */}
@@ -185,6 +206,8 @@ export default async function DashboardPage() {
           )}
         </Panel>
 
+        <RecentPurchases ctx={ctx} />
+
         <Panel title={t("সাম্প্রতিক পেমেন্ট")} href="/vouchers/receipt" linkLabel={t("সব দেখুন")}>
           {d.recentPayments.length === 0 ? <EmptyState message="এখনও কোনো পেমেন্ট নেই" /> : (
             <table className="table">
@@ -220,6 +243,8 @@ export default async function DashboardPage() {
             </table>
           )}
         </Panel>
+
+        <LatestNotifications ctx={ctx} />
 
         <Panel title={t("কম মজুদের পণ্য")} href="/products?low=1" linkLabel={t("সব দেখুন")}>
           {d.lowStock.length === 0 ? <EmptyState message="সব পণ্যের পর্যাপ্ত মজুদ আছে" /> : (

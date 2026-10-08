@@ -6,11 +6,12 @@ import { openingEntries } from "@/lib/accounting";
 import { UserError } from "@/lib/errors";
 import { assertNotLocked, nextVoucherNo, systemAccounts, writeEntries, type Ctx, type Tx } from "./accounting";
 import { revalueProducts } from "./posting";
+import { rawRows, sql } from "@/lib/dialect";
 
 /** Locks product rows (consistent order → no deadlocks) for the rest of the transaction. */
 export async function lockProducts(tx: Tx, productIds: string[]) {
   const ids = [...new Set(productIds)].sort();
-  for (const id of ids) await tx.$queryRaw`SELECT 1 FROM "Product" WHERE "id" = ${id} FOR UPDATE`;
+  for (const id of ids) await rawRows<unknown>(tx, sql`SELECT 1 FROM "Product" WHERE "id" = ${id} FOR UPDATE`);
 }
 
 /** Quantity on hand (base unit) of a product in one warehouse (optionally one batch). */

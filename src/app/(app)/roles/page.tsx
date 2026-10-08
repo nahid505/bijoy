@@ -5,6 +5,7 @@ import { ALL_PERMISSIONS } from "@/lib/permissions";
 import { toBnDigits } from "@/lib/format";
 import { Badge, PageHeader, TableWrap } from "@/components/ui";
 import { requirePermission } from "@/server/auth";
+import { strList } from "@/lib/dialect";
 
 export const metadata: Metadata = { title: "রোল ও অনুমতি" };
 
@@ -24,7 +25,7 @@ export default async function RolesPage() {
                 <tr key={r.id}>
                   <td className="font-medium">{r.name} {r.isSystem && <Badge tone="amber">সিস্টেম</Badge>}</td>
                   <td>{r.description ?? "—"}</td>
-                  <td className="num">{r.permissions.includes("*") ? "সব" : `${toBnDigits(r.permissions.length)} / ${toBnDigits(ALL_PERMISSIONS.length)}`}</td>
+                  <td className="num">{strList(r.permissions).includes("*") ? "সব" : `${toBnDigits(strList(r.permissions).length)} / ${toBnDigits(ALL_PERMISSIONS.length)}`}</td>
                   <td className="num">{toBnDigits(r._count.memberships)}</td>
                   <td className="text-right"><Link prefetch={false} href={`/roles/${r.id}/edit`} className="btn-secondary btn-sm">{r.isSystem ? "দেখুন" : "সম্পাদনা"}</Link></td>
                 </tr>

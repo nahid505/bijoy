@@ -2,7 +2,8 @@
 // Every voucher is posted here, inside the caller's DB transaction, and is rejected
 // unless Σ debit = Σ credit (see prepareEntries in src/lib/accounting.ts).
 import type { AccountKind, Prisma, VoucherType } from "@prisma/client";
-import { openingEntries, prepareEntries, VOUCHER_TYPES, type EntryLine, type SystemAccounts } from "@/lib/accounting";
+import { openingEntries, prepareEntries, UnbalancedVoucherError, VOUCHER_TYPES, type EntryLine, type SystemAccounts } from "@/lib/accounting";
+import { isMySql } from "@/lib/dialect";
 import { UserError } from "@/lib/errors";
 import { formatDate } from "@/lib/format";
 
@@ -60,6 +61,24 @@ export async function assertAccounts(tx: Tx, businessId: string, ids: string[], 
   return new Map(rows.map((r) => [r.id, r]));
 }
 
+/**
+ * Database-level double-entry guarantee on MySQL / MariaDB. PostgreSQL enforces it with the deferred
+ * constraint trigger "JournalEntry_voucher_balanced" at commit; MySQL has no deferred triggers, so the
+ * stored entries are re-summed inside the posting transaction and any difference aborts it.
+ */
+export async function assertVouchersBalanced(tx: Tx, voucherIds: string[]) {
+  if (!isMySql() || voucherIds.length === 0) return;
+  for (let i = 0; i < voucherIds.length; i += 500) {
+    const sums = await tx.journalEntry.groupBy({ by: ["voucherId"], where: { voucherId: { in: voucherIds.slice(i, i + 500) } }, _sum: { debit: true, credit: true } });
+    for (const g of sums) {
+      const debit = g._sum.debit ?? 0;
+      const credit = g._sum.credit ?? 0;
+      // amounts are DECIMAL(14,2): compare in paisa
+      if (Math.round(Number(debit) * 100) !== Math.round(Number(credit) * 100)) throw new UnbalancedVoucherError(Number(debit), Number(credit));
+    }
+  }
+}
+
 /** Writes balanced journal entries for a voucher (replacing any existing ones). */
 export async function writeEntries(tx: Tx, voucher: { id: string; businessId: string; date: Date }, lines: EntryLine[], opts: { allowEmpty?: boolean } = {}) {
   const prepared = prepareEntries(lines, opts); // throws if unbalanced
@@ -78,6 +97,7 @@ export async function writeEntries(tx: Tx, voucher: { id: string; businessId: st
       })),
     });
   }
+  await assertVouchersBalanced(tx, [voucher.id]);
   return prepared.reduce((s, l) => s + l.debit, 0);
 }
 

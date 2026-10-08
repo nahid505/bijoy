@@ -6,7 +6,7 @@ import { UnbalancedVoucherError } from "@/lib/accounting";
 import { UserError } from "@/lib/errors";
 import type { TradeVoucherInput } from "@/lib/validation";
 import { createBusiness } from "@/server/services/bootstrap";
-import { setAccountOpening, systemAccounts, type Ctx } from "@/server/services/accounting";
+import { setAccountOpening, systemAccounts, type Ctx, assertVouchersBalanced } from "@/server/services/accounting";
 import { saveParty, saveProduct } from "@/server/services/master";
 import { deleteVoucher, saveCashVoucher, saveJournalVoucher, saveStockJournal, saveTradeVoucher } from "@/server/services/voucher";
 import { balancesBefore, statement } from "@/server/services/ledger";
@@ -164,13 +164,14 @@ run("double-entry accounting engine", () => {
     expect(await voucherCount()).toBe(before);
   });
 
-  it("the DATABASE itself rejects an unbalanced voucher (deferred trigger)", async () => {
+  it("an unbalanced voucher never commits (PostgreSQL: deferred trigger; MySQL: in-transaction re-check)", async () => {
     const v = await prisma.voucher.findFirstOrThrow({ where: { businessId: ctx.businessId, type: "JOURNAL" } });
     await expect(
       prisma.$transaction(async (tx) => {
         await tx.journalEntry.create({ data: { businessId: ctx.businessId, voucherId: v.id, accountId: bankId, date: v.date, debit: 1, credit: 0 } });
+        await assertVouchersBalanced(tx, [v.id]); // what every posting path runs (no-op on PostgreSQL, where the trigger fires at commit)
       }),
-    ).rejects.toThrow(/Unbalanced voucher/);
+    ).rejects.toThrow(/Unbalanced voucher|অসমতাপূর্ণ/);
     expect(await balance(bankId)).toBe(5_000);
   });
 

@@ -11,6 +11,7 @@ import { can, requirePermission } from "@/server/auth";
 import { reportPeriod } from "@/server/period";
 import { pageOf, readParams, totalPages, type SearchParams } from "@/server/params";
 import { voucherPermission } from "@/server/voucher-permissions";
+import { ci } from "@/lib/dialect";
 
 export async function generateMetadata({ params }: { params: Promise<{ type: string }> }): Promise<Metadata> {
   const t = voucherTypeFromSlug((await params).type);
@@ -34,7 +35,7 @@ export default async function VoucherListPage({ params, searchParams }: { params
     businessId: ctx.business.id,
     type,
     date: range,
-    ...(q ? { OR: [{ voucherNo: { contains: q, mode: "insensitive" } }, { reference: { contains: q, mode: "insensitive" } }, { narration: { contains: q, mode: "insensitive" } }, { partyAccount: { name: { contains: q, mode: "insensitive" } } }] } : {}),
+    ...(q ? { OR: [{ voucherNo: ci(q) }, { reference: ci(q) }, { narration: ci(q) }, { partyAccount: { name: ci(q) } }] } : {}),
   };
   const [rows, total, sums] = await Promise.all([
     prisma.voucher.findMany({

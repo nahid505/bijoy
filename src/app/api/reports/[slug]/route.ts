@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { hasPermission } from "@/lib/permissions";
+import { featureForPath } from "@/lib/features";
 import { toDateInput } from "@/lib/format";
 import { getContext } from "@/server/auth";
 import { findReport } from "@/server/reports/registry";
@@ -15,6 +16,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
   const ctx = await getContext();
   if (!ctx) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   if (!hasPermission(ctx.permissions, def.permission)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  const gate = featureForPath(`/reports/${slug}`);
+  if (gate && !ctx.features.includes(gate)) return NextResponse.json({ error: "feature disabled", feature: gate }, { status: 403 });
 
   const query = Object.fromEntries(req.nextUrl.searchParams.entries());
   const report = await def.run(ctx, query);

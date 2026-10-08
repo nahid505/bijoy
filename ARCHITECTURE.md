@@ -212,6 +212,116 @@ The permissions are `payroll:view`, `payroll:manage`, `payroll:attendance` (atte
 - Only the Owner role (`*`) has them by default.
 - Payroll audit entries are hidden from audit-log viewers without `payroll:view`.
 
+## 6d. Feature & module management
+Optional modules are declared once in `src/lib/features.ts`: key, Bengali/English name and description, icon, FREE/PAID, AVAILABLE/COMING_SOON, default, and the module's permissions per action (VIEW/CREATE/EDIT/DELETE/EXPORT/APPROVE). Each entry also lists:
+- `owns`: permissions used only by that module;
+- `routes`: page path prefixes;
+- `reports`: report slugs.
+
+**Database**
+- `Feature` and `FeaturePermission`: the catalogue, seeded by migration `20261005100000_feature_management` and re-synced from the registry by `ensureFeatureCatalog()`.
+- `BusinessFeature`: one row per business choice; no row means the default.
+- `FeatureActivationLog`: the change log. Changes are also written to `AuditLog`.
+
+**Defaults and safety**
+- Every AVAILABLE module defaults to on, so existing businesses behave exactly as before.
+- COMING_SOON modules can never be switched on.
+- Switching off never deletes data.
+
+**Enforcement (server side)**
+1. `getContext` adds `!permission` blocks for the `owns` permissions of switched-off modules. `hasPermission` honours `!` even for `*`, so every existing page, action and API check refuses them, and permission-based menus disappear.
+2. `src/middleware.ts` passes `x-pathname`. `(app)/layout.tsx` redirects pages of switched-off modules to `/forbidden?feature=` and hides their menu links. `/api/reports/[slug]` and `ReportPage` check report slugs.
+3. Module-specific checks:
+   - expiry write-off (`assertFeature`);
+   - daily expiry alerts and expiry SMS (`featureIsOn`, in `services/feature-state.ts`, usable outside a request);
+   - the dashboard expiry panel;
+   - warehouse management and new vouchers (main warehouse) for Multi Warehouse;
+   - Multi User: without it only the Owner role keeps permissions, and only an Owner may switch it off.
+
+**Who can see and change it**
+- Activation needs `features:manage`; viewing the page needs `features:view`. The Owner has both, and new businesses' Admin role gets both.
+- The role editor shows permissions of switched-off modules as locked ("ফিচার বন্ধ") and keeps existing grants.
+
+**Backups:** backups carry the business's feature choices (`data.features`).
+
+## 6e. Multi-tenant SaaS: subscriptions, billing, super admin
+**Tenant = `Business`.**
+- Every business table carries `businessId`.
+- `getContext()` resolves the business only from the caller's active membership; a forged business cookie falls back to one of the caller's own businesses.
+- Services, pages and API routes always filter by `ctx.business.id`. Billing pages look records up by `{ id, businessId }`.
+
+**Database** (migration `20261005200000_saas_subscriptions`, additive only):
+- `PlatformSetting` (single row "platform"): trial days/plan, fallback plan, grace days, reminder days, VAT, currency, invoice prefix and sequence.
+- `Plan` + `PlanFeature`: prices, user limit, features. Everything is edited in `/admin/plans`; the seed in `scripts/saas-seed-sql.ts` only sets initial values.
+- `Subscription` (one per business; `amount` and `paymentStatus` of the latest payment), `SubscriptionEvent` (history).
+- `PaymentTransaction` (`@@unique([provider, providerTrxId])`), `SubscriptionPayment`, `Invoice`.
+- `User.isSuperAdmin`, `Business.businessType`, `BusinessFeature.adminOverride`.
+- Businesses that existed before the migration received PREMIUM, ACTIVE, for one year, so nothing changed for them.
+
+- Migration `20261005300000_saas_inventory_payment_status` adds the INVENTORY feature (products, units, stock) to every existing plan, `Subscription.amount/paymentStatus` and the notification kinds `TRIAL_STARTED` / `SUBSCRIPTION_ACTIVATED`.
+- Feature routes resolve to the most specific prefix (`/products/batches` → PRODUCT_EXPIRY, `/products` → INVENTORY).
+
+**Rules** (`src/lib/subscription.ts`, pure and unit-tested):
+- Statuses: TRIAL, ACTIVE, EXPIRING, EXPIRED, CANCELLED, SUSPENDED.
+- After the end date plus the grace period, a business gets only the fallback (FREE) plan's features. Data is never deleted.
+- SUSPENDED leaves only `billing:*` permissions; `(app)/layout` redirects to `/billing`.
+- Renewal continues from the end date; a plan change starts a new period (no proration).
+
+**Entitlement:**
+- Entitled features = plan (or fallback) ± super-admin overrides. The company's own on/off choice in `/features` applies on top.
+- This plugs into the feature enforcement in 6d (`loadFeatureAccess`), so a feature outside the plan is refused by actions, API and pages exactly like a switched-off one.
+- User limit: `assertUserSlot` runs on member add and on reactivation.
+
+**Payments** (`src/server/billing/`):
+- Flow: checkout creates a `PaymentTransaction` (INITIATED, amount from the DB). The provider redirects to its callback or webhook. The adapter verifies the result server side, then `finalizePayment` runs.
+- `finalizePayment`: compare-and-set to SUCCESS (only once), then an amount check and a gateway-TrxID reuse check. On failure the transaction is recorded as FAILED and nothing is activated. On success it creates the invoice (`BL-YYYY-000001`), the `SubscriptionPayment`, the subscription period, an event and a notification.
+- Providers: `mock` (HMAC-signed; development only, refused when `NODE_ENV=production` unless explicitly allowed), `manual` (TrxID, then super-admin approval), `bkash` (Tokenized Checkout; needs credentials), `nagad`/`card` (placeholders).
+- Gateway credentials exist only in environment variables.
+
+**Notifications:**
+- Daily `subscriptionDailyCheck`: reminders 7/3/1 days before the end (deduplicated), then the EXPIRED transition.
+- `notifyBusiness` produces an in-app notification plus SMS/email to the owner (email: `EMAIL_PROVIDER` log|http).
+
+**Super Admin** (`/admin`):
+- Pages answer 404 and actions throw Forbidden for everyone else.
+- Granted only from the shell: `npm run super-admin -- grant <email|mobile>`.
+- Covers the dashboard, companies (search by company/owner name, mobile, e-mail; filters for plan, status, payment status and registration date; plan change, extend, suspend, per-feature override), users, plans, features (plan matrix), subscriptions, payments (date/plan filters; approve/reject manual; record refunds), revenue (monthly/yearly, by plan, date range), invoices, platform-wide audit log, and settings.
+- Every change is written to `AuditLog`. Payment success, failure and refunds are audited too.
+- A refund marks the payment and the invoice REFUNDED; the money goes back through the gateway or a transfer, and the subscription is changed separately by the administrator.
+
+**Public pages:** `/` (landing) and `/pricing` read plans from the DB; `/register?plan=CODE` starts a trial on that public plan.
+
+## 6f. Databases: PostgreSQL and MySQL / MariaDB
+**One codebase, two providers.** The provider is chosen by `DATABASE_URL`:
+- `postgresql://` — Docker / VPS;
+- `mysql://` — cPanel shared hosting; needs MySQL 8.0.16+ or MariaDB 10.6+.
+
+**Schemas.** `prisma/schema.prisma` (PostgreSQL) is the source of truth. `scripts/mysql-schema.mjs` generates `prisma/mysql/schema.prisma`:
+- lists become `Json`;
+- free-text strings become `@db.Text`.
+
+`scripts/mysql-migration.mjs` builds the MySQL baseline migration, including the CHECK constraints and the seed.
+
+**`src/lib/dialect.ts`** keeps the rest of the code provider-neutral:
+- `ci` / `ciEquals` — case-insensitive filters;
+- `listHas` / `strList` / `intList` — list columns;
+- `jsonKey` — JSON path filter;
+- `sql` + `rawRows` / `rawExec` — raw SQL written in PostgreSQL style and translated for MySQL, with the same result shapes on both;
+- `lockKey` — advisory lock on PostgreSQL, an `AppLock` row `FOR UPDATE` on MySQL.
+
+**Statements MySQL lacks** have their own branch, selected with `isMySql()`:
+- login throttle (`ON DUPLICATE KEY UPDATE` with row lock and deadlock retry);
+- SMS claim (`SKIP LOCKED`, then update, then read);
+- batch re-sync and legacy backup linking (`UPDATE … JOIN`).
+
+**Double entry.** On PostgreSQL a deferred trigger enforces it at commit. On MySQL, `assertVouchersBalanced()` re-sums the entries inside the posting transaction.
+
+**Transactions.** MySQL uses READ COMMITTED, as PostgreSQL does.
+
+**Tests.** `npm test` runs on PostgreSQL. `npm run test:mysql` runs the same suite on MySQL.
+
+See docs/MYSQL-MIGRATION-PLAN.md.
+
 ## 7b. UI runtime notes
 - Language: the `bl_lang` cookie selects Bangla or English. Bangla strings are the dictionary keys (`src/lib/i18n.ts`). Toasts after redirects travel in the short-lived `bl_flash` cookie.
 - All `<Link>`s use `prefetch={false}`. Automatic prefetching fired many DB-heavy RSC renders at once and exhausted the connection pool. `src/lib/db.ts` also sets explicit pool limits.

@@ -18,6 +18,7 @@ import { AGING_BUCKETS, partyAging } from "./services/aging";
 import { VOUCHER_TYPES } from "@/lib/accounting";
 import { partyOpening } from "./services/master";
 import { deletePartyAction, savePartyAction, togglePartyAction } from "./actions/masters";
+import { ci, rawRows, sql } from "@/lib/dialect";
 
 export type PartyKind = "CUSTOMER" | "SUPPLIER";
 
@@ -59,7 +60,7 @@ export async function PartyListPage({ kind, searchParams }: { kind: PartyKind; s
   const q = p.q?.trim();
   const where = {
     businessId: ctx.business.id,
-    ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" as const } }, { mobile: { contains: q } }, { address: { contains: q, mode: "insensitive" as const } }] } : {}),
+    ...(q ? { OR: [{ name: ci(q) }, { mobile: { contains: q } }, { address: ci(q) }] } : {}),
     ...(p.status === "inactive" ? { isActive: false } : p.status === "all" ? {} : { isActive: true }),
     ...(kind === "CUSTOMER" && p.group ? { groupName: p.group } : {}),
   };
@@ -163,11 +164,11 @@ export async function PartyDetailPage({ kind, id, searchParams }: { kind: PartyK
 
   const [opening, byType, bal, agingRows] = await Promise.all([
     partyOpening(ctx.business.id, kind, party.accountId),
-    prisma.$queryRaw<{ type: string; debit: string; credit: string }[]>`
+    rawRows<{ type: string; debit: string; credit: string }>(prisma, sql`
       SELECT v."type"::text AS type, SUM(je."debit")::text AS debit, SUM(je."credit")::text AS credit
       FROM "JournalEntry" je JOIN "Voucher" v ON v."id" = je."voucherId"
       WHERE je."businessId" = ${ctx.business.id} AND je."accountId" = ${party.accountId}
-      GROUP BY v."type"`,
+      GROUP BY v."type"`),
     balancesBefore(ctx.business.id, undefined, [party.accountId]),
     partyAging(ctx.business.id, kind, today, [party.accountId]),
   ]);

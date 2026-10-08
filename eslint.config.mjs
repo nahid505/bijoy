@@ -7,7 +7,7 @@ const compat = new FlatCompat({ baseDirectory: __dirname });
 
 const eslintConfig = [
   {
-    ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "coverage/**"],
+    ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "dist/**", "next-env.d.ts", "coverage/**"],
   },
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   {
@@ -17,6 +17,11 @@ const eslintConfig = [
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
       ],
     },
+  },
+  {
+    // CommonJS scripts that run on the server as plain Node.js (cPanel startup file and tools)
+    files: ["deploy/**/*.js", "deploy/**/*.cjs"],
+    rules: { "@typescript-eslint/no-require-imports": "off" },
   },
 ];
 

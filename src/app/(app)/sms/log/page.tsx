@@ -10,6 +10,7 @@ import { can, requirePermission } from "@/server/auth";
 import { pageOf, readParams, totalPages, type SearchParams } from "@/server/params";
 import { retrySmsAction } from "@/server/actions/sms";
 import { SmsStatusBadge, SmsTabs } from "../sms-ui";
+import { ci } from "@/lib/dialect";
 
 export const metadata: Metadata = { title: "এসএমএস লগ" };
 const STATUSES = ["QUEUED", "SENDING", "SENT", "DELIVERED", "FAILED"] as const;
@@ -24,7 +25,7 @@ export default async function SmsLogPage({ searchParams }: { searchParams: Searc
     ...(STATUSES.includes(p.status as SmsStatus) ? { status: p.status as SmsStatus } : {}),
     ...(p.event && SMS_EVENT[p.event] ? { event: p.event } : {}),
     ...(p.batch ? { batchId: p.batch } : {}),
-    ...(q ? { OR: [{ recipient: { contains: q } }, { body: { contains: q, mode: "insensitive" } }, { voucherNo: { contains: q, mode: "insensitive" } }, { customer: { name: { contains: q, mode: "insensitive" } } }, { supplier: { name: { contains: q, mode: "insensitive" } } }] } : {}),
+    ...(q ? { OR: [{ recipient: { contains: q } }, { body: ci(q) }, { voucherNo: ci(q) }, { customer: { name: ci(q) } }, { supplier: { name: ci(q) } }] } : {}),
   };
   const [rows, total] = await Promise.all([
     prisma.smsMessage.findMany({ where, orderBy: { createdAt: "desc" }, skip, take, include: { customer: { select: { id: true, name: true } }, supplier: { select: { id: true, name: true } }, createdBy: { select: { name: true } } } }),

@@ -11,6 +11,9 @@ import { revokeAllSessions } from "../services/sessions";
 import { audit } from "../audit";
 import { formToObject, guard, parseForm, toResult, UserError, type ActionState } from "../action-utils";
 import { createBusiness } from "../services/bootstrap";
+import { assertUserSlot } from "../services/subscriptions";
+import { notifyBusiness } from "../services/billing-notify";
+import { listHas, strList } from "@/lib/dialect";
 
 const MAX_LOGO_BYTES = 200 * 1024;
 const LOGO_TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
@@ -72,7 +75,7 @@ export async function saveBusinessAction(_prev: ActionState, fd: FormData): Prom
 
 async function ownerCount(businessId: string, excludeUserId?: string) {
   return prisma.membership.count({
-    where: { businessId, isActive: true, user: { isActive: true }, role: { permissions: { has: "*" } }, ...(excludeUserId ? { userId: { not: excludeUserId } } : {}) },
+    where: { businessId, isActive: true, user: { isActive: true }, role: { permissions: listHas("*") }, ...(excludeUserId ? { userId: { not: excludeUserId } } : {}) },
   });
 }
 
@@ -83,15 +86,15 @@ export async function saveMemberAction(userId: string | null, _prev: ActionState
     const input = memberSchema.parse({ ...formToObject(fd), isActive: fd.get("isActive") === "on" });
     const role = await prisma.role.findFirst({ where: { id: input.roleId, businessId } });
     if (!role) throw new UserError("রোল পাওয়া যায়নি");
-    if (role.permissions.includes("*") && !ctx.permissions.includes("*")) throw new UserError("শুধু মালিক অন্য কাউকে মালিক রোল দিতে পারেন");
+    if (strList(role.permissions).includes("*") && !ctx.permissions.includes("*")) throw new UserError("শুধু মালিক অন্য কাউকে মালিক রোল দিতে পারেন");
 
     if (userId) {
       const membership = await prisma.membership.findUnique({ where: { userId_businessId: { userId, businessId } }, include: { role: true } });
       if (!membership) throw new UserError("ব্যবহারকারী এই ব্যবসার সদস্য নন");
-      if (membership.role.permissions.includes("*") && !ctx.permissions.includes("*")) throw new UserError("মালিকের তথ্য শুধু মালিক পরিবর্তন করতে পারেন");
+      if (strList(membership.role.permissions).includes("*") && !ctx.permissions.includes("*")) throw new UserError("মালিকের তথ্য শুধু মালিক পরিবর্তন করতে পারেন");
       if (userId === ctx.user.id && !input.isActive) throw new UserError("নিজেকে নিষ্ক্রিয় করা যাবে না");
-      const losesOwner = !input.isActive || !role.permissions.includes("*");
-      if (membership.role.permissions.includes("*") && losesOwner && (await ownerCount(businessId, userId)) === 0) {
+      const losesOwner = !input.isActive || !strList(role.permissions).includes("*");
+      if (strList(membership.role.permissions).includes("*") && losesOwner && (await ownerCount(businessId, userId)) === 0) {
         throw new UserError("কমপক্ষে একজন সক্রিয় মালিক থাকতে হবে");
       }
       // Login credentials are global. If the person also belongs to another business, only they may
@@ -102,6 +105,7 @@ export async function saveMemberAction(userId: string | null, _prev: ActionState
       if (elsewhere > 0 && credentialsChanged && userId !== ctx.user.id) {
         throw new UserError("এই ব্যবহারকারী অন্য ব্যবসারও সদস্য — নাম, ইমেইল বা পাসওয়ার্ড শুধু তিনি নিজে পরিবর্তন করতে পারবেন");
       }
+      if (input.isActive && !membership.isActive) await assertUserSlot(businessId); // re-activation counts against the plan limit
       await prisma.$transaction([
         prisma.user.update({
           where: { id: userId },
@@ -124,7 +128,9 @@ export async function saveMemberAction(userId: string | null, _prev: ActionState
       }
       const exists = await prisma.membership.findUnique({ where: { userId_businessId: { userId: user.id, businessId } } });
       if (exists) throw new UserError("এই ব্যবহারকারী ইতিমধ্যে এই ব্যবসার সদস্য");
+      if (input.isActive) await assertUserSlot(businessId); // plan user limit
       await prisma.membership.create({ data: { userId: user.id, businessId, roleId: role.id, isActive: input.isActive } });
+      await notifyBusiness(prisma, businessId, { kind: "USER_ADDED", key: `user:${user.id}`, title: `নতুন ব্যবহারকারী: ${input.name}`, message: `${input.email} — রোল ${role.name}`, link: "/users" });
       await audit({ businessId, userId: ctx.user.id, action: "CREATE", entity: "Member", entityId: user.id, details: { email: input.email, role: role.name } });
     }
   });
@@ -140,8 +146,8 @@ export async function removeMemberAction(userId: string, _prev: ActionState, _fd
     if (userId === ctx.user.id) throw new UserError("নিজেকে সরানো যাবে না");
     const m = await prisma.membership.findUnique({ where: { userId_businessId: { userId, businessId } }, include: { role: true } });
     if (!m) throw new UserError("সদস্য পাওয়া যায়নি");
-    if (m.role.permissions.includes("*") && !ctx.permissions.includes("*")) throw new UserError("মালিককে শুধু মালিক সরাতে পারেন");
-    if (m.role.permissions.includes("*") && (await ownerCount(businessId, userId)) === 0) throw new UserError("কমপক্ষে একজন সক্রিয় মালিক থাকতে হবে");
+    if (strList(m.role.permissions).includes("*") && !ctx.permissions.includes("*")) throw new UserError("মালিককে শুধু মালিক সরাতে পারেন");
+    if (strList(m.role.permissions).includes("*") && (await ownerCount(businessId, userId)) === 0) throw new UserError("কমপক্ষে একজন সক্রিয় মালিক থাকতে হবে");
     await prisma.membership.delete({ where: { id: m.id } });
     await audit({ businessId, userId: ctx.user.id, action: "DELETE", entity: "Member", entityId: userId });
   });

@@ -25,6 +25,8 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package.json tsconfig.json ./
 COPY prisma ./prisma
 COPY src ./src
+# operator scripts, e.g.  docker compose run --rm migrate npx tsx --conditions=react-server scripts/super-admin.ts grant you@example.com
+COPY scripts ./scripts
 RUN npx prisma generate
 CMD ["sh", "-c", "npx prisma migrate deploy && npx tsx --conditions=react-server prisma/seed.ts"]
 

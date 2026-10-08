@@ -6,12 +6,13 @@ import { balancesBefore, balancesByKind, sumBalances } from "./ledger";
 import { profitAndLoss } from "./report";
 import { partyAging } from "./aging";
 import { expirySummary } from "./expiry";
+import { rawRows, sql } from "@/lib/dialect";
 
 const DAY = 86_400_000;
 
 /** Collections (customer credits from receipts & sales, plus walk-in sales) grouped by day. */
 async function collectionsByDay(businessId: string, gte: Date, lt: Date) {
-  const rows = await prisma.$queryRaw<{ d: Date; amount: string }[]>`
+  const rows = await rawRows<{ d: Date; amount: string }>(prisma, sql`
     SELECT d, SUM(amount)::text AS amount FROM (
       SELECT je."date" AS d, je."credit" AS amount
       FROM "JournalEntry" je JOIN "Account" a ON a."id" = je."accountId" JOIN "Voucher" v ON v."id" = je."voucherId"
@@ -20,15 +21,15 @@ async function collectionsByDay(businessId: string, gte: Date, lt: Date) {
       UNION ALL
       SELECT v."date", v."amount" FROM "Voucher" v
       WHERE v."businessId" = ${businessId} AND v."type" = 'SALES' AND v."partyAccountId" IS NULL AND v."date" >= ${gte} AND v."date" < ${lt}
-    ) x GROUP BY d`;
+    ) x GROUP BY d`);
   return rows.map((r) => ({ key: new Date(r.d).toISOString().slice(0, 10), amount: num(r.amount) }));
 }
 
 async function salesByDay(businessId: string, gte: Date, lt: Date) {
-  const rows = await prisma.$queryRaw<{ d: Date; type: string; amount: string }[]>`
+  const rows = await rawRows<{ d: Date; type: string; amount: string }>(prisma, sql`
     SELECT "date" AS d, "type"::text AS type, SUM("amount")::text AS amount FROM "Voucher"
     WHERE "businessId" = ${businessId} AND "date" >= ${gte} AND "date" < ${lt} AND "type" IN ('SALES', 'SALES_RETURN')
-    GROUP BY 1, 2`;
+    GROUP BY 1, 2`);
   const map = new Map<string, number>();
   for (const r of rows) {
     const k = new Date(r.d).toISOString().slice(0, 10);
@@ -54,12 +55,12 @@ export async function dashboardData(businessId: string, fiscalStartMonth: number
     balancesByKind(businessId, ["SUPPLIER"]),
     prisma.voucher.groupBy({ by: ["type"], where: { businessId, date: todayRange, type: { in: ["SALES", "PURCHASE", "SALES_RETURN", "PURCHASE_RETURN"] } }, _sum: { amount: true }, _count: true }),
     profitAndLoss(businessId, todayRange),
-    prisma.$queryRaw<{ nature: string; amount: string }[]>`
+    rawRows<{ nature: string; amount: string }>(prisma, sql`
       SELECT a."nature"::text AS nature, SUM(je."debit" - je."credit")::text AS amount
       FROM "JournalEntry" je JOIN "Account" a ON a."id" = je."accountId" JOIN "AccountGroup" g ON g."id" = a."groupId"
       WHERE je."businessId" = ${businessId} AND je."date" >= ${todayRange.gte} AND je."date" < ${todayRange.lt}
         AND a."nature" IN ('INCOME', 'EXPENSE') AND g."isDirect" = false
-      GROUP BY a."nature"`,
+      GROUP BY a."nature"`),
     collectionsByDay(businessId, todayRange.gte!, todayRange.lt!),
     prisma.account.findFirst({ where: { businessId, systemKey: "INVENTORY" }, select: { id: true } }),
   ]);
@@ -71,18 +72,18 @@ export async function dashboardData(businessId: string, fiscalStartMonth: number
   const [recentSales, recentPayments, lowStock, aging, sales30, coll30, salesFy, collFy, expiring] = await Promise.all([
     prisma.voucher.findMany({ where: { businessId, type: "SALES" }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 7, include: { partyAccount: { select: { name: true } } } }),
     prisma.voucher.findMany({ where: { businessId, type: { in: ["RECEIPT", "PAYMENT"] } }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 7, include: { partyAccount: { select: { name: true } }, cashAccount: { select: { name: true } } } }),
-    prisma.$queryRaw<{ id: string; name: string; stock: string; minStock: string; unit: string }[]>`
+    rawRows<{ id: string; name: string; stock: string; minStock: string; unit: string }>(prisma, sql`
       SELECT p."id", p."name", p."stock"::text, p."minStock"::text, u."name" AS unit
       FROM "Product" p JOIN "Unit" u ON u."id" = p."unitId"
       WHERE p."businessId" = ${businessId} AND p."isActive" = true AND (p."stock" <= p."minStock" OR p."stock" <= 0)
-      ORDER BY p."stock" ASC LIMIT 7`,
+      ORDER BY p."stock" ASC LIMIT 7`),
     partyAging(businessId, "CUSTOMER", todayDate),
     salesByDay(businessId, d30, todayRange.lt!),
     collectionsByDay(businessId, d30, todayRange.lt!),
-    prisma.$queryRaw<{ month: Date; type: string; amount: string }[]>`
+    rawRows<{ month: Date; type: string; amount: string }>(prisma, sql`
       SELECT date_trunc('month', "date") AS month, "type"::text AS type, SUM("amount")::text AS amount FROM "Voucher"
       WHERE "businessId" = ${businessId} AND "date" >= ${fyStart} AND "date" < ${fyEnd} AND "type" IN ('SALES', 'SALES_RETURN')
-      GROUP BY 1, 2`,
+      GROUP BY 1, 2`),
     collectionsByDay(businessId, fyStart, fyEnd),
     expirySummary(businessId, todayDate),
   ]);

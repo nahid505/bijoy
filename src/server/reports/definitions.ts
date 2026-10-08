@@ -9,6 +9,7 @@ import { listAccounts, partySummaries, statement } from "../services/ledger";
 import { balanceSheet, profitAndLoss, trialBalance } from "../services/report";
 import type { ReportDef, ReportParams, ReportResult, ReportRow } from "./types";
 import type { AppContext } from "../auth";
+import { ci } from "@/lib/dialect";
 
 const typeLabel = (t: VoucherType) => VOUCHER_TYPES[t as VoucherTypeKey].label;
 const periodText = (from: string, to: string) => `${formatDate(from)} — ${formatDate(to)}`;
@@ -78,7 +79,7 @@ async function partyReport(ctx: AppContext, p: ReportParams, kind: "CUSTOMER" | 
   const { from, to, range } = reportPeriod(p, ctx.business.fiscalYearStartMonth);
   const cur = ctx.business.currencySymbol;
   const q = p.q?.trim();
-  const where = { businessId: ctx.business.id, ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" as const } }, { mobile: { contains: q } }] } : {}) };
+  const where = { businessId: ctx.business.id, ...(q ? { OR: [{ name: ci(q) }, { mobile: { contains: q } }] } : {}) };
   const parties =
     kind === "CUSTOMER"
       ? await prisma.customer.findMany({ where, orderBy: { name: "asc" }, select: { id: true, name: true, mobile: true, accountId: true } })
@@ -121,7 +122,7 @@ async function tradeRegister(ctx: AppContext, p: ReportParams, types: ["SALES", 
     businessId: ctx.business.id,
     type: { in: types },
     date: range,
-    ...(q ? { OR: [{ voucherNo: { contains: q, mode: "insensitive" } }, { partyAccount: { name: { contains: q, mode: "insensitive" } } }, { reference: { contains: q, mode: "insensitive" } }] } : {}),
+    ...(q ? { OR: [{ voucherNo: ci(q) }, { partyAccount: { name: ci(q) } }, { reference: ci(q) }] } : {}),
   };
   const vouchers = await prisma.voucher.findMany({ where, orderBy: [{ date: "asc" }, { createdAt: "asc" }], take: 5000, include: { partyAccount: { select: { name: true } } } });
   const t = { subtotal: 0, discount: 0, vat: 0, total: 0, paid: 0, returns: 0 };
@@ -189,7 +190,7 @@ export const REPORTS: ReportDef[] = [
           businessId: ctx.business.id,
           date: range,
           ...(type ? { type } : {}),
-          ...(q ? { OR: [{ voucherNo: { contains: q, mode: "insensitive" } }, { narration: { contains: q, mode: "insensitive" } }, { reference: { contains: q, mode: "insensitive" } }, { partyAccount: { name: { contains: q, mode: "insensitive" } } }] } : {}),
+          ...(q ? { OR: [{ voucherNo: ci(q) }, { narration: ci(q) }, { reference: ci(q) }, { partyAccount: { name: ci(q) } }] } : {}),
         },
         orderBy: [{ date: "asc" }, { createdAt: "asc" }],
         take: 1000,
@@ -385,7 +386,7 @@ export const REPORTS: ReportDef[] = [
       const q = p.q?.trim();
       const warehouseId = p.warehouseId || undefined;
       const products = await prisma.product.findMany({
-        where: { businessId: ctx.business.id, ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { code: { contains: q, mode: "insensitive" } }, { barcode: { contains: q } }] } : {}) },
+        where: { businessId: ctx.business.id, ...(q ? { OR: [{ name: ci(q) }, { code: ci(q) }, { barcode: { contains: q } }] } : {}) },
         orderBy: { name: "asc" },
         include: { unit: { select: { name: true } } },
       });

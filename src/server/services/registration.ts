@@ -58,10 +58,10 @@ export async function registerAccount(db: PrismaClient, input: RegistrationInput
     return await db.$transaction(
       async (tx) => {
         const user = await tx.user.create({ data: { name: input.ownerName, mobile: input.mobile, email: input.email, passwordHash } });
-        const business = await createBusiness(tx, { name: input.businessName, ownerUserId: user.id, mobile: input.mobile });
+        const business = await createBusiness(tx, { name: input.businessName, ownerUserId: user.id, mobile: input.mobile, address: input.address, businessType: input.businessType, planCode: input.plan });
         if (input.email) await tx.business.update({ where: { id: business.id }, data: { email: input.email } });
         await tx.auditLog.create({
-          data: { businessId: business.id, userId: user.id, action: "CREATE", entity: "Registration", entityId: business.id, ipAddress: meta.clientIp, details: { business: input.businessName, mobile: input.mobile } },
+          data: { businessId: business.id, userId: user.id, action: "CREATE", entity: "Registration", entityId: business.id, ipAddress: meta.clientIp, details: { business: input.businessName, mobile: input.mobile, businessType: input.businessType, plan: input.plan } },
         });
         return { user: { id: user.id, name: user.name, mobile: user.mobile, email: user.email }, business: { id: business.id, name: business.name } };
       },

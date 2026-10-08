@@ -1,5 +1,6 @@
 import "server-only";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
+import { dbProvider } from "./dialect";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
@@ -25,6 +26,8 @@ export const prisma =
   new PrismaClient({
     datasourceUrl: withPoolDefaults(process.env.DATABASE_URL),
     log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+    // MySQL / MariaDB default to REPEATABLE READ (gap locks → more deadlocks); use PostgreSQL's default
+    ...(dbProvider(process.env.DATABASE_URL) === "mysql" ? { transactionOptions: { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted } } : {}),
   });
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;

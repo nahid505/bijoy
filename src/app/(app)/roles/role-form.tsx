@@ -2,16 +2,20 @@
 
 import Link from "next/link";
 import { PERMISSION_GROUPS } from "@/lib/permissions";
+import { featureDef, ownerFeature } from "@/lib/features";
 import { ActionForm, Field, SubmitButton, type FormAction } from "@/components/forms";
 
 export function RoleForm({
   action,
   defaults,
   readOnly,
+  offFeatures = [],
 }: {
   action: FormAction;
   defaults?: { name: string; description: string | null; permissions: string[] };
   readOnly?: boolean;
+  /** features switched off in this business: their permissions are shown but cannot be changed */
+  offFeatures?: string[];
 }) {
   const all = defaults?.permissions.includes("*") ?? false;
   return (
@@ -33,19 +37,21 @@ export function RoleForm({
             <fieldset key={g.label} className="rounded-lg border border-slate-200 p-4">
               <legend className="px-1 text-sm font-semibold text-slate-700">{g.label}</legend>
               <div className="space-y-2">
-                {g.permissions.map((p) => (
-                  <label key={p.key} className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      name="permissions"
-                      value={p.key}
-                      defaultChecked={all || defaults?.permissions.includes(p.key)}
-                      disabled={readOnly}
-                    />
-                    {p.label}
-                    <code className="ml-auto text-xs text-slate-400">{p.key}</code>
-                  </label>
-                ))}
+                {g.permissions.map((p) => {
+                  const owner = ownerFeature(p.key);
+                  const off = !!owner && offFeatures.includes(owner);
+                  const checked = all || !!defaults?.permissions.includes(p.key);
+                  return (
+                    <label key={p.key} className={`flex items-center gap-2 text-sm ${off ? "text-slate-400" : ""}`}>
+                      <input type="checkbox" name={off ? undefined : "permissions"} value={p.key} defaultChecked={checked} disabled={readOnly || off} />
+                      {/* a grant of a switched-off feature is kept when the role is saved */}
+                      {off && checked && !all && <input type="hidden" name="permissions" value={p.key} />}
+                      {p.label}
+                      {off && <span className="rounded bg-slate-100 px-1 text-[11px] text-slate-500" title={featureDef(owner!).nameBn}>ফিচার বন্ধ</span>}
+                      <code className="ml-auto text-xs text-slate-400">{p.key}</code>
+                    </label>
+                  );
+                })}
               </div>
             </fieldset>
           ))}

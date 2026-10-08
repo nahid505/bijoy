@@ -14,6 +14,7 @@ import { normalizeBdMobile } from "@/lib/mobile";
 import { MAX_SMS_PARTS, smsSegments } from "@/lib/sms-text";
 import { createProvider, platformConfig, SmsProviderError, type ProviderConfig } from "./providers";
 import { decryptSecret } from "./secret";
+import { isMySql, rawExec, rawRows, sql } from "@/lib/dialect";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -110,9 +111,9 @@ async function deliver(db: Db, m: SmsMessage, now: Date) {
 export async function processSmsQueue(db: PrismaClient, opts: { limit?: number; now?: Date } = {}) {
   const now = opts.now ?? new Date();
   // a crash while SENDING leaves rows stuck: give them back to the queue after 10 minutes
-  await db.$executeRaw`UPDATE "SmsMessage" SET "status" = 'QUEUED', "updatedAt" = ${now}
-    WHERE "status" = 'SENDING' AND "updatedAt" < ${new Date(now.getTime() - 10 * 60_000)}`;
-  const claimed = await db.$queryRaw<SmsMessage[]>`
+  await rawExec(db, sql`UPDATE "SmsMessage" SET "status" = 'QUEUED', "updatedAt" = ${now}
+    WHERE "status" = 'SENDING' AND "updatedAt" < ${new Date(now.getTime() - 10 * 60_000)}`);
+  const claimed = isMySql() ? await claimDueMySql(db, now, opts.limit ?? 50) : await rawRows<SmsMessage>(db, sql`
     UPDATE "SmsMessage" SET "status" = 'SENDING', "attempts" = "attempts" + 1, "updatedAt" = ${now}
     WHERE "id" IN (
       SELECT "id" FROM "SmsMessage"
@@ -121,7 +122,7 @@ export async function processSmsQueue(db: PrismaClient, opts: { limit?: number; 
       LIMIT ${opts.limit ?? 50}
       FOR UPDATE SKIP LOCKED
     )
-    RETURNING *`;
+    RETURNING *`);
   const result = { sent: 0, delivered: 0, retry: 0, failed: 0 };
   for (const m of claimed) {
     const r = await deliver(db, m, now);
@@ -133,12 +134,32 @@ export async function processSmsQueue(db: PrismaClient, opts: { limit?: number; 
   return { claimed: claimed.length, ...result };
 }
 
+/** MySQL / MariaDB: claim due rows (SKIP LOCKED), mark them SENDING and read them back — no UPDATE … RETURNING. */
+async function claimDueMySql(db: PrismaClient, now: Date, limit: number): Promise<SmsMessage[]> {
+  return db.$transaction(async (tx) => {
+    const ids = (await rawRows<{ id: string }>(tx, sql`
+      SELECT "id" FROM "SmsMessage"
+      WHERE "status" = 'QUEUED' AND "nextAttemptAt" <= ${now}
+      ORDER BY "priority" DESC, "nextAttemptAt" ASC
+      LIMIT ${limit}
+      FOR UPDATE SKIP LOCKED`)).map((r) => r.id);
+    if (!ids.length) return [];
+    await tx.smsMessage.updateMany({ where: { id: { in: ids }, status: "QUEUED" }, data: { status: "SENDING", attempts: { increment: 1 }, updatedAt: now } });
+    return tx.smsMessage.findMany({ where: { id: { in: ids }, status: "SENDING" } });
+  });
+}
+
 /** Sends one specific queued message now (e.g. the admin's test SMS), regardless of any backlog. */
 export async function processSmsMessage(db: PrismaClient, id: string, now = new Date()) {
-  const claimed = await db.$queryRaw<SmsMessage[]>`
+  if (isMySql()) {
+    const moved = await db.smsMessage.updateMany({ where: { id, status: "QUEUED" }, data: { status: "SENDING", attempts: { increment: 1 }, updatedAt: now } });
+    const m = moved.count ? await db.smsMessage.findUnique({ where: { id } }) : null;
+    return m ? deliver(db, m, now) : null;
+  }
+  const claimed = await rawRows<SmsMessage>(db, sql`
     UPDATE "SmsMessage" SET "status" = 'SENDING', "attempts" = "attempts" + 1, "updatedAt" = ${now}
     WHERE "id" = ${id} AND "status" = 'QUEUED'
-    RETURNING *`;
+    RETURNING *`);
   return claimed[0] ? deliver(db, claimed[0], now) : null;
 }
 

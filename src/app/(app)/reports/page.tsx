@@ -3,6 +3,7 @@ import Link from "next/link";
 import { PageHeader } from "@/components/ui";
 import { can, requirePermission } from "@/server/auth";
 import { REPORTS } from "@/server/reports/registry";
+import { featureForPath } from "@/lib/features";
 
 export const metadata: Metadata = { title: "রিপোর্ট" };
 
@@ -18,7 +19,10 @@ const SECTIONS = [
 export default async function ReportsIndex() {
   const ctx = await requirePermission("reports:view");
   // each report has its own permission (payroll reports need payroll:view)
-  const sections = SECTIONS.map((s) => ({ ...s, slugs: s.slugs.filter((slug) => can(ctx, REPORTS.find((x) => x.slug === slug)!.permission)) })).filter((s) => s.slugs.length);
+  const sections = SECTIONS.map((s) => ({ ...s, slugs: s.slugs.filter((slug) => {
+    const gate = featureForPath(`/reports/${slug}`);
+    return can(ctx, REPORTS.find((x) => x.slug === slug)!.permission) && (!gate || ctx.features.includes(gate));
+  }) })).filter((s) => s.slugs.length);
   return (
     <>
       <PageHeader title="রিপোর্ট" description="সকল রিপোর্ট সরাসরি হিসাবের জার্নাল এন্ট্রি থেকে তৈরি — তারিখ, খোঁজ, প্রিন্ট/PDF ও এক্সেল এক্সপোর্টসহ" />

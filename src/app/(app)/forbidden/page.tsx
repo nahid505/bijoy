@@ -1,14 +1,25 @@
 import Link from "next/link";
+import { featureDef, isFeatureKey } from "@/lib/features";
+import { can, requireContext } from "@/server/auth";
+import { readParams, type SearchParams } from "@/server/params";
 
-export default function ForbiddenPage() {
+export default async function ForbiddenPage({ searchParams }: { searchParams: SearchParams }) {
+  const { feature } = await readParams(searchParams);
+  const f = feature && isFeatureKey(feature) ? featureDef(feature) : null;
+  const ctx = f ? await requireContext() : null;
   return (
     <div className="card mx-auto mt-16 max-w-lg p-10 text-center">
-      <p className="text-5xl">🔒</p>
-      <h1 className="mt-4 text-xl font-bold text-slate-800">প্রবেশাধিকার নেই</h1>
-      <p className="mt-2 text-sm text-slate-500">এই পৃষ্ঠা দেখার অনুমতি আপনার রোলে নেই। প্রয়োজনে অ্যাডমিনের সাথে যোগাযোগ করুন।</p>
-      <Link prefetch={false} href="/dashboard" className="btn-primary mt-6">
-        ড্যাশবোর্ডে ফিরুন
-      </Link>
+      <p className="text-5xl">{f ? f.icon : "🔒"}</p>
+      <h1 className="mt-4 text-xl font-bold text-slate-800">{f ? `"${f.nameBn}" ফিচারটি বন্ধ আছে` : "প্রবেশাধিকার নেই"}</h1>
+      <p className="mt-2 text-sm text-slate-500">
+        {f
+          ? "এই ব্যবসায় ফিচারটি চালু নেই। সংরক্ষিত তথ্য মুছে যায়নি — ফিচার চালু করলে আবার দেখা যাবে।"
+          : "এই পৃষ্ঠা দেখার অনুমতি আপনার রোলে নেই। প্রয়োজনে অ্যাডমিনের সাথে যোগাযোগ করুন।"}
+      </p>
+      <div className="mt-6 flex justify-center gap-2">
+        <Link prefetch={false} href="/dashboard" className="btn-primary">ড্যাশবোর্ডে ফিরুন</Link>
+        {ctx && can(ctx, "features:manage") && <Link prefetch={false} href="/features" className="btn-secondary">ফিচার ব্যবস্থাপনা</Link>}
+      </div>
     </div>
   );
 }

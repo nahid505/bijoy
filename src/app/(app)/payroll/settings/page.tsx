@@ -9,6 +9,7 @@ import { deleteDepartmentAction, saveDepartmentAction, savePayrollSettingsAction
 import { accountOptions } from "@/server/voucher-editor";
 import { AUTO_COMPONENTS } from "@/server/services/payroll";
 import { DepartmentManager, PayrollSettingsForm } from "../payroll-forms";
+import { intList } from "@/lib/dialect";
 
 export const metadata: Metadata = { title: "বেতন সেটিং" };
 
@@ -35,7 +36,7 @@ export default async function PayrollSettingsPage() {
           known={known}
           currency={cur}
           defaults={{
-            workingDaysMode: s.workingDaysMode, fixedWorkingDays: s.fixedWorkingDays, weeklyOffDays: s.weeklyOffDays, hoursPerDay: num(s.hoursPerDay), overtimeMultiplier: num(s.overtimeMultiplier),
+            workingDaysMode: s.workingDaysMode, fixedWorkingDays: s.fixedWorkingDays, weeklyOffDays: intList(s.weeklyOffDays, [5]), hoursPerDay: num(s.hoursPerDay), overtimeMultiplier: num(s.overtimeMultiplier),
             lateDaysPerAbsence: s.lateDaysPerAbsence, absenceBasis: s.absenceBasis, salaryPayableAccountId: s.salaryPayableAccountId ?? "", advanceAccountId: s.advanceAccountId ?? "",
           }}
         />

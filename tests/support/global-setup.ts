@@ -5,5 +5,7 @@ export default function setup() {
   const url = process.env.TEST_DATABASE_URL;
   if (!url) return;
   if (/\/bijoy_lenden\?/.test(url)) throw new Error("TEST_DATABASE_URL must not point at the development database");
-  execSync("npx prisma migrate deploy", { stdio: "pipe", env: { ...process.env, DATABASE_URL: url } });
+  // MySQL / MariaDB test database: the generated MySQL schema (run through npm run test:mysql)
+  const schema = /^mysql:/i.test(url) ? " --schema prisma/mysql/schema.prisma" : "";
+  execSync(`npx prisma migrate deploy${schema}`, { stdio: "pipe", env: { ...process.env, DATABASE_URL: url } });
 }

@@ -340,7 +340,10 @@
         "sms:view",
         "sms:send",
         "sms:bulk",
-        "sms:manage"
+        "sms:manage",
+        "features:view",
+        "features:manage",
+        "billing:view"
       ]
     },
     {
@@ -437,6 +440,42 @@
         "accounts:view",
         "inventory:view",
         "customers:view",
+        "suppliers:view"
+      ]
+    },
+    {
+      "name": "এইচআর (HR)",
+      "description": "কর্মচারী, হাজিরা ও বেতন",
+      "permissions": [
+        "dashboard:view",
+        "payroll:view",
+        "payroll:manage",
+        "payroll:attendance",
+        "payroll:process"
+      ]
+    },
+    {
+      "name": "ক্যাশিয়ার (Cashier)",
+      "description": "পস বিক্রয় ও টাকা আদায়",
+      "permissions": [
+        "dashboard:view",
+        "sales:view",
+        "sales:create",
+        "customers:view",
+        "vouchers:view",
+        "vouchers:create",
+        "inventory:view"
+      ]
+    },
+    {
+      "name": "ইনভেন্টরি (Inventory)",
+      "description": "পণ্য, স্টক, ব্যাচ ও ক্রয় দেখা",
+      "permissions": [
+        "dashboard:view",
+        "inventory:view",
+        "inventory:manage",
+        "stock:adjust",
+        "purchases:view",
         "suppliers:view"
       ]
     }

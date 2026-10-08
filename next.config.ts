@@ -13,6 +13,8 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
+  // business backup restore uploads files up to 50 MB through a server action (default limit: 1 MB)
+  experimental: { serverActions: { bodySizeLimit: "55mb" } },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

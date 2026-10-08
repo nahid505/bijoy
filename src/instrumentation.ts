@@ -2,6 +2,8 @@
 // at build time, so the Node-only scheduler (database, crypto) is never bundled for the Edge runtime.
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    const { logConfigIssues } = await import("./server/config-check");
+    logConfigIssues();
     const { startScheduler } = await import("./server/scheduler");
     startScheduler();
   }

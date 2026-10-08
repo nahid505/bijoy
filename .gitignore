@@ -11,10 +11,21 @@ next-env.d.ts
 # testing
 coverage/
 
-# env files (secrets never committed)
+# env files (secrets never committed) — every .env variant except the example
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+
+# keys / certificates / database dumps (prisma/migrations/*.sql stay tracked)
+*.pem
+*.key
+*.p12
+*.dump
+/*.sql
+
+# deployment packages (built by npm run package:cpanel)
+dist/
+*.zip
 
 # logs
 npm-debug.log*

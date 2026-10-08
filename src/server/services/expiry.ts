@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { round2, round3 } from "@/lib/calc";
 import { toBnDigits } from "@/lib/format";
 import { expiryStatus, matchesFilter, normalizeThresholds, type ExpiryFilter, type ExpiryStatus } from "@/lib/expiry";
+import { ci } from "@/lib/dialect";
 
 export type BatchSort = "expiry" | "product" | "quantity" | "batch";
 
@@ -48,7 +49,7 @@ export async function listBatches(businessId: string, today: Date, query: BatchQ
       ...(query.includeEmpty ? {} : { quantity: { gt: 0 } }),
       ...(query.productId ? { productId: query.productId } : {}),
       ...(q
-        ? { OR: [{ batchNo: { contains: q, mode: "insensitive" } }, { product: { name: { contains: q, mode: "insensitive" } } }, { product: { code: { contains: q, mode: "insensitive" } } }] }
+        ? { OR: [{ batchNo: ci(q) }, { product: { name: ci(q) } }, { product: { code: ci(q) } }] }
         : {}),
     },
     include: { product: { select: { name: true, code: true, avgCost: true, unit: { select: { name: true } } } }, supplier: { select: { name: true } } },

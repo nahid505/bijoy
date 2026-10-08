@@ -67,6 +67,27 @@ services:
       SMS_HTTP_URL: ${SMS_HTTP_URL:-}
       SMS_QUEUE_INTERVAL_SECONDS: ${SMS_QUEUE_INTERVAL_SECONDS:-15}
       REGISTRATION_OTP: ${REGISTRATION_OTP:-}
+      # SaaS billing (see .env.example). Gateway credentials live only here — never in code or the database.
+      APP_URL: ${APP_URL:-}
+      BILLING_WEBHOOK_SECRET: ${BILLING_WEBHOOK_SECRET:-}
+      BILLING_MOCK: ${BILLING_MOCK:-false}
+      BILLING_MOCK_ALLOW_PRODUCTION: ${BILLING_MOCK_ALLOW_PRODUCTION:-false}
+      BILLING_MANUAL: ${BILLING_MANUAL:-true}
+      BILLING_MANUAL_INSTRUCTIONS: ${BILLING_MANUAL_INSTRUCTIONS:-}
+      BKASH_BASE_URL: ${BKASH_BASE_URL:-}
+      BKASH_APP_KEY: ${BKASH_APP_KEY:-}
+      BKASH_APP_SECRET: ${BKASH_APP_SECRET:-}
+      BKASH_USERNAME: ${BKASH_USERNAME:-}
+      BKASH_PASSWORD: ${BKASH_PASSWORD:-}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-log}
+      EMAIL_HTTP_URL: ${EMAIL_HTTP_URL:-}
+      EMAIL_HTTP_TOKEN: ${EMAIL_HTTP_TOKEN:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      PLATFORM_NAME: ${PLATFORM_NAME:-}
+      PLATFORM_ADDRESS: ${PLATFORM_ADDRESS:-}
+      PLATFORM_BIN: ${PLATFORM_BIN:-}
+      PLATFORM_SUPPORT_PHONE: ${PLATFORM_SUPPORT_PHONE:-}
+      PLATFORM_SUPPORT_EMAIL: ${PLATFORM_SUPPORT_EMAIL:-}
     ports:
       # localhost only by default. To serve other machines use the "https" profile (recommended)
       # or set APP_BIND=0.0.0.0 on a trusted network.

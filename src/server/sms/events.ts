@@ -7,6 +7,8 @@ import { formatDate, formatNumber, formatQty, toBnDigits } from "@/lib/format";
 import { renderTemplate, SMS_EVENT, type SmsVars } from "@/lib/sms-text";
 import { partyAging } from "../services/aging";
 import { enqueueSms, kickSmsQueue } from "./queue";
+import { featureIsOn } from "../services/feature-state";
+import { intList, strList } from "@/lib/dialect";
 
 const money = (n: number) => formatNumber(round2(n)).replace(/\.০০$/, "");
 
@@ -22,7 +24,7 @@ export async function templateBody(db: PrismaClient, businessId: string, event: 
 /** Is this automatic event switched on for the business (and SMS enabled)? */
 async function eventEnabled(db: PrismaClient, businessId: string, event: string) {
   const s = await smsSettingsOf(db, businessId);
-  return !!s?.enabled && s.events.includes(event);
+  return !!s?.enabled && strList(s.events).includes(event);
 }
 
 async function ledgerBalance(db: PrismaClient, businessId: string, accountId: string) {
@@ -115,7 +117,7 @@ export async function dailySms(db: PrismaClient, businessId: string, today: Date
     const s = await smsSettingsOf(db, businessId);
     if (!s?.enabled) return out;
     const business = await db.business.findUniqueOrThrow({ where: { id: businessId }, select: { name: true } });
-    const on = (e: string) => s.events.includes(e);
+    const on = (e: string) => strList(s.events).includes(e);
     const date = formatDate(today);
     const isoDay = today.toISOString().slice(0, 10);
     // at most one reminder per party every N days (rolling window, not calendar buckets)
@@ -148,7 +150,7 @@ export async function dailySms(db: PrismaClient, businessId: string, today: Date
       }
     }
 
-    const recipients = await alertRecipients(db, businessId, s.alertMobiles);
+    const recipients = await alertRecipients(db, businessId, strList(s.alertMobiles));
     if (recipients.length && on("LOW_STOCK")) {
       // one SMS per low-stock episode: tied to the open LOW_STOCK notification
       const lows = await db.notification.findMany({ where: { businessId, kind: "LOW_STOCK", resolvedAt: null }, include: { product: { select: { name: true, unit: { select: { name: true } } } } } });
@@ -164,8 +166,8 @@ export async function dailySms(db: PrismaClient, businessId: string, today: Date
         }
       }
     }
-    if (recipients.length && (on("EXPIRY_WARNING") || on("EXPIRED"))) {
-      const bands = [...s.expiryAlertDays].filter((d) => d > 0).sort((x, y) => x - y);
+    if (recipients.length && (on("EXPIRY_WARNING") || on("EXPIRED")) && (await featureIsOn(businessId, "PRODUCT_EXPIRY"))) {
+      const bands = intList(s.expiryAlertDays, [90, 60, 30, 15, 7]).filter((d) => d > 0).sort((x, y) => x - y);
       const batches = await db.productBatch.findMany({
         where: { businessId, quantity: { gt: 0 }, expiryDate: { not: null } },
         include: { product: { select: { name: true, unit: { select: { name: true } } } } },

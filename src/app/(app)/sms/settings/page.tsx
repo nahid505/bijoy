@@ -8,6 +8,7 @@ import { requirePermission } from "@/server/auth";
 import { refreshSmsBalanceAction, saveSmsSettingsAction, sendTestSmsAction } from "@/server/actions/sms";
 import { availableProviders, platformConfig, PROVIDER_LABELS } from "@/server/sms/providers";
 import { SmsTabs } from "../sms-ui";
+import { intList, strList } from "@/lib/dialect";
 
 export const metadata: Metadata = { title: "এসএমএস সেটিং" };
 
@@ -20,8 +21,8 @@ const GROUPS = [
 export default async function SmsSettingsPage() {
   const ctx = await requirePermission("sms:manage");
   const s = await prisma.smsSettings.findUnique({ where: { businessId: ctx.business.id } });
-  const events = s?.events ?? ["SALE_INVOICE", "PAYMENT_RECEIVED", "SALES_RETURN", "INVOICE_CANCELLED", "DUE_REMINDER", "PURCHASE", "SUPPLIER_PAYMENT", "PURCHASE_RETURN", "LOW_STOCK", "EXPIRY_WARNING", "EXPIRED"];
-  const days = s?.expiryAlertDays ?? [90, 60, 30, 15, 7];
+  const events = s ? strList(s.events) : ["SALE_INVOICE", "PAYMENT_RECEIVED", "SALES_RETURN", "INVOICE_CANCELLED", "DUE_REMINDER", "PURCHASE", "SUPPLIER_PAYMENT", "PURCHASE_RETURN", "LOW_STOCK", "EXPIRY_WARNING", "EXPIRED"];
+  const days = s ? intList(s.expiryAlertDays, [90, 60, 30, 15, 7]) : [90, 60, 30, 15, 7];
   const platform = platformConfig();
   const providers = availableProviders().filter((p) => p !== "platform" || platform);
 
@@ -78,7 +79,7 @@ export default async function SmsSettingsPage() {
               <fieldset className="grid gap-4 border-t border-rule pt-4 sm:grid-cols-2">
                 <legend className="mb-2 text-sm font-semibold text-ink-800">সতর্কতা</legend>
                 <Field label="সতর্কতার মোবাইল নম্বর" name="alertMobiles" hint="কমা দিয়ে আলাদা করুন, সর্বোচ্চ ৫টি; খালি রাখলে ব্যবসার মোবাইলে যাবে">
-                  <input id="alertMobiles" name="alertMobiles" defaultValue={(s?.alertMobiles ?? []).join(", ")} className="input" placeholder="01XXXXXXXXX, 01XXXXXXXXX" />
+                  <input id="alertMobiles" name="alertMobiles" defaultValue={strList(s?.alertMobiles).join(", ")} className="input" placeholder="01XXXXXXXXX, 01XXXXXXXXX" />
                 </Field>
                 <Field label="বকেয়া স্মরণ — প্রতি কত দিনে একবার" name="dueReminderEveryDays">
                   <input id="dueReminderEveryDays" name="dueReminderEveryDays" type="number" min="1" max="90" defaultValue={s?.dueReminderEveryDays ?? 7} className="input-num" />

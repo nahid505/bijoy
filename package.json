@@ -17,6 +17,10 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx --conditions=react-server --env-file-if-exists=.env prisma/seed.ts",
     "db:studio": "prisma studio",
+    "super-admin": "tsx --conditions=react-server --env-file-if-exists=.env scripts/super-admin.ts",
+    "package:cpanel": "node scripts/package-cpanel.mjs",
+    "test:mysql": "node scripts/test-mysql.mjs",
+    "db:mysql:schema": "node scripts/mysql-schema.mjs && node scripts/mysql-migration.mjs",
     "postinstall": "prisma generate"
   },
   "dependencies": {

@@ -19,16 +19,22 @@ const TABS: { key: string; label: string; kinds?: NotificationKind[]; history?: 
   { key: "low", label: "কম স্টক", kinds: ["LOW_STOCK"] },
   { key: "overdue", label: "বকেয়া আদায়", kinds: ["OVERDUE"] },
   { key: "sms", label: "এসএমএস", kinds: ["SMS_BALANCE_LOW"] },
+  { key: "account", label: "সাবস্ক্রিপশন ও অ্যাকাউন্ট", kinds: ["TRIAL_STARTED", "SUBSCRIPTION_ACTIVATED", "SUBSCRIPTION_EXPIRING", "SUBSCRIPTION_EXPIRED", "PAYMENT_SUCCESS", "PAYMENT_FAILED", "PLAN_CHANGED", "USER_ADDED", "FEATURE_CHANGED"] },
   { key: "history", label: "ইতিহাস (সমাধান হয়েছে)", history: true },
 ];
 
-const KIND_LABEL: Record<NotificationKind, string> = { EXPIRED: "মেয়াদোত্তীর্ণ", EXPIRY_WARNING: "মেয়াদ সতর্কতা", LOW_STOCK: "কম স্টক", OVERDUE: "বকেয়া", SMS_BALANCE_LOW: "এসএমএস ব্যালেন্স" };
+const KIND_LABEL: Record<NotificationKind, string> = {
+  EXPIRED: "মেয়াদোত্তীর্ণ", EXPIRY_WARNING: "মেয়াদ সতর্কতা", LOW_STOCK: "কম স্টক", OVERDUE: "বকেয়া", SMS_BALANCE_LOW: "এসএমএস ব্যালেন্স",
+  SUBSCRIPTION_EXPIRING: "সাবস্ক্রিপশনের মেয়াদ", SUBSCRIPTION_EXPIRED: "সাবস্ক্রিপশন শেষ", PAYMENT_SUCCESS: "পেমেন্ট সফল", PAYMENT_FAILED: "পেমেন্ট ব্যর্থ",
+  PLAN_CHANGED: "প্ল্যান পরিবর্তন", USER_ADDED: "নতুন ব্যবহারকারী", FEATURE_CHANGED: "ফিচার পরিবর্তন",
+  TRIAL_STARTED: "রেজিস্ট্রেশন ও ট্রায়াল", SUBSCRIPTION_ACTIVATED: "সাবস্ক্রিপশন সক্রিয়",
+};
 const ICON = { CRITICAL: "🔴", WARNING: "🟠", INFO: "🔵" } as const;
 
 export default async function NotificationsPage({ searchParams }: { searchParams: SearchParams }) {
   const ctx = await requireContext();
   const p = await readParams(searchParams);
-  const kinds = visibleKinds((perm) => can(ctx, perm as never));
+  const kinds = visibleKinds((perm) => can(ctx, perm as never), ctx.features);
   const cur = ctx.business.currencySymbol;
   if (kinds.length === 0) {
     return (

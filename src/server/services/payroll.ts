@@ -15,6 +15,7 @@ import {
 } from "@/lib/payroll";
 import type { EmployeeInput, PayComponentInput, PayrollSettingsFormInput } from "@/lib/validation";
 import { assertAccounts, assertNotLocked, nextVoucherNo, writeEntries, type Ctx, type Tx } from "./accounting";
+import { intList, lockKey } from "@/lib/dialect";
 
 const TX = { timeout: 120_000, maxWait: 10_000 };
 
@@ -24,7 +25,7 @@ const isAuto = (key: string | null | undefined) => (AUTO_COMPONENTS as readonly 
 
 /** Business-wide serialisation of payroll writes (calculate / post / pay) — no double runs or payments. */
 async function lockPayroll(tx: Tx, businessId: string) {
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`payroll:${businessId}`}))`;
+  await lockKey(tx, `payroll:${businessId}`);
 }
 
 // ───────────────────────── setup (idempotent) ─────────────────────────
@@ -119,7 +120,7 @@ export async function payrollConfig(tx: Tx | typeof prisma, businessId: string):
   if (!s.salaryPayableAccountId || !s.advanceAccountId) throw new UserError("বেতন সেটিং-এ \"বেতন প্রদেয়\" ও \"কর্মচারী অগ্রিম\" লেজার নির্ধারণ করুন");
   return {
     settings: {
-      workingDaysMode: s.workingDaysMode, fixedWorkingDays: s.fixedWorkingDays, weeklyOffDays: s.weeklyOffDays, hoursPerDay: num(s.hoursPerDay),
+      workingDaysMode: s.workingDaysMode, fixedWorkingDays: s.fixedWorkingDays, weeklyOffDays: intList(s.weeklyOffDays, [5]), hoursPerDay: num(s.hoursPerDay),
       overtimeMultiplier: num(s.overtimeMultiplier), lateDaysPerAbsence: s.lateDaysPerAbsence, absenceBasis: s.absenceBasis,
     },
     payableAccountId: s.salaryPayableAccountId,

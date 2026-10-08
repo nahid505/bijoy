@@ -19,8 +19,8 @@ describe("catalogue consistency", () => {
     for (const r of defaults.roles) for (const p of r.permissions) if (p !== "*") expect(isPermission(p), `${r.name}: ${p}`).toBe(true);
   });
 
-  it("ships the seven default roles with exactly one immutable owner", () => {
-    expect(defaults.roles).toHaveLength(7);
+  it("ships the ten default roles (owner, admin, manager, accountant, sales, purchase, viewer, HR, cashier, inventory) with exactly one immutable owner", () => {
+    expect(defaults.roles).toHaveLength(10);
     const owners = defaults.roles.filter((r) => "system" in r && r.system);
     expect(owners).toHaveLength(1);
     expect(owners[0].permissions).toEqual(["*"]);

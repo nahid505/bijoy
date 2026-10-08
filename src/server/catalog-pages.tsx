@@ -85,6 +85,7 @@ export async function CatalogPage({ kind, editId }: { kind: Kind; editId?: strin
 
 export async function WarehousePanel({ editId }: { editId?: string }) {
   const ctx = await requirePermission("inventory:view");
+  if (!ctx.features.includes("MULTI_WAREHOUSE")) return null; // single-warehouse mode: nothing to manage
   const manage = can(ctx, "inventory:manage");
   const list = await prisma.warehouse.findMany({ where: { businessId: ctx.business.id }, orderBy: [{ isDefault: "desc" }, { name: "asc" }] });
   const editing = list.find((w) => w.id === editId);

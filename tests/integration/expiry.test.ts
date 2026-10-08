@@ -14,6 +14,8 @@ import { trialBalance } from "@/server/services/report";
 import { markRead, runDailyChecks } from "@/server/services/notifications";
 import { listBatches } from "@/server/services/expiry";
 
+// stock alerts only (a new business also gets its "trial started" account notice)
+const STOCK_KINDS: ("EXPIRED" | "EXPIRY_WARNING" | "LOW_STOCK" | "OVERDUE")[] = ["EXPIRED", "EXPIRY_WARNING", "LOW_STOCK", "OVERDUE"];
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const D = (s: string) => new Date(`${s}T00:00:00.000Z`);
 
@@ -142,7 +144,7 @@ run("product expiry management (batch level)", () => {
       { productId: medicine, quantity: 6, rate: 11, batchNo: "E", expiryDate: "2026-10-25" }, // 22 days → 30-day warning
     ]);
     const r1 = await runDailyChecks(ctx.businessId, { today: D("2026-10-03") });
-    const keys = (await prisma.notification.findMany({ where: { businessId: ctx.businessId, resolvedAt: null } })).map((n) => n.dedupeKey.replace(/:[^:]+:/, ":<id>:"));
+    const keys = (await prisma.notification.findMany({ where: { businessId: ctx.businessId, resolvedAt: null, kind: { in: STOCK_KINDS } } })).map((n) => n.dedupeKey.replace(/:[^:]+:/, ":<id>:"));
     expect(keys.sort()).toEqual(["expiry:<id>:expired", "expiry:<id>:w30", "expiry:<id>:w7", "lowstock:<id>:2026-10-03"].sort());
     expect(await prisma.notification.count({ where: { businessId: ctx.businessId, kind: "LOW_STOCK", productId: soap } })).toBe(1);
     expect(r1.created).toBe(4);
@@ -154,13 +156,13 @@ run("product expiry management (batch level)", () => {
     expect((await runDailyChecks(ctx.businessId, { today: D("2026-10-03") })).skipped).toBe(true);
     const forced = await runDailyChecks(ctx.businessId, { today: D("2026-10-03"), force: true });
     expect(forced.created).toBe(0);
-    expect(await prisma.notification.count({ where: { businessId: ctx.businessId } })).toBe(4);
+    expect(await prisma.notification.count({ where: { businessId: ctx.businessId, kind: { in: STOCK_KINDS } } })).toBe(4);
   });
 
   it("reading a notification does not remove it", async () => {
-    const before = await prisma.notification.count({ where: { businessId: ctx.businessId, resolvedAt: null } });
+    const before = await prisma.notification.count({ where: { businessId: ctx.businessId, resolvedAt: null, kind: { in: STOCK_KINDS } } });
     expect(await markRead(ctx.businessId, ctx.userId, ["EXPIRED", "EXPIRY_WARNING", "LOW_STOCK", "OVERDUE"])).toBe(before);
-    expect(await prisma.notification.count({ where: { businessId: ctx.businessId, resolvedAt: null } })).toBe(before);
+    expect(await prisma.notification.count({ where: { businessId: ctx.businessId, resolvedAt: null, kind: { in: STOCK_KINDS } } })).toBe(before);
     expect(await prisma.notificationRead.count({ where: { userId: ctx.userId } })).toBe(before);
   });
 

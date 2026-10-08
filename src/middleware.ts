@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
 
-const PUBLIC_PATHS = ["/login", "/register", "/forgot-password", "/api/health", "/api/cron", "/api/sms/dlr"]; // /api/cron and /api/sms/dlr authenticate with their own secrets
+const PUBLIC_PATHS = ["/login", "/register", "/forgot-password", "/pricing", "/api/health", "/api/cron", "/api/sms/dlr", "/api/billing/callback", "/api/billing/webhook"]; // /api/cron and /api/sms/dlr authenticate with their own secrets
 
 /**
  * Per-request Content-Security-Policy. Scripts must carry this request's nonce (Next.js adds it
@@ -40,7 +40,8 @@ export async function middleware(req: NextRequest) {
   const nonce = btoa(crypto.randomUUID());
   const csp = contentSecurityPolicy(nonce, https);
 
-  const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  // "/" is the public landing page; /screenshots holds its images
+  const isPublic = pathname === "/" || pathname.startsWith("/screenshots/") || PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
   const session = await verifySessionToken(req.cookies.get(SESSION_COOKIE)?.value);
   if (!session && !isPublic) {
     const url = req.nextUrl.clone();
@@ -51,6 +52,7 @@ export async function middleware(req: NextRequest) {
 
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set("x-nonce", nonce);
+  requestHeaders.set("x-pathname", pathname); // the app layout refuses pages of switched-off features
   requestHeaders.set("content-security-policy", csp); // Next.js reads the nonce from here
   return withSecurityHeaders(NextResponse.next({ request: { headers: requestHeaders } }), csp, https);
 }

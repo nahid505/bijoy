@@ -6,6 +6,7 @@ import { daysBetween, EXPIRED_SALE_MESSAGE, fefoAllocate, isExpired } from "@/li
 import { formatDate, formatQty } from "@/lib/format";
 import { UserError } from "@/lib/errors";
 import type { Tx } from "./accounting";
+import { isMySql, rawExec, sql } from "@/lib/dialect";
 
 const sameDay = (a: Date | null, b: Date | null) => (!a && !b) || (!!a && !!b && daysBetween(a, b) === 0);
 
@@ -156,7 +157,21 @@ export async function allocateSaleBatches(
 
 /** Re-derives the cached on-hand quantity of every batch of a product from its movements. */
 export async function syncBatchQuantities(tx: Tx, productId: string) {
-  await tx.$executeRaw`
+  if (isMySql()) {
+    // MySQL / MariaDB: UPDATE … JOIN (no UPDATE … FROM / IS DISTINCT FROM)
+    await rawExec(tx, sql`
+      UPDATE "ProductBatch" b
+      JOIN (
+        SELECT pb."id", COALESCE(SUM(m."quantityIn" - m."quantityOut"), 0) AS qty
+        FROM "ProductBatch" pb LEFT JOIN "StockMovement" m ON m."batchId" = pb."id"
+        WHERE pb."productId" = ${productId}
+        GROUP BY pb."id"
+      ) s ON s."id" = b."id"
+      SET b."quantity" = s.qty, b."updatedAt" = CURRENT_TIMESTAMP(3)
+      WHERE NOT (b."quantity" <=> s.qty)`);
+    return;
+  }
+  await rawExec(tx, sql`
     UPDATE "ProductBatch" b
     SET "quantity" = s.qty, "updatedAt" = CURRENT_TIMESTAMP
     FROM (
@@ -165,7 +180,7 @@ export async function syncBatchQuantities(tx: Tx, productId: string) {
       WHERE pb."productId" = ${productId}
       GROUP BY pb."id"
     ) s
-    WHERE b."id" = s."id" AND b."quantity" IS DISTINCT FROM s.qty`;
+    WHERE b."id" = s."id" AND b."quantity" IS DISTINCT FROM s.qty`);
 }
 
 /** The expiry-loss ledger (created on demand for businesses that predate it). */

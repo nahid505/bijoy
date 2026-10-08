@@ -19,8 +19,13 @@ export interface ExpiryStatus {
 }
 
 /** Unique positive whole-day thresholds, largest first (e.g. [60, 30, 15, 7]). */
-export function normalizeThresholds(input: readonly (number | string)[] | null | undefined): number[] {
-  const out = [...new Set((input ?? []).map((v) => Math.trunc(Number(v))).filter((v) => Number.isFinite(v) && v > 0 && v <= 3650))];
+export function normalizeThresholds(input: unknown): number[] {
+  // a list column: number[] on PostgreSQL, JSON array on MySQL (or a JSON string from raw queries)
+  let list: unknown = input;
+  if (typeof list === "string") {
+    try { list = JSON.parse(list); } catch { list = []; }
+  }
+  const out = [...new Set((Array.isArray(list) ? (list as unknown[]) : []).map((v) => Math.trunc(Number(v))).filter((v) => Number.isFinite(v) && v > 0 && v <= 3650))];
   return (out.length ? out : DEFAULT_WARNING_DAYS).sort((a, b) => b - a);
 }
 

@@ -9,6 +9,7 @@ import { balancesBefore, listAccounts, statement } from "../services/ledger";
 import { balanceSheet, trialBalance } from "../services/report";
 import type { ReportDef, ReportParams, ReportResult, ReportRow } from "./types";
 import type { AppContext } from "../auth";
+import { ci, rawRows, sql } from "@/lib/dialect";
 
 const periodText = (from: string, to: string) => `${formatDate(from)} — ${formatDate(to)}`;
 const asOfOf = (p: ReportParams) => (p.asOf && /^\d{4}-\d{2}-\d{2}$/.test(p.asOf) ? p.asOf : toDateInput());
@@ -192,11 +193,11 @@ export const EXTRA_REPORTS: ReportDef[] = [
       const cur = ctx.business.currencySymbol;
       const b = ctx.business.id;
       const [trade, ledger, cashOpen] = await Promise.all([
-        prisma.$queryRaw<{ d: Date; type: string; amount: string }[]>`
+        rawRows<{ d: Date; type: string; amount: string }>(prisma, sql`
           SELECT "date" AS d, "type"::text AS type, SUM("amount")::text AS amount FROM "Voucher"
           WHERE "businessId" = ${b} AND "date" >= ${range.gte} AND "date" < ${range.lt} AND "type" IN ('SALES','SALES_RETURN','PURCHASE','PURCHASE_RETURN')
-          GROUP BY 1, 2`,
-        prisma.$queryRaw<{ d: Date; bucket: string; amount: string }[]>`
+          GROUP BY 1, 2`),
+        rawRows<{ d: Date; bucket: string; amount: string }>(prisma, sql`
           SELECT je."date" AS d,
             CASE
               WHEN a."kind" = 'CUSTOMER' AND je."credit" > 0 AND v."type" IN ('RECEIPT','SALES') THEN 'collection'
@@ -207,13 +208,13 @@ export const EXTRA_REPORTS: ReportDef[] = [
             SUM(CASE WHEN a."kind" = 'CUSTOMER' THEN je."credit" WHEN a."kind" = 'SUPPLIER' THEN je."debit" ELSE je."debit" - je."credit" END)::text AS amount
           FROM "JournalEntry" je JOIN "Account" a ON a."id" = je."accountId" JOIN "AccountGroup" g ON g."id" = a."groupId" JOIN "Voucher" v ON v."id" = je."voucherId"
           WHERE je."businessId" = ${b} AND je."date" >= ${range.gte} AND je."date" < ${range.lt}
-          GROUP BY 1, 2`,
+          GROUP BY 1, 2`),
         prisma.journalEntry.aggregate({ where: { businessId: b, date: { lt: range.gte }, account: { kind: { in: ["CASH", "BANK"] } } }, _sum: { debit: true, credit: true } }),
       ]);
       // walk-in sales are cash collections too
-      const walkIn = await prisma.$queryRaw<{ d: Date; amount: string }[]>`
+      const walkIn = await rawRows<{ d: Date; amount: string }>(prisma, sql`
         SELECT "date" AS d, SUM("amount")::text AS amount FROM "Voucher"
-        WHERE "businessId" = ${b} AND "type" = 'SALES' AND "partyAccountId" IS NULL AND "date" >= ${range.gte} AND "date" < ${range.lt} GROUP BY 1`;
+        WHERE "businessId" = ${b} AND "type" = 'SALES' AND "partyAccountId" IS NULL AND "date" >= ${range.gte} AND "date" < ${range.lt} GROUP BY 1`);
       let cash = round2(num(cashOpen._sum.debit) - num(cashOpen._sum.credit));
       const rows: ReportRow[] = [];
       const t = { sales: 0, purchase: 0, collection: 0, paid: 0, expense: 0, net: 0 };
@@ -330,7 +331,7 @@ export const EXTRA_REPORTS: ReportDef[] = [
       const cur = ctx.business.currencySymbol;
       const q = p.q?.trim();
       const products = await prisma.product.findMany({
-        where: { businessId: ctx.business.id, isActive: true, ...(q ? { name: { contains: q, mode: "insensitive" } } : {}) },
+        where: { businessId: ctx.business.id, isActive: true, ...(q ? { name: ci(q) } : {}) },
         include: { category: { select: { name: true } }, unit: { select: { name: true } } },
         orderBy: [{ category: { name: "asc" } }, { name: "asc" }],
       });
@@ -380,20 +381,20 @@ export const EXTRA_REPORTS: ReportDef[] = [
       const b = ctx.business.id;
       const cur = ctx.business.currencySymbol;
       const [unbalanced, tb, bs, inv, moveValue, stockMismatch, negative, payMismatch, custAging, custLedger] = await Promise.all([
-        prisma.$queryRaw<{ n: bigint }[]>`SELECT COUNT(*) AS n FROM (SELECT "voucherId" FROM "JournalEntry" WHERE "businessId" = ${b} GROUP BY 1 HAVING SUM("debit") <> SUM("credit")) x`,
+        rawRows<{ n: bigint }>(prisma, sql`SELECT COUNT(*) AS n FROM (SELECT "voucherId" FROM "JournalEntry" WHERE "businessId" = ${b} GROUP BY 1 HAVING SUM("debit") <> SUM("credit")) x`),
         trialBalance(b, {}),
         balanceSheet(b, new Date("2999-01-01")),
         prisma.account.findFirst({ where: { businessId: b, systemKey: "INVENTORY" }, select: { id: true } }),
-        prisma.$queryRaw<{ v: string | null }[]>`SELECT SUM(("quantityIn" - "quantityOut") * "unitCost")::text AS v FROM "StockMovement" WHERE "businessId" = ${b}`,
-        prisma.$queryRaw<{ n: bigint }[]>`
+        rawRows<{ v: string | null }>(prisma, sql`SELECT SUM(("quantityIn" - "quantityOut") * "unitCost")::text AS v FROM "StockMovement" WHERE "businessId" = ${b}`),
+        rawRows<{ n: bigint }>(prisma, sql`
           SELECT COUNT(*) AS n FROM "Product" p
           LEFT JOIN (SELECT "productId", SUM("quantityIn" - "quantityOut") AS q FROM "StockMovement" WHERE "businessId" = ${b} GROUP BY 1) m ON m."productId" = p."id"
-          WHERE p."businessId" = ${b} AND ABS(p."stock" - COALESCE(m.q, 0)) > 0.0005`,
+          WHERE p."businessId" = ${b} AND ABS(p."stock" - COALESCE(m.q, 0)) > 0.0005`),
         prisma.product.count({ where: { businessId: b, stock: { lt: 0 } } }),
-        prisma.$queryRaw<{ n: bigint }[]>`
+        rawRows<{ n: bigint }>(prisma, sql`
           SELECT COUNT(*) AS n FROM "Voucher" v
           LEFT JOIN (SELECT "voucherId", SUM("amount") AS s FROM "VoucherPayment" GROUP BY 1) p ON p."voucherId" = v."id"
-          WHERE v."businessId" = ${b} AND v."type" IN ('SALES','PURCHASE','SALES_RETURN','PURCHASE_RETURN') AND ABS(v."paidAmount" - COALESCE(p.s, 0)) > 0.005`,
+          WHERE v."businessId" = ${b} AND v."type" IN ('SALES','PURCHASE','SALES_RETURN','PURCHASE_RETURN') AND ABS(v."paidAmount" - COALESCE(p.s, 0)) > 0.005`),
         partyAging(b, "CUSTOMER", new Date("2999-01-01")),
         prisma.journalEntry.aggregate({ where: { businessId: b, account: { kind: "CUSTOMER" } }, _sum: { debit: true, credit: true } }),
       ]);

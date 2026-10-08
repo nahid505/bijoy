@@ -8,6 +8,7 @@ import { toDateInput } from "@/lib/format";
 import type { PartyOption, ProductOption } from "@/components/trade-parts";
 import { balancesBefore } from "./services/ledger";
 import { partyAging } from "./services/aging";
+import { ci, rawRows, sql } from "@/lib/dialect";
 
 export const LOOKUP_LIMIT = 20;
 
@@ -42,8 +43,8 @@ async function mobileMatches(businessId: string, kind: PartyKind, digits: string
   const like = `%${digits}%`;
   const rows =
     kind === "CUSTOMER"
-      ? await prisma.$queryRaw<{ id: string }[]>`SELECT id FROM "Customer" WHERE "businessId" = ${businessId} AND "isActive" AND regexp_replace(coalesce(mobile, ''), '[^0-9]', '', 'g') LIKE ${like} LIMIT ${take}`
-      : await prisma.$queryRaw<{ id: string }[]>`SELECT id FROM "Supplier" WHERE "businessId" = ${businessId} AND "isActive" AND regexp_replace(coalesce(mobile, ''), '[^0-9]', '', 'g') LIKE ${like} LIMIT ${take}`;
+      ? await rawRows<{ id: string }>(prisma, sql`SELECT id FROM "Customer" WHERE "businessId" = ${businessId} AND "isActive" AND regexp_replace(coalesce(mobile, ''), '[^0-9]', '', 'g') LIKE ${like} LIMIT ${take}`)
+      : await rawRows<{ id: string }>(prisma, sql`SELECT id FROM "Supplier" WHERE "businessId" = ${businessId} AND "isActive" AND regexp_replace(coalesce(mobile, ''), '[^0-9]', '', 'g') LIKE ${like} LIMIT ${take}`);
   return rows.map((r) => r.id);
 }
 export type PartyHit = PartyOption & { partyId: string; code: string | null };
@@ -63,10 +64,10 @@ export async function searchParties(businessId: string, kind: PartyKind, q: stri
         ...(query
           ? {
               OR: [
-                { name: { contains: query, mode: "insensitive" } },
+                { name: ci(query) },
                 { id: query },
                 { accountId: query },
-                { account: { code: { contains: asciiDigits(query), mode: "insensitive" } } },
+                { account: { code: ci(asciiDigits(query)) } },
                 ...(byMobile.length ? [{ id: { in: byMobile } }] : []),
               ],
             }
@@ -119,7 +120,7 @@ export async function searchProducts(businessId: string, q: string, opts: { ids?
         isActive: true,
         ...(opts.batchOnly ? { trackBatch: true } : {}),
         ...(query
-          ? { OR: [{ name: { contains: query, mode: "insensitive" } }, { code: { contains: code, mode: "insensitive" } }, { barcode: { contains: code } }, { id: query }] }
+          ? { OR: [{ name: ci(query) }, { code: ci(code) }, { barcode: { contains: code } }, { id: query }] }
           : {}),
       };
   const rows = await prisma.product.findMany({ where, orderBy: { name: "asc" }, take: opts.ids ? undefined : take * 3 });
@@ -217,14 +218,14 @@ export async function searchAccounts(
           base,
           {
             OR: [
-              ...names.map((t) => ({ name: { contains: t, mode: "insensitive" as const } })),
-              { code: { contains: ascii, mode: "insensitive" } },
-              { accountNumber: { contains: ascii, mode: "insensitive" } },
-              { bankName: { contains: query, mode: "insensitive" } },
+              ...names.map((t) => ({ name: ci(t) })),
+              { code: ci(ascii) },
+              { accountNumber: ci(ascii) },
+              { bankName: ci(query) },
               { systemKey: { contains: query.toUpperCase().replace(/\s+/g, "_") } },
               { id: query },
-              { customer: { name: { contains: query, mode: "insensitive" } } },
-              { supplier: { name: { contains: query, mode: "insensitive" } } },
+              { customer: { name: ci(query) } },
+              { supplier: { name: ci(query) } },
               ...(custIds.length ? [{ customer: { id: { in: custIds } } }] : []),
               ...(supIds.length ? [{ supplier: { id: { in: supIds } } }] : []),
             ],
@@ -278,9 +279,9 @@ export async function searchEmployees(businessId: string, q: string, opts: { ids
         ...(query
           ? {
               OR: [
-                { name: { contains: query, mode: "insensitive" } },
-                { code: { contains: asciiDigits(query), mode: "insensitive" } },
-                { designation: { contains: query, mode: "insensitive" } },
+                { name: ci(query) },
+                { code: ci(asciiDigits(query)) },
+                { designation: ci(query) },
                 { id: query },
                 ...(digits.length >= 3 ? [{ mobile: { contains: digits.startsWith("880") ? digits.slice(2) : digits } }, { nid: { contains: digits } }] : []),
               ],

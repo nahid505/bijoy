@@ -10,11 +10,13 @@ import { flash } from "../flash";
 import { formToObject, guard, toResult, UserError, type ActionState } from "../action-utils";
 import { writeOffExpired } from "../services/voucher";
 import { businessToday, markRead, runDailyChecks, visibleKinds } from "../services/notifications";
+import { assertFeature } from "../features";
 
 /** Writes off the selected expired batches (or every expired batch) and opens the posted voucher. */
 export async function writeOffExpiredAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const result = await guard(async () => {
     const ctx = await assertPermission("stock:adjust");
+    await assertFeature(ctx.business.id, "PRODUCT_EXPIRY");
     const ids = fd.getAll("batchId").map(String).filter(Boolean);
     if (ids.length === 0) throw new UserError("বাতিল করার জন্য অন্তত একটি মেয়াদোত্তীর্ণ ব্যাচ নির্বাচন করুন");
     const v = await writeOffExpired(ctx.svc, { date: businessToday(), batchIds: ids });
@@ -66,7 +68,7 @@ export async function updateBatchAction(batchId: string, _prev: ActionState, fd:
 export async function runChecksNowAction(_prev?: ActionState, _fd?: FormData): Promise<ActionState> {
   const result = await guard(async () => {
     const ctx = await getContext();
-    if (!ctx || visibleKinds((p) => can(ctx, p as never)).length === 0) throw new UserError("অনুমতি নেই");
+    if (!ctx || visibleKinds((p) => can(ctx, p as never), ctx.features).length === 0) throw new UserError("অনুমতি নেই");
     return runDailyChecks(ctx.business.id, { force: true });
   });
   revalidatePath("/", "layout");
@@ -80,7 +82,7 @@ export async function markNotificationsReadAction(ids: string[] | null, _prev?: 
   const result = await guard(async () => {
     const ctx = await getContext();
     if (!ctx) throw new UserError("অনুমতি নেই");
-    return markRead(ctx.business.id, ctx.user.id, visibleKinds((p) => can(ctx, p as never)), ids ?? undefined);
+    return markRead(ctx.business.id, ctx.user.id, visibleKinds((p) => can(ctx, p as never), ctx.features), ids ?? undefined);
   });
   revalidatePath("/", "layout");
   return result.ok ? { ok: true } : toResult(result);

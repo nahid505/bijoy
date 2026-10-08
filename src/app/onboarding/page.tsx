@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function OnboardingPage() {
   const user = await requireUser();
   if (await getContext()) redirect("/dashboard");
+  if ((await requireUser()).isSuperAdmin) redirect("/admin");
   return (
     <main className="flex min-h-screen items-center justify-center bg-paper px-4">
       <div className="w-full max-w-lg">

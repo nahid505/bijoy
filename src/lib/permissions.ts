@@ -89,6 +89,20 @@ export const PERMISSION_GROUPS = [
       { key: "audit:view", label: "অডিট লগ দেখা" },
     ],
   },
+  {
+    label: "ফিচার ও মডিউল",
+    permissions: [
+      { key: "features:view", label: "ফিচার তালিকা ও পরিবর্তনের ইতিহাস দেখা" },
+      { key: "features:manage", label: "ফিচার চালু / বন্ধ করা" },
+    ],
+  },
+  {
+    label: "সাবস্ক্রিপশন ও বিলিং",
+    permissions: [
+      { key: "billing:view", label: "প্ল্যান, মেয়াদ, পেমেন্ট ও ইনভয়েস দেখা" },
+      { key: "billing:manage", label: "প্ল্যান আপগ্রেড, নবায়ন ও পেমেন্ট করা" },
+    ],
+  },
 ] as const;
 
 export type Permission = (typeof PERMISSION_GROUPS)[number]["permissions"][number]["key"];
@@ -99,6 +113,11 @@ export function isPermission(value: string): value is Permission {
   return (ALL_PERMISSIONS as string[]).includes(value);
 }
 
+/**
+ * "!key" entries block a permission even for "*" — used for permissions of switched-off features
+ * (see src/lib/features.ts), so every existing check refuses them without further changes.
+ */
 export function hasPermission(granted: readonly string[], required: Permission): boolean {
+  if (granted.includes(`!${required}`)) return false;
   return granted.includes("*") || granted.includes(required);
 }

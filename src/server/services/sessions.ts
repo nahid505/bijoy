@@ -20,7 +20,7 @@ export async function createSession(db: Db, userId: string, meta: { ipAddress?: 
 export async function activeSessionUser(db: Db, sessionId: string, userId: string) {
   const s = await db.session.findUnique({
     where: { id: sessionId },
-    select: { userId: true, revokedAt: true, expiresAt: true, user: { select: { id: true, name: true, email: true, mobile: true, isActive: true } } },
+    select: { userId: true, revokedAt: true, expiresAt: true, user: { select: { id: true, name: true, email: true, mobile: true, isActive: true, isSuperAdmin: true } } },
   });
   if (!s || s.userId !== userId || s.revokedAt || s.expiresAt <= new Date() || !s.user.isActive) return null;
   return s.user;

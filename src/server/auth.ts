@@ -1,5 +1,7 @@
 import "server-only";
 import { cache } from "react";
+import { blockedPermissions, FEATURE_KEYS } from "@/lib/features";
+import { featureAccess } from "./features";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma, num } from "@/lib/db";
@@ -8,6 +10,7 @@ import { hasPermission, type Permission } from "@/lib/permissions";
 import { SESSION_COOKIE, SESSION_MAX_AGE_SECONDS, createSessionToken, verifySessionToken } from "@/lib/session";
 import { clientIpFrom, trustedProxyHops } from "@/lib/client-ip";
 import { activeSessionUser, createSession, revokeSession } from "./services/sessions";
+import { strList } from "@/lib/dialect";
 
 export const BUSINESS_COOKIE = "bl_business";
 
@@ -16,6 +19,8 @@ export interface CurrentUser {
   name: string;
   email: string | null;
   mobile: string | null;
+  /** platform operator (Super Admin panel) — set only by scripts/grant-super-admin.ts */
+  isSuperAdmin: boolean;
 }
 
 export interface BusinessSummary {
@@ -46,7 +51,16 @@ export interface AppContext {
     allowExpiredSale: boolean;
   };
   roleName: string;
+  /** role permissions, plus "!key" blocks for permissions of switched-off features */
   permissions: string[];
+  /** features switched on for this business (src/lib/features.ts) */
+  features: string[];
+  /** the member holds the business's system Owner role */
+  isOwner: boolean;
+  /** features the subscription plan allows (before the company's own on/off choice) */
+  entitled: string[];
+  /** subscription summary for banners / billing redirects (null: no subscription row) */
+  subscription: { status: string; blocked: boolean; daysLeft: number | null; inGrace: boolean; accessUntil: Date | null } | null;
   businesses: BusinessSummary[];
   /** shape expected by services */
   svc: { businessId: string; userId: string };
@@ -59,7 +73,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   if (!token) return null;
   // the session row decides: revoked (logout, password change/reset) or expired → signed out
   const user = await activeSessionUser(prisma, token.sid, token.sub);
-  return user ? { id: user.id, name: user.name, email: user.email, mobile: user.mobile } : null;
+  return user ? { id: user.id, name: user.name, email: user.email, mobile: user.mobile, isSuperAdmin: user.isSuperAdmin } : null;
 });
 
 /** Id of the session behind the current request (for logout / "keep this device signed in"). */
@@ -86,6 +100,15 @@ export const getContext = cache(async (): Promise<AppContext | null> => {
   const wanted = store.get(BUSINESS_COOKIE)?.value;
   const m = memberships.find((x) => x.businessId === wanted) ?? memberships[0];
   const b = m.business;
+  // switched-off features: their own permissions are blocked; without Multi User only the Owner may act
+  const access = await featureAccess(b.id);
+  const on = access.on;
+  const off = FEATURE_KEYS.filter((k) => !on.has(k));
+  const isOwner = m.role.isSystem;
+  const eff = access.effective;
+  // a suspended subscription leaves only the billing pages (to pay / contact the platform)
+  const billingOnly = strList(m.role.permissions).filter((p) => p === "*" || p === "billing:view" || p === "billing:manage").map((p) => (p === "*" ? ["billing:view", "billing:manage"] : [p])).flat();
+  const permissions = eff?.blocked ? billingOnly : !on.has("MULTI_USER") && !isOwner ? [] : [...strList(m.role.permissions), ...blockedPermissions(off).map((x) => `!${x}`)];
   return {
     user,
     business: {
@@ -108,7 +131,11 @@ export const getContext = cache(async (): Promise<AppContext | null> => {
       allowExpiredSale: b.allowExpiredSale,
     },
     roleName: m.role.name,
-    permissions: m.role.permissions,
+    permissions,
+    features: [...on],
+    isOwner,
+    entitled: [...access.entitled],
+    subscription: eff ? { status: eff.status, blocked: eff.blocked, daysLeft: eff.daysLeft, inGrace: eff.inGrace, accessUntil: eff.accessUntil } : null,
     businesses: memberships.map((x) => ({ id: x.businessId, name: x.business.name, roleName: x.role.name })),
     svc: { businessId: b.id, userId: user.id },
   };

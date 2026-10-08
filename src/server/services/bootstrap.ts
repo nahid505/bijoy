@@ -2,6 +2,7 @@
 // Deliberately free of "server-only" / Next imports so the seed script (tsx) can reuse it.
 import type { Prisma } from "@prisma/client";
 import defaults from "../../lib/business-defaults.json";
+import { startSubscription } from "./subscriptions";
 
 type Tx = Prisma.TransactionClient;
 
@@ -42,7 +43,7 @@ export async function ensureDefaultRoles(tx: Tx, businessId: string) {
 
 export async function createBusiness(
   tx: Tx,
-  input: { name: string; ownerUserId: string; mobile?: string | null; address?: string | null; fiscalYearStartMonth?: number },
+  input: { name: string; ownerUserId: string; mobile?: string | null; address?: string | null; fiscalYearStartMonth?: number; businessType?: string | null; planCode?: string | null },
 ) {
   const fyMonth = input.fiscalYearStartMonth ?? 7;
   const business = await tx.business.create({
@@ -50,6 +51,7 @@ export async function createBusiness(
       name: input.name,
       mobile: input.mobile ?? null,
       address: input.address ?? null,
+      businessType: input.businessType ?? null,
       fiscalYearStartMonth: fyMonth,
       booksStartDate: fiscalYearStart(new Date(), fyMonth),
     },
@@ -115,5 +117,7 @@ export async function createBusiness(
   }
   await tx.membership.create({ data: { businessId, userId: input.ownerUserId, roleId: ownerRoleId } });
 
+  // SaaS: trial (or free plan) subscription
+  await startSubscription(tx, business.id, { planCode: input.planCode ?? null, actorUserId: input.ownerUserId });
   return business;
 }

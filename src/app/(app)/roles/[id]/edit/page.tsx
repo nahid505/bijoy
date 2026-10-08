@@ -4,8 +4,10 @@ import { prisma } from "@/lib/db";
 import { ActionButton } from "@/components/forms";
 import { PageHeader } from "@/components/ui";
 import { requirePermission } from "@/server/auth";
+import { FEATURE_KEYS } from "@/lib/features";
 import { deleteRoleAction, saveRoleAction } from "@/server/actions/business";
 import { RoleForm } from "../../role-form";
+import { strList } from "@/lib/dialect";
 
 export const metadata: Metadata = { title: "রোল সম্পাদনা" };
 
@@ -22,7 +24,7 @@ export default async function EditRolePage({ params }: { params: Promise<{ id: s
         crumbs={[{ label: "রোল ও অনুমতি", href: "/roles" }, { label: role.name }]}
         actions={!role.isSystem && <ActionButton action={deleteRoleAction.bind(null, role.id)} label="মুছুন" className="btn-danger" confirmText="রোলটি মুছে ফেলতে চান?" />}
       />
-      <section className="panel p-5"><RoleForm action={saveRoleAction.bind(null, role.id)} defaults={role} readOnly={role.isSystem} /></section>
+      <section className="panel p-5"><RoleForm action={saveRoleAction.bind(null, role.id)} defaults={{ ...role, permissions: strList(role.permissions) }} readOnly={role.isSystem} offFeatures={FEATURE_KEYS.filter((k) => !ctx.features.includes(k))} /></section>
     </>
   );
 }

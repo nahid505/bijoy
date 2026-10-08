@@ -30,7 +30,11 @@ export async function saveVoucherAction(type: EditableType, id: string | null, _
       case "PURCHASE":
       case "SALES_RETURN":
       case "PURCHASE_RETURN":
-        voucher = await saveTradeVoucher(ctx.svc, type, parseJsonPayload(tradeVoucherSchema, fd), editId);
+        {
+          const input = parseJsonPayload(tradeVoucherSchema, fd);
+          if (!id && !ctx.features.includes("MULTI_WAREHOUSE")) input.warehouseId = null; // → main warehouse
+          voucher = await saveTradeVoucher(ctx.svc, type, input, editId);
+        }
         break;
       case "RECEIPT":
       case "PAYMENT":
@@ -40,7 +44,14 @@ export async function saveVoucherAction(type: EditableType, id: string | null, _
         voucher = await saveJournalVoucher(ctx.svc, parseJsonPayload(journalVoucherSchema, fd), editId);
         break;
       case "STOCK_JOURNAL":
-        voucher = await saveStockJournal(ctx.svc, parseJsonPayload(stockJournalSchema, fd), editId);
+        {
+          const input = parseJsonPayload(stockJournalSchema, fd);
+          if (!id && !ctx.features.includes("MULTI_WAREHOUSE")) {
+            const main = await mainWarehouseId(ctx.business.id);
+            input.lines = input.lines.map((l) => ({ ...l, warehouseId: main }));
+          }
+          voucher = await saveStockJournal(ctx.svc, input, editId);
+        }
         break;
       default:
         throw new UserError("অজানা ভাউচার");
@@ -89,4 +100,11 @@ export async function deleteVoucherAction(id: string, _prev: ActionState, _fd: F
   await flash(`${label} মুছে ফেলা হয়েছে — স্টক ও হিসাব পুনর্গণনা করা হয়েছে`);
   revalidatePath("/", "layout");
   redirect(`/vouchers/${slug}`);
+}
+
+/** The default warehouse (single-warehouse mode). */
+async function mainWarehouseId(businessId: string) {
+  const w = await prisma.warehouse.findFirst({ where: { businessId }, orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true } }); // same order as the voucher forms
+  if (!w) throw new UserError("কোনো গুদাম নেই");
+  return w.id;
 }

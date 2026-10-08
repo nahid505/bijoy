@@ -8,7 +8,8 @@
 
 generator client {
   provider      = "prisma-client-js"
-  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+  // native = this machine; musl = Docker (Alpine); rhel = CloudLinux / cPanel (8: OpenSSL 1.1, 9: OpenSSL 3); debian = most VPS
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "rhel-openssl-1.1.x", "rhel-openssl-3.0.x", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -62,6 +63,15 @@ enum NotificationKind {
   LOW_STOCK
   OVERDUE
   SMS_BALANCE_LOW
+  SUBSCRIPTION_EXPIRING
+  SUBSCRIPTION_EXPIRED
+  PAYMENT_SUCCESS
+  PAYMENT_FAILED
+  PLAN_CHANGED
+  USER_ADDED
+  FEATURE_CHANGED
+  TRIAL_STARTED
+  SUBSCRIPTION_ACTIVATED
 }
 
 enum SmsStatus {
@@ -89,6 +99,7 @@ enum NotificationSeverity {
 model Business {
   id                   String    @id @default(cuid())
   name                 String
+  businessType         String? // retail, wholesale, pharmacy … (registration)
   logo                 String? // small image as data URL
   address              String?
   mobile               String?
@@ -111,37 +122,43 @@ model Business {
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  memberships     Membership[]
-  roles           Role[]
-  accountGroups   AccountGroup[]
-  accounts        Account[]
-  vouchers        Voucher[]
-  journalEntries  JournalEntry[]
-  customers       Customer[]
-  suppliers       Supplier[]
-  products        Product[]
-  categories      Category[]
-  brands          Brand[]
-  units           Unit[]
-  warehouses      Warehouse[]
-  stockMovements  StockMovement[]
-  auditLogs       AuditLog[]
-  counters        Counter[]
-  productBatches  ProductBatch[]
-  notifications   Notification[]
-  jobRuns         JobRun[]
-  smsSettings     SmsSettings?
-  smsTemplates    SmsTemplate[]
-  smsMessages     SmsMessage[]
-  payrollSettings PayrollSettings?
-  departments     Department[]
-  employees       Employee[]
-  payComponents   PayComponent[]
-  payrollRuns     PayrollRun[]
+  memberships         Membership[]
+  roles               Role[]
+  accountGroups       AccountGroup[]
+  accounts            Account[]
+  vouchers            Voucher[]
+  journalEntries      JournalEntry[]
+  customers           Customer[]
+  suppliers           Supplier[]
+  products            Product[]
+  categories          Category[]
+  brands              Brand[]
+  units               Unit[]
+  warehouses          Warehouse[]
+  stockMovements      StockMovement[]
+  auditLogs           AuditLog[]
+  counters            Counter[]
+  productBatches      ProductBatch[]
+  notifications       Notification[]
+  jobRuns             JobRun[]
+  smsSettings         SmsSettings?
+  smsTemplates        SmsTemplate[]
+  smsMessages         SmsMessage[]
+  payrollSettings     PayrollSettings?
+  departments         Department[]
+  employees           Employee[]
+  payComponents       PayComponent[]
+  payrollRuns         PayrollRun[]
+  features            BusinessFeature[]
+  featureLogs         FeatureActivationLog[]
+  subscription        Subscription?
+  paymentTransactions PaymentTransaction[]
+  saasInvoices        Invoice[]
 }
 
 model User {
   id                String    @id @default(cuid())
+  isSuperAdmin      Boolean   @default(false) // platform operator (Super Admin panel); not tied to a business
   name              String
   email             String?   @unique // optional for self-registered accounts (they sign in with their mobile)
   mobile            String?   @unique // normalised Bangladeshi mobile: 01XXXXXXXXX
@@ -661,6 +678,12 @@ model JobRun {
   @@unique([businessId, job, runOn])
 }
 
+/// Named, transaction-scoped locks on MySQL (PostgreSQL uses advisory locks; the table stays empty there).
+/// See lockKey() in src/lib/dialect.ts.
+model AppLock {
+  key String @id
+}
+
 /// One row per login. The session cookie (a signed JWT) carries this id; a request is only
 /// authenticated while the row exists, is not revoked and not expired — so logout revokes one
 /// session and a password change / reset revokes all of them immediately.
@@ -1116,4 +1139,286 @@ model SalaryPayment {
   @@index([businessId, date])
   @@index([voucherId])
   @@index([payslipId])
+}
+
+// ───────────────────────── Feature & module management ─────────────────────────
+// Catalogue of optional modules (mirrors src/lib/features.ts), per-business on/off state,
+// the permissions each module uses, and an activation log. Switching a feature off never
+// deletes the module's data — it only closes access.
+
+enum FeatureTier {
+  FREE
+  PAID
+}
+
+enum FeatureStatus {
+  AVAILABLE
+  COMING_SOON
+}
+
+enum FeatureLogAction {
+  ENABLED
+  DISABLED
+}
+
+model Feature {
+  key            String                 @id // e.g. HRM, PRODUCT_EXPIRY
+  nameBn         String
+  nameEn         String
+  descriptionBn  String
+  descriptionEn  String
+  icon           String
+  tier           FeatureTier            @default(FREE)
+  status         FeatureStatus          @default(AVAILABLE)
+  defaultEnabled Boolean                @default(true)
+  sortOrder      Int                    @default(0)
+  updatedAt      DateTime               @updatedAt
+  businesses     BusinessFeature[]
+  permissions    FeaturePermission[]
+  logs           FeatureActivationLog[]
+  plans          PlanFeature[]
+}
+
+/// A business's choice for a feature; no row = the feature's default.
+model BusinessFeature {
+  id            String    @id @default(cuid())
+  businessId    String
+  business      Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  featureKey    String
+  feature       Feature   @relation(fields: [featureKey], references: [key])
+  enabled       Boolean
+  changedById   String?
+  changedAt     DateTime  @default(now())
+  adminOverride Boolean? // super admin: true = always allowed, false = always blocked, null = plan decides
+  overrideById  String?
+  overrideAt    DateTime?
+
+  @@unique([businessId, featureKey])
+}
+
+/// Which permission keys grant which action (VIEW, CREATE, EDIT, DELETE, EXPORT, APPROVE) in a module.
+model FeaturePermission {
+  id         String  @id @default(cuid())
+  featureKey String
+  feature    Feature @relation(fields: [featureKey], references: [key], onDelete: Cascade)
+  action     String
+  permission String
+  owned      Boolean @default(false) // used only by this module: blocked while it is off
+
+  @@unique([featureKey, action, permission])
+}
+
+model FeatureActivationLog {
+  id         String           @id @default(cuid())
+  businessId String
+  business   Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  featureKey String
+  feature    Feature          @relation(fields: [featureKey], references: [key])
+  action     FeatureLogAction
+  userId     String
+  note       String?
+  createdAt  DateTime         @default(now())
+
+  @@index([businessId, createdAt])
+}
+
+// ───────────────────────── SaaS: plans, subscriptions, billing ─────────────────────────
+// A Business is the tenant. Its Subscription decides which features it may use (Plan → PlanFeature);
+// the company admin switches entitled features on/off (BusinessFeature). Payments go through a
+// provider-neutral PaymentTransaction; a verified payment becomes a SubscriptionPayment with an
+// Invoice and extends the subscription. Everything is configured in the database, not in code.
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  EXPIRING // derived for display (ends within the reminder window); stored status stays ACTIVE/TRIAL
+  EXPIRED
+  CANCELLED // will not renew; access until the end of the paid period
+  SUSPENDED // blocked by the platform
+}
+
+enum BillingCycle {
+  MONTHLY
+  YEARLY
+}
+
+enum PaymentStatus {
+  INITIATED // checkout created, customer not back yet
+  PENDING // waiting for verification (manual transfer)
+  SUCCESS
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum InvoiceStatus {
+  UNPAID
+  PAID
+  VOID
+  REFUNDED
+}
+
+/// Platform-wide billing settings (one row, id "platform").
+model PlatformSetting {
+  id               String   @id @default("platform")
+  trialDays        Int      @default(14)
+  trialPlanCode    String   @default("PREMIUM") // plan used during the free trial
+  fallbackPlanCode String   @default("FREE") // what an expired subscription keeps (data is never deleted)
+  graceDays        Int      @default(3) // access continues this many days after the end date
+  reminderDays     Int[]    @default([7, 3, 1])
+  vatPercent       Decimal  @default(0) @db.Decimal(5, 2)
+  currency         String   @default("BDT")
+  invoicePrefix    String   @default("BL")
+  invoiceSeq       Int      @default(0)
+  updatedAt        DateTime @updatedAt
+}
+
+model Plan {
+  id            String               @id @default(cuid())
+  code          String               @unique // FREE, BASIC, BUSINESS, PREMIUM …
+  nameBn        String
+  nameEn        String
+  descriptionBn String?
+  descriptionEn String?
+  priceMonthly  Decimal              @default(0) @db.Decimal(12, 2)
+  priceYearly   Decimal              @default(0) @db.Decimal(12, 2)
+  userLimit     Int? // null = unlimited
+  isActive      Boolean              @default(true) // can be chosen
+  isPublic      Boolean              @default(true) // shown on the pricing page
+  sortOrder     Int                  @default(0)
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  features      PlanFeature[]
+  subscriptions Subscription[]
+  transactions  PaymentTransaction[]
+  invoices      Invoice[]
+}
+
+model PlanFeature {
+  planId     String
+  plan       Plan    @relation(fields: [planId], references: [id], onDelete: Cascade)
+  featureKey String
+  feature    Feature @relation(fields: [featureKey], references: [key], onDelete: Cascade)
+
+  @@id([planId, featureKey])
+}
+
+/// The current subscription of a business (history: SubscriptionEvent, SubscriptionPayment, Invoice).
+model Subscription {
+  id            String                @id @default(cuid())
+  businessId    String                @unique
+  business      Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  planId        String
+  plan          Plan                  @relation(fields: [planId], references: [id])
+  status        SubscriptionStatus
+  billingCycle  BillingCycle          @default(MONTHLY)
+  startDate     DateTime
+  endDate       DateTime? // null = does not end (free plan)
+  trialEndsAt   DateTime?
+  autoRenew     Boolean               @default(false)
+  cancelledAt   DateTime?
+  suspendedAt   DateTime?
+  suspendReason String?
+  /// price of the current paid period (null: trial / free / set by the platform without payment)
+  amount        Decimal?              @db.Decimal(14, 2)
+  /// status of the latest payment attempt for this subscription
+  paymentStatus PaymentStatus?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  events        SubscriptionEvent[]
+  payments      SubscriptionPayment[]
+
+  @@index([status, endDate])
+}
+
+model SubscriptionEvent {
+  id             String       @id @default(cuid())
+  businessId     String
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  type           String // CREATED, TRIAL_STARTED, ACTIVATED, RENEWED, UPGRADED, DOWNGRADED, PLAN_CHANGED, EXTENDED, EXPIRED, SUSPENDED, RESUMED, CANCELLED, REMINDER …
+  fromPlanCode   String?
+  toPlanCode     String?
+  fromStatus     String?
+  toStatus       String?
+  actorUserId    String?
+  note           String?
+  details        Json?
+  createdAt      DateTime     @default(now())
+
+  @@index([businessId, createdAt])
+}
+
+/// One payment attempt with a provider (bKash, Nagad, card, manual transfer, mock in development).
+model PaymentTransaction {
+  id                  String               @id @default(cuid())
+  businessId          String
+  business            Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  planId              String
+  plan                Plan                 @relation(fields: [planId], references: [id])
+  billingCycle        BillingCycle
+  provider            String
+  status              PaymentStatus        @default(INITIATED)
+  amount              Decimal              @db.Decimal(12, 2) // total charged (incl. VAT)
+  currency            String               @default("BDT")
+  providerPaymentId   String? // gateway session / payment id
+  providerTrxId       String? // gateway transaction id (unique per provider: no double use)
+  manualReference     String? // TrxID / reference typed by the customer for a manual transfer
+  failureReason       String?
+  raw                 Json? // provider response, secrets removed
+  initiatedById       String
+  verifiedById        String? // super admin who verified a manual transfer
+  completedAt         DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  subscriptionPayment SubscriptionPayment?
+
+  @@unique([provider, providerTrxId])
+  @@index([businessId, createdAt])
+  @@index([status, createdAt])
+}
+
+/// A verified payment applied to the subscription (exactly one per successful transaction).
+model SubscriptionPayment {
+  id             String             @id @default(cuid())
+  businessId     String
+  subscriptionId String
+  subscription   Subscription       @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  transactionId  String             @unique
+  transaction    PaymentTransaction @relation(fields: [transactionId], references: [id])
+  invoiceId      String             @unique
+  invoice        Invoice            @relation(fields: [invoiceId], references: [id])
+  amount         Decimal            @db.Decimal(12, 2)
+  periodStart    DateTime
+  periodEnd      DateTime
+  paidAt         DateTime
+  createdAt      DateTime           @default(now())
+
+  @@index([businessId, paidAt])
+}
+
+model Invoice {
+  id                  String               @id @default(cuid())
+  number              String               @unique
+  businessId          String
+  business            Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  planId              String
+  plan                Plan                 @relation(fields: [planId], references: [id])
+  billingCycle        BillingCycle
+  periodStart         DateTime
+  periodEnd           DateTime
+  subtotal            Decimal              @db.Decimal(12, 2)
+  discount            Decimal              @default(0) @db.Decimal(12, 2)
+  vatPercent          Decimal              @default(0) @db.Decimal(5, 2)
+  vatAmount           Decimal              @default(0) @db.Decimal(12, 2)
+  total               Decimal              @db.Decimal(12, 2)
+  status              InvoiceStatus        @default(PAID)
+  paymentMethod       String?
+  transactionRef      String? // gateway / transfer transaction id shown on the invoice
+  paidAt              DateTime?
+  billTo              Json // company snapshot (name, address, mobile, BIN/TIN)
+  createdAt           DateTime             @default(now())
+  subscriptionPayment SubscriptionPayment?
+
+  @@index([businessId, createdAt])
 }

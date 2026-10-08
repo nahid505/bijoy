@@ -31,6 +31,7 @@ const I = {
   receipt: "M6 3h12v18l-3-2-3 2-3-2-3 2V3zm3 5h6m-6 4h6",
   sms: "M4 5h16v11H8l-4 4V5zm4 5h8M8 13h5",
   wallet: "M3 7h15a3 3 0 013 3v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7zm0 0l12-4v4M16 14h2",
+  puzzle: "M10 3h4v3a2 2 0 104 0V5h3v5h-1a2 2 0 100 4h1v7h-6v-1a2 2 0 10-4 0v1H4v-6h1a2 2 0 100-4H4V5h6V3z",
   db: "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zm0 0v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3",
 };
 
@@ -154,6 +155,8 @@ export const NAV: NavEntry[] = [
       { href: "/audit-logs", label: "অডিট লগ", permission: "audit:view" },
     ],
   },
+  { key: "billing", label: "সাবস্ক্রিপশন", icon: I.receipt, href: "/billing", permission: "billing:view" },
+  { key: "features", label: "ফিচার ব্যবস্থাপনা", icon: I.puzzle, href: "/features", permission: "features:view" },
   { key: "business", label: "ব্যবসা সেটিং", icon: I.store, href: "/business", permission: "business:manage" },
   { key: "account", label: "অ্যাকাউন্ট সেটিং", icon: I.gear, href: "/account" },
   { key: "backup", label: "ব্যাকআপ", icon: I.db, href: "/backup", permission: "backup:manage" },

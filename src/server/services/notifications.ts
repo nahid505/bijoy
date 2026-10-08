@@ -17,6 +17,9 @@ import { formatDate, formatMoney, formatQty, toBnDigits, toDateInput } from "@/l
 import { partyAging } from "./aging";
 import { dailySms } from "../sms/events";
 import { checkSmsBalance } from "../sms/queue";
+import { featureIsOn } from "./feature-state";
+import { subscriptionDailyCheck } from "./subscriptions";
+import { lockKey } from "@/lib/dialect";
 
 export const DAILY_JOB = "daily-check";
 type Tx = Prisma.TransactionClient;
@@ -106,12 +109,13 @@ async function reconcile(
 
 /** Computes all alerts for a business on `today` and records them (idempotent per day unless forced). */
 export async function runDailyChecks(businessId: string, opts: { today?: Date; force?: boolean } = {}): Promise<DailyCheckResult> {
+  const expiryOn = await featureIsOn(businessId, "PRODUCT_EXPIRY");
   const today = dayOf(opts.today ?? businessToday());
   const aging = await partyAging(businessId, "CUSTOMER", today);
 
   const outcome = await prisma.$transaction(
     async (tx) => {
-      await tx.$executeRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtext(${`bl-daily-check:${businessId}`}))`;
+      await lockKey(tx, `bl-daily-check:${businessId}`);
       const run = await tx.jobRun.findUnique({ where: { businessId_job_runOn: { businessId, job: DAILY_JOB, runOn: today } } });
       if (run?.finishedAt && !opts.force) return { skipped: true, created: 0, reopened: 0, resolved: 0, active: 0 };
 
@@ -120,8 +124,8 @@ export async function runDailyChecks(businessId: string, opts: { today?: Date; f
       const business = await tx.business.findUniqueOrThrow({ where: { id: businessId }, select: { expiryWarningDays: true, currencySymbol: true } });
       const thresholds = normalizeThresholds(business.expiryWarningDays);
 
-      // ── expiry (per batch that still has stock)
-      const batches = await tx.productBatch.findMany({
+      // ── expiry (per batch that still has stock) — only while Product Expiry Management is on
+      const batches = !expiryOn ? [] : await tx.productBatch.findMany({
         where: { businessId, quantity: { gt: 0 }, expiryDate: { not: null } },
         include: { product: { select: { name: true, unit: { select: { name: true } } } } },
       });
@@ -153,7 +157,7 @@ export async function runDailyChecks(businessId: string, opts: { today?: Date; f
         }
       }
       // one open expiry alert per batch: the current band supersedes earlier bands
-      await reconcile(tx, businessId, ["EXPIRED", "EXPIRY_WARNING"], expiryAlerts, (n) => `${n.batchId}|${n.dedupeKey}`, (a) => `${a.batchId}|${a.dedupeKey}`, now, result);
+      if (expiryOn) await reconcile(tx, businessId, ["EXPIRED", "EXPIRY_WARNING"], expiryAlerts, (n) => `${n.batchId}|${n.dedupeKey}`, (a) => `${a.batchId}|${a.dedupeKey}`, now, result);
 
       // ── low stock
       const products = await tx.product.findMany({
@@ -198,6 +202,8 @@ export async function runDailyChecks(businessId: string, opts: { today?: Date; f
   if (!outcome.skipped) {
     // SMS alerts (due reminders, supplier statements, low stock, expiry) — after the commit, never fatal
     await dailySms(prisma, businessId, today);
+    // subscription reminders (7 / 3 / 1 days) and expiry after the grace period
+    await subscriptionDailyCheck(businessId).catch((e) => console.error("[subscription-check]", businessId, e));
     if ((await prisma.smsSettings.findUnique({ where: { businessId }, select: { enabled: true } }))?.enabled) await checkSmsBalance(prisma, businessId).catch(() => null);
   }
   return outcome;
@@ -227,11 +233,15 @@ export async function runDailyChecksForAll(log: (msg: string) => void = console.
 // ───────────────────────── queries for the UI ─────────────────────────
 
 /** Alert kinds a member may see (expiry & stock need inventory access; dues need customer access). */
-export function visibleKinds(can: (p: string) => boolean): NotificationKind[] {
+export function visibleKinds(can: (p: string) => boolean, features?: readonly string[]): NotificationKind[] {
   const kinds: NotificationKind[] = [];
-  if (can("inventory:view")) kinds.push("EXPIRED", "EXPIRY_WARNING", "LOW_STOCK");
+  const expiry = !features || features.includes("PRODUCT_EXPIRY");
+  if (can("inventory:view")) kinds.push(...(expiry ? (["EXPIRED", "EXPIRY_WARNING"] as const) : []), "LOW_STOCK");
   if (can("customers:view")) kinds.push("OVERDUE");
   if (can("sms:manage")) kinds.push("SMS_BALANCE_LOW");
+  if (can("billing:view")) kinds.push("TRIAL_STARTED", "SUBSCRIPTION_ACTIVATED", "SUBSCRIPTION_EXPIRING", "SUBSCRIPTION_EXPIRED", "PAYMENT_SUCCESS", "PAYMENT_FAILED", "PLAN_CHANGED");
+  if (can("users:manage")) kinds.push("USER_ADDED");
+  if (can("features:view")) kinds.push("FEATURE_CHANGED");
   return kinds;
 }
 

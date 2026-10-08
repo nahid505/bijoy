@@ -9,6 +9,8 @@ import { UserError } from "@/lib/errors";
 import { ensureDefaultRoles } from "./bootstrap";
 import { revalueProducts } from "./posting";
 import { trialBalance } from "./report";
+import { isMySql, rawExec, sql } from "@/lib/dialect";
+import { assertVouchersBalanced } from "./accounting";
 
 export const BACKUP_FORMAT = "bijoy-lenden-backup";
 export const BACKUP_VERSION = 4;
@@ -24,7 +26,8 @@ type Row = Record<string, unknown>;
 /** v4: payroll (employees, structures, attendance, runs, payslips, advances, salary payments). */
 const PAYROLL_TABLES = ["departments", "employees", "payComponents", "employeeComponents", "salaryRevisions", "attendances", "payrollRuns", "payslips", "payslipLines", "advances", "salaryPayments"] as const;
 type PayrollData = { settings: Row | null } & Record<(typeof PAYROLL_TABLES)[number], Row[]>;
-export type BackupData = { business: Row; smsTemplates?: Row[]; smsSettings?: Row | null; payroll?: PayrollData } & Record<Table, Row[]>;
+/** features: the business's module choices (Feature Management); absent in older files = defaults */
+export type BackupData = { business: Row; smsTemplates?: Row[]; smsSettings?: Row | null; payroll?: PayrollData; features?: Row[] } & Record<Table, Row[]>;
 
 async function exportPayroll(businessId: string): Promise<PayrollData> {
   const where = { businessId };
@@ -70,14 +73,15 @@ export async function exportBusiness(businessId: string) {
       prisma.productBatch.findMany({ where }),
       prisma.notification.findMany({ where, orderBy: { createdAt: "asc" } }),
     ]);
-  const [smsTemplates, smsSettingsRow, payroll] = await Promise.all([
+  const [smsTemplates, smsSettingsRow, payroll, features] = await Promise.all([
     prisma.smsTemplate.findMany({ where }),
     // the encrypted API key, balance and on/off state are NOT exported (secrets stay on the server)
     prisma.smsSettings.findUnique({ where: { businessId }, select: { provider: true, senderId: true, lowBalanceThreshold: true, events: true, alertMobiles: true, expiryAlertDays: true, dueReminderEveryDays: true } }),
     exportPayroll(businessId),
+    prisma.businessFeature.findMany({ where: { businessId }, select: { featureKey: true, enabled: true, changedAt: true } }),
   ]);
   const data = JSON.parse(
-    JSON.stringify({ business, accountGroups, accounts, units, categories, brands, warehouses, products, customers, suppliers, vouchers, journalEntries, voucherItems, voucherPayments, stockMovements, counters, productBatches, notifications, smsTemplates, smsSettings: smsSettingsRow, payroll }),
+    JSON.stringify({ business, accountGroups, accounts, units, categories, brands, warehouses, products, customers, suppliers, vouchers, journalEntries, voucherItems, voucherPayments, stockMovements, counters, productBatches, notifications, smsTemplates, smsSettings: smsSettingsRow, payroll, features }),
   ) as BackupData;
   return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: new Date().toISOString(), checksum: checksumOf(data), data };
 }
@@ -183,15 +187,27 @@ export function validateBackup(raw: unknown): ValidationReport {
 
 /** Older (v2) backups only carry batch numbers on lines: create the ProductBatch rows and link them. */
 async function linkLegacyBatches(tx: Prisma.TransactionClient, businessId: string) {
-  await tx.$executeRaw`
+  if (isMySql()) {
+    await rawExec(tx, sql`
+      INSERT INTO "ProductBatch" ("id", "businessId", "productId", "batchNo", "expiryDate", "purchaseDate", "updatedAt")
+      SELECT UUID(), ${businessId}, m."productId", m."batchNo", MIN(m."expiryDate"), MIN(m."date"), CURRENT_TIMESTAMP(3)
+      FROM "StockMovement" m WHERE m."businessId" = ${businessId} AND m."batchNo" IS NOT NULL
+      GROUP BY m."productId", m."batchNo"`);
+    await rawExec(tx, sql`UPDATE "StockMovement" m JOIN "ProductBatch" b ON b."productId" = m."productId" AND b."batchNo" = m."batchNo"
+      SET m."batchId" = b."id" WHERE m."businessId" = ${businessId}`);
+    await rawExec(tx, sql`UPDATE "VoucherItem" i JOIN "Voucher" v ON v."id" = i."voucherId" JOIN "ProductBatch" b ON b."productId" = i."productId" AND b."batchNo" = i."batchNo"
+      SET i."batchId" = b."id" WHERE v."businessId" = ${businessId}`);
+    return;
+  }
+  await rawExec(tx, sql`
     INSERT INTO "ProductBatch" ("id", "businessId", "productId", "batchNo", "expiryDate", "purchaseDate", "updatedAt")
     SELECT gen_random_uuid()::text, ${businessId}, m."productId", m."batchNo", MIN(m."expiryDate"), MIN(m."date"), CURRENT_TIMESTAMP
     FROM "StockMovement" m WHERE m."businessId" = ${businessId} AND m."batchNo" IS NOT NULL
-    GROUP BY m."productId", m."batchNo"`;
-  await tx.$executeRaw`UPDATE "StockMovement" m SET "batchId" = b."id" FROM "ProductBatch" b
-    WHERE m."businessId" = ${businessId} AND b."productId" = m."productId" AND b."batchNo" = m."batchNo"`;
-  await tx.$executeRaw`UPDATE "VoucherItem" i SET "batchId" = b."id" FROM "ProductBatch" b, "Voucher" v
-    WHERE v."id" = i."voucherId" AND v."businessId" = ${businessId} AND b."productId" = i."productId" AND b."batchNo" = i."batchNo"`;
+    GROUP BY m."productId", m."batchNo"`);
+  await rawExec(tx, sql`UPDATE "StockMovement" m SET "batchId" = b."id" FROM "ProductBatch" b
+    WHERE m."businessId" = ${businessId} AND b."productId" = m."productId" AND b."batchNo" = m."batchNo"`);
+  await rawExec(tx, sql`UPDATE "VoucherItem" i SET "batchId" = b."id" FROM "ProductBatch" b, "Voucher" v
+    WHERE v."id" = i."voucherId" AND v."businessId" = ${businessId} AND b."productId" = i."productId" AND b."batchNo" = i."batchNo"`);
 }
 
 /** Restores a validated backup as a NEW business owned by `userId`. Returns the new business id. */
@@ -276,6 +292,7 @@ export async function restoreBackup(raw: unknown, userId: string): Promise<{ bus
       await tx.journalEntry.createMany({
         data: data.journalEntries.map((e) => ({ id: must(e.id), businessId, voucherId: must(e.voucherId), accountId: must(e.accountId), date: date(e.date)!, debit: Number(e.debit), credit: Number(e.credit), narration: (e.narration as string) ?? null, lineNo: Number(e.lineNo ?? 0) })),
       });
+      await assertVouchersBalanced(tx, [...new Set(data.journalEntries.map((e) => must(e.voucherId)))]);
       await tx.stockMovement.createMany({
         data: data.stockMovements.map((m) => ({
           id: must(m.id), businessId, productId: must(m.productId), warehouseId: must(m.warehouseId), voucherId: id(m.voucherId), voucherItemId: id(m.voucherItemId), type: m.type as never,
@@ -297,6 +314,12 @@ export async function restoreBackup(raw: unknown, userId: string): Promise<{ bus
       });
       await tx.counter.createMany({ data: data.counters.map((c) => ({ businessId, key: String(c.key), value: Number(c.value) })) });
       if (data.payroll) await restorePayroll(tx, businessId, data.payroll, { id, must, date, userId });
+      if (Array.isArray(data.features) && data.features.length) {
+        const known = new Set((await tx.feature.findMany({ select: { key: true } })).map((f) => f.key));
+        await tx.businessFeature.createMany({
+          data: data.features.filter((f) => known.has(String(f.featureKey))).map((f) => ({ businessId, featureKey: String(f.featureKey), enabled: Boolean(f.enabled), changedById: userId, changedAt: date(f.changedAt) ?? undefined })),
+        });
+      }
       // SMS: templates as they were; settings switched OFF and without any API key, so a restored
       // copy can never start sending SMS on its own
       if (Array.isArray(data.smsTemplates)) {
@@ -311,6 +334,16 @@ export async function restoreBackup(raw: unknown, userId: string): Promise<{ bus
             expiryAlertDays: Array.isArray(ss.expiryAlertDays) ? (ss.expiryAlertDays as unknown[]).map(Number) : undefined, dueReminderEveryDays: Number(ss.dueReminderEveryDays ?? 7),
           },
         });
+      }
+
+      // subscription: the restored copy continues the source business's plan when the restoring user
+      // is a member of it; otherwise it starts on the free (fallback) plan — no new trial by restoring
+      const source = await tx.subscription.findUnique({ where: { businessId: String(b.id) }, include: { business: { select: { memberships: { where: { userId, isActive: true }, select: { id: true } } } } } });
+      if (source && source.business.memberships.length) {
+        await tx.subscription.create({ data: { businessId, planId: source.planId, status: source.status, billingCycle: source.billingCycle, startDate: source.startDate, endDate: source.endDate, trialEndsAt: source.trialEndsAt, autoRenew: false } });
+      } else {
+        const fallback = await tx.plan.findUnique({ where: { code: (await tx.platformSetting.findUnique({ where: { id: "platform" } }))?.fallbackPlanCode ?? "FREE" } });
+        if (fallback) await tx.subscription.create({ data: { businessId, planId: fallback.id, status: "ACTIVE", startDate: new Date(), endDate: null } });
       }
 
       // access: default roles + restoring user as Owner

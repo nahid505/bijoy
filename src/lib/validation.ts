@@ -77,6 +77,9 @@ export const mobileSchema = z
     return m;
   });
 
+/** Business types offered at sign-up (key → label in src/lib/business-types.ts). */
+export const BUSINESS_TYPES = ["RETAIL", "WHOLESALE", "PHARMACY", "GROCERY", "ELECTRONICS", "CLOTHING", "RESTAURANT", "MANUFACTURING", "SERVICE", "DISTRIBUTION", "OTHER"] as const;
+
 /** Self-service sign-up: a new owner with a new business. */
 export const registrationSchema = z
   .object({
@@ -84,6 +87,9 @@ export const registrationSchema = z
     ownerName: requiredText("মালিকের নাম", 100),
     mobile: mobileSchema,
     email: optionalEmail,
+    businessType: z.enum(BUSINESS_TYPES).optional().nullable().catch(null).transform((v) => v ?? null),
+    address: optionalText(300),
+    plan: z.string().trim().max(30).regex(/^[A-Z0-9_]*$/).optional().nullable().catch(null).transform((v) => (v ? v : null)),
     password: passwordSchema,
     confirmPassword: z.string({ required_error: "পাসওয়ার্ড নিশ্চিত করুন" }).min(1, "পাসওয়ার্ড নিশ্চিত করুন"),
   })

@@ -4,30 +4,44 @@ import { MobileNav, Sidebar, type SidebarEntry } from "@/components/sidebar";
 import { formatDate, toBnDigits } from "@/lib/format";
 import { MOBILE_TABS, NAV } from "@/lib/nav";
 import { hasPermission } from "@/lib/permissions";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { featureForPath } from "@/lib/features";
 import { requireContext } from "@/server/auth";
 import { fiscalYearRange } from "@/server/period";
 import { logoutAction } from "@/server/actions/auth";
 import { getT } from "@/server/i18n";
 import { LangToggle } from "@/components/lang";
+import { SubscriptionBanner } from "@/components/subscription-banner";
 import { unreadCount, visibleKinds } from "@/server/services/notifications";
 
 export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const ctx = await requireContext();
+  // pages of a switched-off feature are refused here (server side), not only hidden from the menu
+  const path = (await headers()).get("x-pathname") ?? "";
+  // suspended subscription: only billing / own account stay open (enforced in permissions as well)
+  if (ctx.subscription?.blocked && !/^\/(billing|account|forbidden)(\/|$)/.test(path)) redirect("/billing?suspended=1");
+  const gate = featureForPath(path);
+  if (gate && !ctx.features.includes(gate)) redirect(`/forbidden?feature=${gate}`);
   const t = await getT();
-  const allowed = (p?: Parameters<typeof hasPermission>[1]) => !p || hasPermission(ctx.permissions, p);
+  const featureOn = (href: string) => {
+    const f = featureForPath(href);
+    return !f || ctx.features.includes(f);
+  };
+  const allowed = (p?: Parameters<typeof hasPermission>[1], href?: string) => (!p || hasPermission(ctx.permissions, p)) && (!href || featureOn(href));
 
   const entries: SidebarEntry[] = NAV.flatMap((e): SidebarEntry[] => {
     if (e.children) {
-      const children = e.children.filter((c) => allowed(c.permission)).map(({ href, label }) => ({ href, label: t(label) }));
+      const children = e.children.filter((c) => allowed(c.permission, c.href)).map(({ href, label }) => ({ href, label: t(label) }));
       return children.length ? [{ key: e.key, label: t(e.label), icon: e.icon, children }] : [];
     }
-    return allowed(e.permission) ? [{ key: e.key, label: t(e.label), icon: e.icon, href: e.href }] : [];
+    return allowed(e.permission, e.href) ? [{ key: e.key, label: t(e.label), icon: e.icon, href: e.href }] : [];
   });
-  const tabs = MOBILE_TABS.filter((x) => allowed(x.permission)).map((x) => ({ ...x, label: t(x.label) }));
+  const tabs = MOBILE_TABS.filter((x) => allowed(x.permission, x.href)).map((x) => ({ ...x, label: t(x.label) }));
   const fy = fiscalYearRange(ctx.business.fiscalYearStartMonth);
-  const alertKinds = visibleKinds((p) => allowed(p as Parameters<typeof hasPermission>[1]));
+  const alertKinds = visibleKinds((p) => allowed(p as Parameters<typeof hasPermission>[1]), ctx.features);
   const unread = alertKinds.length ? await unreadCount(ctx.business.id, ctx.user.id, alertKinds) : 0;
 
   return (
@@ -58,6 +72,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               )}
             </Link>
           )}
+          {ctx.user.isSuperAdmin && (
+            <Link prefetch={false} href="/admin" className="hidden shrink-0 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100 sm:block">Super Admin</Link>
+          )}
           <LangToggle />
           <BusinessSwitcher current={ctx.business.id} businesses={ctx.businesses} />
           <Link prefetch={false} href="/account" className="hidden text-right leading-tight hover:opacity-80 sm:block">
@@ -71,6 +88,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </button>
           </form>
         </header>
+        <SubscriptionBanner sub={ctx.subscription} canBill={hasPermission(ctx.permissions, "billing:view")} />
         <main className="mx-auto max-w-[1400px] px-3 py-5 sm:px-6 print:max-w-none print:p-0">{children}</main>
       </div>
     </div>

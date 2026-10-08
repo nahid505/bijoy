@@ -144,7 +144,7 @@ export async function VoucherEditor({
       inventoryOptions(businessId, { productIds: defaults.items.map((i) => i.productId) }),
     ]);
     if (defaults.partyAccountId && parties.length === 0) defaults = { ...defaults, partyAccountId: "" }; // ?party= of another business / kind
-    return <TradeVoucherForm kind={type} action={action} parties={parties} cashAccounts={cashAccounts} {...inv} defaults={defaults} currency={currency} cancelHref={cancelHref} allowExpiredSale={ctx.business.allowExpiredSale} />;
+    return <TradeVoucherForm kind={type} action={action} parties={parties} cashAccounts={cashAccounts} {...warehousesFor(ctx, inv, [defaults.warehouseId])} defaults={defaults} currency={currency} cancelHref={cancelHref} allowExpiredSale={ctx.business.allowExpiredSale} />;
   }
 
   if (type === "RECEIPT" || type === "PAYMENT") {
@@ -195,7 +195,7 @@ export async function VoucherEditor({
   return (
     <StockJournalForm
       action={action}
-      {...inv}
+      {...warehousesFor(ctx, inv, existing?.items.map((i) => i.warehouseId ?? "") ?? [])}
       currency={currency}
       cancelHref={cancelHref}
       defaults={{
@@ -207,4 +207,10 @@ export async function VoucherEditor({
       }}
     />
   );
+}
+
+/** Multi Warehouse off: forms offer the main warehouse (first) and any warehouse already on the voucher. */
+function warehousesFor<T extends { warehouses: { id: string }[] }>(ctx: AppContext, inv: T, keep: string[]): T {
+  if (ctx.features.includes("MULTI_WAREHOUSE")) return inv;
+  return { ...inv, warehouses: inv.warehouses.filter((w, i) => i === 0 || keep.includes(w.id)) };
 }

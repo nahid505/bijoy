@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { featureForPath } from "@/lib/features";
 import { prisma } from "@/lib/db";
 import { toDateInput } from "@/lib/format";
 import { VOUCHER_TYPES, type VoucherTypeKey } from "@/lib/accounting";
@@ -42,7 +43,10 @@ export async function ReportPage({
   const report = await def.run(ctx, params);
   const path = basePath ?? `/reports/${slug}`;
   const { from, to } = reportPeriod(params, ctx.business.fiscalYearStartMonth);
-  const f = new Set(def.filters.filter((x) => !omitFilters.includes(x)));
+  const f = new Set(def.filters.filter((x) => !omitFilters.includes(x) && (x !== "warehouse" || ctx.features.includes("MULTI_WAREHOUSE"))));
+  // the app layout already refuses reports of switched-off features; checked here too
+  const gate = featureForPath(`/reports/${slug}`);
+  if (gate && !ctx.features.includes(gate)) redirect(`/forbidden?feature=${gate}`);
   const keep = omitFilters.includes("account") && params.accountId ? <input type="hidden" name="accountId" value={params.accountId} /> : null;
 
   // account filters load only the selected ledger; the picker searches the rest

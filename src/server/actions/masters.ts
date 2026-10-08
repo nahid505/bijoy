@@ -9,6 +9,7 @@ import { audit } from "../audit";
 import { formToObject, guard, parseForm, safeReturnPath, toResult, UserError, type ActionState } from "../action-utils";
 import { flash } from "../flash";
 import { deleteAccount, deleteParty, deleteProduct, saveAccount, saveParty, saveProduct, setPartyActive } from "../services/master";
+import { assertFeature } from "../features";
 
 // ───────────────────────── customers & suppliers ─────────────────────────
 
@@ -141,6 +142,7 @@ type CatalogKind = "category" | "brand" | "unit" | "warehouse";
 export async function saveCatalogAction(kind: CatalogKind, id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const result = await guard(async () => {
     const ctx = await assertPermission("inventory:manage");
+    if (kind === "warehouse") await assertFeature(ctx.business.id, "MULTI_WAREHOUSE");
     const businessId = ctx.business.id;
     const owned = async () => {
       const found =
@@ -188,6 +190,7 @@ export async function saveCatalogAction(kind: CatalogKind, id: string | null, _p
 export async function deleteCatalogAction(kind: CatalogKind, id: string, _prev: ActionState, _fd: FormData): Promise<ActionState> {
   const result = await guard(async () => {
     const ctx = await assertPermission("inventory:manage");
+    if (kind === "warehouse") await assertFeature(ctx.business.id, "MULTI_WAREHOUSE");
     const businessId = ctx.business.id;
     if (kind === "category") {
       if (await prisma.product.count({ where: { categoryId: id } })) throw new UserError("এই ক্যাটাগরিতে পণ্য আছে");
