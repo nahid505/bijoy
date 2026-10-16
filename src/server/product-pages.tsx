@@ -20,6 +20,7 @@ import { ci, rawRows, sql } from "@/lib/dialect";
 
 const MOVE_LABELS: Record<string, string> = {
   OPENING: "প্রারম্ভিক", PURCHASE: "ক্রয়", SALE: "বিক্রয়", SALES_RETURN: "বিক্রয় ফেরত", PURCHASE_RETURN: "ক্রয় ফেরত", ADJUSTMENT_IN: "সমন্বয় (আগমন)", ADJUSTMENT_OUT: "সমন্বয় (বাহির)",
+  PRODUCTION_IN: "উৎপাদন", PRODUCTION_OUT: "উৎপাদনে ব্যবহার",
 };
 
 export async function ProductListPage({ searchParams }: { searchParams: SearchParams }) {

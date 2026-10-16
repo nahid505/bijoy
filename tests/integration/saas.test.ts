@@ -30,12 +30,12 @@ import { addDays, startOfDay } from "@/lib/subscription";
 import { SESSION_COOKIE, createSessionToken } from "@/lib/session";
 import { registerAction } from "@/server/actions/auth";
 import { adminApprovePaymentAction, adminRefundPaymentAction, adminChangePlanAction, adminDeletePlanAction, adminExtendAction, adminFeatureOverrideAction, adminRejectPaymentAction, adminSavePlanAction, adminSuspendAction } from "@/server/actions/admin";
-import { setFeatureAction } from "@/server/actions/features";
 import { BUSINESS_COOKIE, getContext } from "@/server/auth";
 import { processProviderResult, startCheckout, submitManualReference } from "@/server/billing/checkout";
 import { mockSignature } from "@/server/billing/providers";
 import { requireSuperAdmin } from "@/server/super-admin";
 import { createSession } from "@/server/services/sessions";
+import { loadEnabledFeatures } from "@/server/services/feature-state";
 import { assertUserSlot, subscriptionDailyCheck, userUsage } from "@/server/services/subscriptions";
 import { companyList, revenueReport } from "@/server/services/platform-admin";
 import { POST as webhook } from "@/app/api/billing/webhook/[provider]/route";
@@ -125,8 +125,7 @@ run("SaaS subscriptions & billing", () => {
     expect(ctx.features).not.toContain("HRM");
     expect(hasPermission(ctx.permissions, "payroll:view")).toBe(false);
     expect(hasPermission(ctx.permissions, "purchases:view")).toBe(true);
-    const r = await call(() => setFeatureAction("HRM", true, null, form({})));
-    expect((r.value as { ok: boolean; message: string }).message).toMatch(/প্ল্যানে নেই/);
+    expect((await loadEnabledFeatures(B.id)).has("HRM")).toBe(false);
   });
 
   it("expiry: grace keeps the plan, then the free plan's features only — data is kept; reminders are de-duplicated", async () => {
@@ -412,16 +411,19 @@ run("SaaS subscriptions & billing", () => {
     expect(found.rows[0].memberships[0]?.user.mobile).toBe(owner.mobile);
   });
 
-  it("INVENTORY is a plan feature: a company that switches it off loses product pages / permissions, sales still pick products", async () => {
+  it("INVENTORY is a plan feature: switched off for a company by the platform administrator → product pages / permissions closed, sales still pick products", async () => {
     const B = await newBusiness("ইনভেন্টরি স্টোর");
     req.cookies = new Map(B.cookies);
     expect((await ctxNow()).features).toContain("INVENTORY");
-    const r = await call(() => setFeatureAction("INVENTORY", false, null, form({})));
-    expect(r.redirect).toBe("/features");
+    req.cookies = new Map(superCookies);
+    expect((await adminFeatureOverrideAction(B.id, "INVENTORY", "off", null, form({})))?.ok).toBe(true);
+    req.cookies = new Map(B.cookies);
     const ctx = await ctxNow();
     expect(hasPermission(ctx.permissions, "inventory:view")).toBe(false);
     expect(hasPermission(ctx.permissions, "sales:create")).toBe(true);
-    await call(() => setFeatureAction("INVENTORY", true, null, form({})));
+    req.cookies = new Map(superCookies);
+    await adminFeatureOverrideAction(B.id, "INVENTORY", "plan", null, form({}));
+    req.cookies = new Map(B.cookies);
     expect(hasPermission((await ctxNow()).permissions, "inventory:view")).toBe(true);
   });
 });

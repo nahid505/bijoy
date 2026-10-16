@@ -5,7 +5,6 @@
 //   on = feature exists (AVAILABLE)
 //        AND the subscription entitles it (plan, or the fallback plan after expiry; super-admin overrides)
 //        AND the company has not switched it off (BusinessFeature.enabled, default from the registry)
-import { prisma } from "@/lib/db";
 import { FEATURES, type FeatureDef, type FeatureKey } from "@/lib/features";
 import type { Effective } from "@/lib/subscription";
 import { entitlements } from "./subscriptions";
@@ -18,16 +17,15 @@ export interface FeatureAccess {
 }
 
 export async function loadFeatureAccess(businessId: string): Promise<FeatureAccess> {
-  const [rows, ent] = await Promise.all([
-    prisma.businessFeature.findMany({ where: { businessId }, select: { featureKey: true, enabled: true } }),
-    entitlements(businessId),
-  ]);
-  const chosen = new Map(rows.map((r) => [r.featureKey, r.enabled]));
+  // Modules follow the subscription plan and the platform administrator's per-company override
+  // (entitlements). Companies no longer switch modules themselves; choices stored earlier in
+  // BusinessFeature.enabled are kept in the database but not applied.
+  const ent = await entitlements(businessId);
   const on = new Set<FeatureKey>();
   for (const f of FEATURES as readonly FeatureDef[]) {
     if (f.status !== "AVAILABLE") continue; // a module that does not exist yet is never on
-    if (!ent.keys.has(f.key)) continue; // not in the plan
-    if (chosen.get(f.key) ?? f.defaultEnabled) on.add(f.key as FeatureKey);
+    if (!ent.keys.has(f.key)) continue; // not in the plan / switched off by the platform administrator
+    if (f.defaultEnabled) on.add(f.key as FeatureKey);
   }
   return { on, entitled: ent.keys, effective: ent.effective };
 }

@@ -6,6 +6,7 @@ import { TRADE_TYPES, VOUCHER_TYPES } from "@/lib/accounting";
 import { paymentStatus, PAYMENT_STATUS_LABELS, round2 } from "@/lib/calc";
 import { formatDate, formatMoney, formatQty, toBnDigits } from "@/lib/format";
 import { PrintButton } from "@/components/forms";
+import { PaddySlip } from "@/components/paddy-slip";
 import { amountInBanglaWords } from "@/lib/words";
 import { can, requireContext } from "@/server/auth";
 import { batchesOfItem, loadVoucher } from "@/server/voucher-detail";
@@ -27,7 +28,7 @@ export default async function VoucherPrintPage({ params }: { params: Promise<{ i
   const party = v.partyAccount?.customer ?? v.partyAccount?.supplier;
   const amount = num(v.amount);
   const paid = num(v.paidAmount);
-  const title = v.type === "SALES" ? "ইনভয়েস / বিল" : v.type === "RECEIPT" ? "মানি রিসিপ্ট" : meta.long;
+  const title = v.paddyPurchase ? "ধান ক্রয় চালান" : v.type === "SALES" ? "ইনভয়েস / বিল" : v.type === "RECEIPT" ? "মানি রিসিপ্ট" : meta.long;
   const dr = round2(v.entries.reduce((s, e) => s + num(e.debit), 0));
 
   return (
@@ -68,6 +69,8 @@ export default async function VoucherPrintPage({ params }: { params: Promise<{ i
             {party?.mobile && <p className="text-slate-600">{party.mobile}</p>}
           </section>
         )}
+
+        {v.paddyPurchase && <PaddySlip currency={cur} d={{ bagCount: v.paddyPurchase.bagCount, grossKg: num(v.paddyPurchase.grossKg), dhaltaKg: num(v.paddyPurchase.dhaltaKg), netKg: num(v.paddyPurchase.netKg), mon: num(v.paddyPurchase.mon), ratePerMon: num(v.paddyPurchase.ratePerMon), totalPrice: num(v.paddyPurchase.totalPrice), notes: v.paddyPurchase.notes }} />}
 
         {v.items.length > 0 ? (
           <div className="mt-2 overflow-x-auto print:overflow-visible"><table className="w-full border-collapse">
@@ -141,7 +144,7 @@ export default async function VoucherPrintPage({ params }: { params: Promise<{ i
         <p className="mt-4 rounded border border-rule bg-ink-50 px-3 py-2 text-sm"><b>কথায়:</b> {amountInBanglaWords(amount)}</p>
         {v.dueDate && amount - paid > 0 && <p className="mt-2 text-sm">বাকি পরিশোধের শেষ তারিখ: <b>{formatDate(v.dueDate)}</b></p>}
         {v.returnOf && <p className="mt-2 text-sm">মূল ইনভয়েস: {v.returnOf.voucherNo}</p>}
-        {v.narration && <p className="mt-2 text-slate-600">বিবরণ: {v.narration}</p>}
+        {v.narration && v.narration !== v.paddyPurchase?.notes && <p className="mt-2 text-slate-600">বিবরণ: {v.narration}</p>}
         {v.type === "SALES" && b.invoiceTerms && <p className="mt-3 whitespace-pre-line text-xs text-slate-500">{b.invoiceTerms}</p>}
 
         <footer className="mt-16 grid grid-cols-3 gap-8 text-center text-xs text-slate-600">

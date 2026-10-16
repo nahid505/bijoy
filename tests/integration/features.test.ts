@@ -27,13 +27,13 @@ import { prisma } from "@/lib/db";
 import { hasPermission } from "@/lib/permissions";
 import { SESSION_COOKIE, createSessionToken } from "@/lib/session";
 import { registerAction } from "@/server/actions/auth";
-import { setFeatureAction } from "@/server/actions/features";
 import { saveCatalogAction } from "@/server/actions/masters";
 import { calculatePayrollAction } from "@/server/actions/payroll";
 import { saveVoucherAction } from "@/server/actions/vouchers";
 import { writeOffExpiredAction } from "@/server/actions/expiry";
 import { BUSINESS_COOKIE, getContext } from "@/server/auth";
-import { featureOverview, setFeatureEnabled } from "@/server/features";
+import { FEATURES, type FeatureDef } from "@/lib/features";
+import { setFeatureOverride } from "@/server/services/platform-admin";
 import { exportBusiness, restoreBackup } from "@/server/services/backup";
 import { saveProduct } from "@/server/services/master";
 import { ensurePayrollSetup, saveEmployee } from "@/server/services/payroll";
@@ -77,7 +77,9 @@ async function member(businessId: string, roleName: string) {
   const s = await createSession(prisma, user.id);
   return new Map([[SESSION_COOKIE, await createSessionToken(user.id, s.id)], [BUSINESS_COOKIE, businessId]]);
 }
-const toggle = (key: string, enabled: boolean) => call(() => setFeatureAction(key, enabled, null, form({ note: "test" })));
+/** Modules are switched by the platform administrator (per-company override); companies no longer switch them. */
+let adminUserId = "";
+const toggle = (businessId: string, key: string, enabled: boolean) => setFeatureOverride(businessId, key, enabled ? null : false, adminUserId);
 const ctxNow = async () => (await getContext())!;
 const exportReport = async (slug: string) => (await reportGet(new NextRequest(`http://localhost/api/reports/${slug}`), { params: Promise.resolve({ slug }) })).status;
 
@@ -87,16 +89,18 @@ run("feature management", () => {
     process.env.AUTH_SECRET ??= "test-secret-for-vitest-only-0123456789abcdef";
     process.env.REGISTRATION_HOURLY_LIMIT = "100000";
     A = await newBusiness("ফিচার টেস্ট স্টোর");
+    adminUserId = (await prisma.user.create({ data: { name: "প্ল্যাটফর্ম", mobile: freshMobile(), passwordHash: "x", isSuperAdmin: true } })).id;
   });
   beforeEach(() => {
     req.cookies = new Map(A.cookies);
   });
 
   it("defaults: every available module is on, coming-soon modules are off; catalogue synced with permissions", async () => {
-    const { features } = await featureOverview(A.ctx.business.id);
-    expect(features.length).toBe(20);
-    expect(features.filter((f) => f.status === "AVAILABLE").every((f) => f.enabled)).toBe(true);
-    expect(features.filter((f) => f.status === "COMING_SOON").every((f) => !f.enabled)).toBe(true);
+    const defs = FEATURES as readonly FeatureDef[];
+    expect(defs.length).toBe(20);
+    const on = await loadEnabledFeatures(A.ctx.business.id);
+    expect(defs.filter((f) => f.status === "AVAILABLE").every((f) => on.has(f.key as never))).toBe(true);
+    expect(defs.filter((f) => f.status === "COMING_SOON").every((f) => !on.has(f.key as never))).toBe(true);
     const owned = await prisma.featurePermission.findMany({ where: { featureKey: "HRM", owned: true }, select: { permission: true } });
     expect(new Set(owned.map((o) => o.permission)).size).toBe(5); // one row per action, five distinct payroll permissions
     const ctx = await ctxNow();
@@ -111,8 +115,7 @@ run("feature management", () => {
     const employees = await prisma.employee.count({ where: { businessId: biz } });
     expect(employees).toBeGreaterThan(0);
 
-    const r = await toggle("HRM", false);
-    expect(r.redirect).toBe("/features");
+    await toggle(biz, "HRM", false);
     const ctx = await ctxNow();
     expect(ctx.features).not.toContain("HRM");
     expect(ctx.permissions).toContain("!payroll:view");
@@ -122,32 +125,33 @@ run("feature management", () => {
     expect((await lookupGet(new Request("http://localhost/api/lookup/employees?q=a"), { params: Promise.resolve({ kind: "employees" }) })).status).toBe(403);
     expect(await exportReport("payroll-monthly")).toBe(403);
     expect(await prisma.employee.count({ where: { businessId: biz } })).toBe(employees); // data kept
-    // log + audit
-    expect(await prisma.featureActivationLog.count({ where: { businessId: biz, featureKey: "HRM", action: "DISABLED" } })).toBe(1);
-    expect(await prisma.auditLog.count({ where: { businessId: biz, entity: "Feature", entityId: "HRM" } })).toBe(1);
 
-    expect((await toggle("HRM", true)).redirect).toBe("/features");
+    await toggle(biz, "HRM", true);
     expect(hasPermission((await ctxNow()).permissions, "payroll:view")).toBe(true);
     expect((await lookupGet(new Request("http://localhost/api/lookup/employees?q=a"), { params: Promise.resolve({ kind: "employees" }) })).status).toBe(200);
   });
 
-  it("only admins switch features; coming-soon modules cannot be switched on; no-op changes refused", async () => {
+  it("companies no longer switch modules: a stored company choice is ignored, the plan and the platform administrator decide", async () => {
     const biz = A.ctx.business.id;
-    expect(((await toggle("PRODUCTION", true)).value as { ok: boolean; message: string }).message).toMatch(/শীঘ্রই আসছে/);
-    expect(((await toggle("NOPE", true)).value as { ok: boolean }).ok).toBe(false);
-    expect(((await toggle("HRM", true)).value as { message: string }).message).toMatch(/ইতিমধ্যে চালু/);
-    req.cookies = await member(biz, "ম্যানেজার (Manager)");
-    expect(((await toggle("HRM", false)).value as { ok: boolean }).ok).toBe(false); // no features:manage
-    expect((await loadEnabledFeatures(biz)).has("HRM")).toBe(true);
+    await prisma.businessFeature.upsert({
+      where: { businessId_featureKey: { businessId: biz, featureKey: "HRM" } },
+      create: { businessId: biz, featureKey: "HRM", enabled: false, changedById: A.ctx.user.id },
+      update: { enabled: false },
+    });
+    expect((await loadEnabledFeatures(biz)).has("HRM")).toBe(true); // former "off" choice not applied
+    expect(hasPermission((await ctxNow()).permissions, "payroll:view")).toBe(true);
+    await toggle(biz, "MEMO_ENTRY", true); // a coming-soon module never turns on
+    expect((await loadEnabledFeatures(biz)).has("MEMO_ENTRY")).toBe(false);
+    await expect(toggle(biz, "NOPE", false)).rejects.toThrow(/পাওয়া যায়নি/);
   });
 
   it("Advanced Reporting off: its report exports refused, core books unaffected", async () => {
-    await toggle("ADVANCED_REPORTING", false);
+    await toggle(A.ctx.business.id, "ADVANCED_REPORTING", false);
     expect(await exportReport("cash-flow")).toBe(403);
     expect(await exportReport("stock-valuation")).toBe(403);
     expect(await exportReport("trial-balance")).toBe(200);
     expect(await exportReport("ledger")).toBe(200);
-    await toggle("ADVANCED_REPORTING", true);
+    await toggle(A.ctx.business.id, "ADVANCED_REPORTING", true);
     expect(await exportReport("cash-flow")).toBe(200);
   });
 
@@ -161,9 +165,9 @@ run("feature management", () => {
     const product = await saveProduct(A.ctx.svc, { name: "ফিচার পণ্য", code: `FP-${n}`, barcode: null, categoryId: null, brandId: null, unitId: unit.id, purchasePrice: 10, salePrice: 12, wholesalePrice: 0, minStock: 0, openingStock: 0, openingRate: 0, trackBatch: false });
     const cash = (await prisma.$transaction((tx) => systemAccounts(tx, biz))).CASH;
 
-    await toggle("MULTI_WAREHOUSE", false);
+    await toggle(biz, "MULTI_WAREHOUSE", false);
     const refused = await call(() => saveCatalogAction("warehouse", null, null, form({ name: "তৃতীয় গুদাম", address: "" })));
-    expect((refused.value as { ok: boolean; message: string }).message).toMatch(/বন্ধ আছে/);
+    expect((refused.value as { ok: boolean; message: string }).message).toMatch(/প্ল্যানে নেই/);
     const purchase = { date: "2026-10-01", reference: null, narration: null, partyAccountId: null, warehouseId: second.id, returnOfId: null, dueDate: null, discount: 0, vatPercent: 0, payments: [{ accountId: cash, amount: 50, reference: null }], items: [{ productId: product, unitId: null, quantity: 5, rate: 10, discount: 0 }] };
     const saved = await call(() => saveVoucherAction("PURCHASE", null, null, form({ payload: JSON.stringify(purchase) })));
     expect(saved.redirect).toMatch(/\/vouchers\/v\//);
@@ -171,53 +175,43 @@ run("feature management", () => {
     expect(v.warehouseId).toBe(main.id); // the chosen second warehouse was ignored
     expect(await prisma.warehouse.count({ where: { businessId: biz } })).toBe(2); // nothing deleted
 
-    await toggle("MULTI_WAREHOUSE", true);
+    await toggle(biz, "MULTI_WAREHOUSE", true);
     await call(() => saveVoucherAction("PURCHASE", null, null, form({ payload: JSON.stringify(purchase) })));
     const v2 = await prisma.voucher.findFirstOrThrow({ where: { businessId: biz, type: "PURCHASE" }, orderBy: { createdAt: "desc" } });
     expect(v2.warehouseId).toBe(second.id);
   });
 
   it("Product Expiry off: write-off refused and expiry reports closed; on again restores", async () => {
-    await toggle("PRODUCT_EXPIRY", false);
+    await toggle(A.ctx.business.id, "PRODUCT_EXPIRY", false);
     const r = await writeOffExpiredAction(null, form({ batchId: "x" }));
     expect(r?.ok).toBe(false);
     expect(r?.message).toMatch(/মেয়াদ/);
     expect(await exportReport("expiry-value")).toBe(403);
-    await toggle("PRODUCT_EXPIRY", true);
+    await toggle(A.ctx.business.id, "PRODUCT_EXPIRY", true);
     expect(await exportReport("expiry-value")).toBe(200);
   });
 
-  it("Multi User: an admin may not switch it off; the owner can — then only the owner gets in, user management closed", async () => {
+  it("Multi User off (platform administrator): only the owner gets in, user management closed; members kept", async () => {
     const biz = A.ctx.business.id;
-    const admin = await member(biz, "অ্যাডমিন (Admin)");
     const sales = await member(biz, "বিক্রয়কর্মী (Salesperson)");
-    req.cookies = admin;
-    const byAdmin = await toggle("MULTI_USER", false);
-    expect((byAdmin.value as { message: string }).message).toMatch(/শুধু মালিক/);
+    await toggle(biz, "MULTI_USER", false);
     req.cookies = new Map(A.cookies);
-    expect((await toggle("MULTI_USER", false)).redirect).toBe("/features");
     const owner = await ctxNow();
     expect(hasPermission(owner.permissions, "sales:create")).toBe(true);
     expect(hasPermission(owner.permissions, "users:manage")).toBe(false);
-    expect(hasPermission(owner.permissions, "features:manage")).toBe(true); // can switch it back
     req.cookies = sales;
     expect((await ctxNow()).permissions).toEqual([]);
-    expect(await prisma.membership.count({ where: { businessId: biz } })).toBeGreaterThanOrEqual(3); // members kept
-    req.cookies = new Map(A.cookies);
-    await toggle("MULTI_USER", true);
-    req.cookies = sales;
+    expect(await prisma.membership.count({ where: { businessId: biz } })).toBeGreaterThanOrEqual(2); // members kept
+    await toggle(biz, "MULTI_USER", true);
     expect(hasPermission((await ctxNow()).permissions, "sales:create")).toBe(true);
   });
 
-  it("feature choices travel with backups; the activation log lists every change", async () => {
+  it("backups still restore; the restored business gets the modules of its plan", async () => {
     const biz = A.ctx.business.id;
-    await setFeatureEnabled({ businessId: biz, userId: A.ctx.user.id, isOwner: true }, "ADVANCED_CUSTOMER", false, null);
     const file = JSON.parse(JSON.stringify(await exportBusiness(biz)));
     const { businessId } = await restoreBackup(file, A.ctx.user.id);
-    expect((await loadEnabledFeatures(businessId)).has("ADVANCED_CUSTOMER")).toBe(false);
-    expect((await loadEnabledFeatures(businessId)).has("HRM")).toBe(true);
-    const { logs } = await featureOverview(biz);
-    expect(logs.length).toBeGreaterThanOrEqual(10);
-    expect(logs[0]).toMatchObject({ featureKey: "ADVANCED_CUSTOMER", action: "DISABLED" });
+    const on = await loadEnabledFeatures(businessId);
+    expect(on.has("HRM")).toBe(true);
+    expect(on.has("ADVANCED_CUSTOMER")).toBe(true);
   });
 });

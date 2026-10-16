@@ -3,6 +3,7 @@
 // Payroll forms (client). Every form posts through a server action; complex ones send one JSON
 // "payload" field, validated again on the server.
 import Link from "next/link";
+import { EntryDateInput } from "@/components/entry-date-input";
 import { useMemo, useState } from "react";
 import { round2 } from "@/lib/calc";
 import { formatMoney } from "@/lib/format";
@@ -372,7 +373,8 @@ export function PayslipAdjustForm({ action, extraOvertimeHours, manual, componen
 
 // ───────────────────────── salary payment ─────────────────────────
 
-export function SalaryPaymentForm({ action, employees, cashAccounts, today, currency }: {
+export function SalaryPaymentForm({ action, employees, cashAccounts, today, currency, dateLocked }: {
+  dateLocked?: boolean;
   action: FormAction;
   employees: { id: string; code: string; name: string; department: string | null; payable: number; months: string }[];
   cashAccounts: AccountOption[];
@@ -395,7 +397,7 @@ export function SalaryPaymentForm({ action, employees, cashAccounts, today, curr
           <SearchableAccountSelect id="pay-cash" scope="cash" known={cashAccounts} value={cashId} onChange={(v) => setCashId(v)} currency={currency} />
           <FieldError name="cashAccountId" />
         </div>
-        <Field label="তারিখ" name="date"><input id="date" type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+        <Field label="তারিখ" name="date"><EntryDateInput id="date" value={date} onChange={setDate} locked={dateLocked} /></Field>
         <Field label="রেফারেন্স" name="reference"><input id="reference" className="input" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="চেক / TrxID" /></Field>
       </section>
       <section className="panel">
@@ -432,7 +434,7 @@ export function SalaryPaymentForm({ action, employees, cashAccounts, today, curr
 
 // ───────────────────────── advance / loan ─────────────────────────
 
-export function AdvanceForm({ action, cashAccounts, today, currency, employee }: { action: FormAction; cashAccounts: AccountOption[]; today: string; currency: string; employee: EmployeeOption | null }) {
+export function AdvanceForm({ action, cashAccounts, today, currency, employee, dateLocked }: { action: FormAction; cashAccounts: AccountOption[]; today: string; currency: string; employee: EmployeeOption | null; dateLocked?: boolean }) {
   const [emp, setEmp] = useState<EmployeeOption | null>(employee);
   const [kind, setKind] = useState<"ADVANCE" | "LOAN">("ADVANCE");
   const [date, setDate] = useState(today);
@@ -456,7 +458,7 @@ export function AdvanceForm({ action, cashAccounts, today, currency, employee }:
             <option value="ADVANCE">অগ্রিম বেতন</option><option value="LOAN">কর্মচারী ঋণ</option>
           </select>
         </Field>
-        <Field label="তারিখ" name="date"><input id="date" type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+        <Field label="তারিখ" name="date"><EntryDateInput id="date" value={date} onChange={setDate} locked={dateLocked} /></Field>
         <Field label="টাকা *" name="amount"><input id="amount" type="number" min="0" step="0.01" className="input-num" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
         <Field label="মাসিক কিস্তি *" name="installment" hint={months ? `প্রায় ${months} মাসে বেতন থেকে কাটা হবে` : "প্রতি মাসের বেতন থেকে কাটা হবে"}>
           <input id="installment" type="number" min="0" step="0.01" className="input-num" value={installment} onChange={(e) => setInstallment(e.target.value)} />

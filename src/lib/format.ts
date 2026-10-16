@@ -89,6 +89,18 @@ export function toDateInput(value: Date | string = new Date()): string {
 }
 
 /** "YYYY-MM-DD" -> [start, end) Date range (UTC midnight boundaries, matching stored date-only values). */
+/** A YYYY-MM-DD date from a query string, or today (daily reports). */
+export function dayOrToday(value?: string): string {
+  return value && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`)) ? value : toDateInput();
+}
+
+/** "2026-10-14" ± days → "2026-10-13" (calendar dates, no time zone). */
+export function addDays(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 export function dayRange(from?: string, to?: string): { gte?: Date; lt?: Date } {
   const valid = (s?: string) => (s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : undefined);
   const f = valid(from);

@@ -70,10 +70,10 @@ export default async function CompanyPage({ params }: { params: Promise<{ id: st
       </div>
 
       <section className="panel mb-4">
-        <div className="panel-head"><h2 className="panel-title">ফিচার (প্ল্যান + ওভাররাইড + কোম্পানির পছন্দ)</h2></div>
+        <div className="panel-head"><h2 className="panel-title">ফিচার (প্ল্যান + সুপার অ্যাডমিন ওভাররাইড)</h2></div>
         <TableWrap>
           <table className="table">
-            <thead><tr><th>ফিচার</th><th>প্ল্যানে</th><th>সুপার অ্যাডমিন ওভাররাইড</th><th>কোম্পানির পছন্দ</th><th>ফলাফল</th><th /></tr></thead>
+            <thead><tr><th>ফিচার</th><th>প্ল্যানে</th><th>সুপার অ্যাডমিন ওভাররাইড</th><th>ফলাফল</th><th /></tr></thead>
             <tbody>
               {(FEATURES as readonly FeatureDef[]).map((f) => {
                 const row = rows.get(f.key);
@@ -84,7 +84,6 @@ export default async function CompanyPage({ params }: { params: Promise<{ id: st
                     <td><span aria-hidden>{f.icon}</span> {f.nameBn}{f.status === "COMING_SOON" && <span className="ml-1 text-xs text-slate-400">(শীঘ্রই)</span>}</td>
                     <td>{planKeys.has(f.key) ? "✓" : "—"}</td>
                     <td>{override === null ? <span className="text-slate-400">প্ল্যান অনুযায়ী</span> : override ? <Badge tone="green">সবসময় চালু</Badge> : <Badge tone="red">বন্ধ</Badge>}</td>
-                    <td className="text-sm">{row ? (row.enabled ? "চালু" : "বন্ধ") : "ডিফল্ট"}</td>
                     <td>{on ? <Badge tone="green">চালু</Badge> : <Badge tone="slate">বন্ধ</Badge>}</td>
                     <td className="whitespace-nowrap">
                       {f.status === "AVAILABLE" && (

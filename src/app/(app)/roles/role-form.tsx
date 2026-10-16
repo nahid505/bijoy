@@ -46,7 +46,12 @@ export function RoleForm({
                       <input type="checkbox" name={off ? undefined : "permissions"} value={p.key} defaultChecked={checked} disabled={readOnly || off} />
                       {/* a grant of a switched-off feature is kept when the role is saved */}
                       {off && checked && !all && <input type="hidden" name="permissions" value={p.key} />}
-                      {p.label}
+                      {"hint" in p ? (
+                        <span>
+                          {p.label}
+                          <span className="block text-xs text-slate-500">{p.hint}</span>
+                        </span>
+                      ) : p.label}
                       {off && <span className="rounded bg-slate-100 px-1 text-[11px] text-slate-500" title={featureDef(owner!).nameBn}>ফিচার বন্ধ</span>}
                       <code className="ml-auto text-xs text-slate-400">{p.key}</code>
                     </label>

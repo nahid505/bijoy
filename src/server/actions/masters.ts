@@ -3,12 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { accountSchema, nameSchema, partySchema, productSchema, unitSchema, warehouseSchema } from "@/lib/validation";
+import { accountGroupSchema, accountSchema, nameSchema, partySchema, productSchema, unitSchema, warehouseSchema } from "@/lib/validation";
 import { assertPermission } from "../auth";
 import { audit } from "../audit";
 import { formToObject, guard, parseForm, safeReturnPath, toResult, UserError, type ActionState } from "../action-utils";
 import { flash } from "../flash";
-import { deleteAccount, deleteParty, deleteProduct, saveAccount, saveParty, saveProduct, setPartyActive } from "../services/master";
+import { createAccountGroup, deleteAccount, deleteParty, deleteProduct, saveAccount, saveParty, saveProduct, setPartyActive, type AccountGroupOption } from "../services/master";
 import { assertFeature } from "../features";
 
 // ───────────────────────── customers & suppliers ─────────────────────────
@@ -95,6 +95,20 @@ export async function toggleAccountAction(id: string, active: boolean, _prev: Ac
   });
   revalidatePath(`/accounts/${id}`);
   return toResult(result);
+}
+
+/** "+ নতুন গ্রুপ" on the account form: creates the group without leaving the page and returns it for the dropdown. */
+export async function createAccountGroupAction(input: { name: string; nature: string; parentId: string; description: string }): Promise<{ ok: true; group: AccountGroupOption } | { ok: false; message: string; errors?: Record<string, string[]> }> {
+  const r = await guard(async () => {
+    const ctx = await assertPermission("accounts:manage");
+    const data = accountGroupSchema.parse(input);
+    const group = await createAccountGroup(ctx.svc, data);
+    await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: "CREATE", entity: "AccountGroup", entityId: group.id, details: { name: data.name, nature: data.nature, parentId: data.parentId } });
+    return group;
+  });
+  if (!r.ok) return { ok: false, message: r.message, errors: r.errors };
+  revalidatePath("/accounts");
+  return { ok: true, group: r.data };
 }
 
 // ───────────────────────── products ─────────────────────────

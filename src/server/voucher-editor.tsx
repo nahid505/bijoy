@@ -14,6 +14,7 @@ import {
   type TradeDefaults,
 } from "@/components/voucher-forms";
 import type { AppContext } from "./auth";
+import { canChangeEntryDate } from "./entry-date";
 import { balancesBefore } from "./services/ledger";
 import { availableBatches } from "./services/inventory";
 import { saveVoucherAction } from "./actions/vouchers";
@@ -87,6 +88,8 @@ export async function VoucherEditor({
       })
     : null;
   const date = existing ? toDateInput(existing.date) : toDateInput();
+  // no transaction:change_date permission: new entries are dated today, edits keep their date
+  const dateLocked = !canChangeEntryDate(ctx);
   const cancelHref = existing ? `/vouchers/v/${existing.id}` : `/vouchers/${slugOf(type)}`;
 
   if (type === "SALES" || type === "PURCHASE" || type === "SALES_RETURN" || type === "PURCHASE_RETURN") {
@@ -94,7 +97,7 @@ export async function VoucherEditor({
     let defaults: TradeDefaults;
     if (existing) {
       defaults = {
-        date, reference: existing.reference ?? "", narration: existing.narration ?? "", partyAccountId: existing.partyAccountId ?? "", warehouseId: existing.warehouseId ?? "",
+        date, dateLocked, reference: existing.reference ?? "", narration: existing.narration ?? "", partyAccountId: existing.partyAccountId ?? "", warehouseId: existing.warehouseId ?? "",
         discount: num(existing.discount), vatPercent: num(existing.vatPercent), dueDate: existing.dueDate ? toDateInput(existing.dueDate) : "",
         returnOfId: existing.returnOfId ?? "", returnOfNo: existing.returnOf?.voucherNo ?? "",
         payments: existing.payments.map((p) => ({ accountId: p.accountId, amount: num(p.amount), reference: p.reference ?? "" })),
@@ -128,12 +131,12 @@ export async function VoucherEditor({
         })
         .filter((i) => i.quantity > 0);
       defaults = {
-        date, reference: original?.voucherNo ?? "", narration: original ? `${original.voucherNo} এর বিপরীতে ফেরত` : "", partyAccountId: original?.partyAccountId ?? "",
+        date, dateLocked, reference: original?.voucherNo ?? "", narration: original ? `${original.voucherNo} এর বিপরীতে ফেরত` : "", partyAccountId: original?.partyAccountId ?? "",
         warehouseId: original?.warehouseId ?? "", discount: 0, vatPercent: 0, dueDate: "", returnOfId: original?.id ?? "", returnOfNo: original?.voucherNo ?? "", payments: [], items,
       };
     } else {
       defaults = {
-        date, reference: "", narration: "", partyAccountId: partyAccountId ?? "",
+        date, dateLocked, reference: "", narration: "", partyAccountId: partyAccountId ?? "",
         warehouseId: "", discount: 0, vatPercent: type === "SALES" ? ctx.business.defaultVatPercent : 0, dueDate: "", returnOfId: "", returnOfNo: "", payments: [], items: [],
       };
     }
@@ -169,7 +172,7 @@ export async function VoucherEditor({
         currency={currency}
         cancelHref={expenseMode ? "/expenses" : cancelHref}
         expenseMode={expenseMode}
-        defaults={{ date, reference: existing?.reference ?? "", narration: existing?.narration ?? "", cashAccountId: cashId, lines }}
+        defaults={{ date, dateLocked, reference: existing?.reference ?? "", narration: existing?.narration ?? "", cashAccountId: cashId, lines }}
       />
     );
   }
@@ -184,7 +187,7 @@ export async function VoucherEditor({
         currency={currency}
         cancelHref={cancelHref}
         defaults={{
-          date, reference: existing?.reference ?? "", narration: existing?.narration ?? "",
+          date, dateLocked, reference: existing?.reference ?? "", narration: existing?.narration ?? "",
           lines: existing?.entries.map((e) => ({ accountId: e.accountId, debit: num(e.debit), credit: num(e.credit), narration: e.narration ?? "" })) ?? [],
         }}
       />
@@ -199,7 +202,7 @@ export async function VoucherEditor({
       currency={currency}
       cancelHref={cancelHref}
       defaults={{
-        date, reference: existing?.reference ?? "", narration: existing?.narration ?? "",
+        date, dateLocked, reference: existing?.reference ?? "", narration: existing?.narration ?? "",
         lines: existing?.items.map((i) => ({
           productId: i.productId, warehouseId: i.warehouseId ?? "", direction: i.direction === 1 ? 1 : -1, quantity: num(i.quantity), rate: i.direction === 1 ? num(i.rate) : null,
           batchNo: i.batchNo ?? "", expiryDate: i.expiryDate ? toDateInput(i.expiryDate) : "", mfgDate: i.batch?.mfgDate ? toDateInput(i.batch.mfgDate) : "",

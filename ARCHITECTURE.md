@@ -213,6 +213,12 @@ The permissions are `payroll:view`, `payroll:manage`, `payroll:attendance` (atte
 - Payroll audit entries are hidden from audit-log viewers without `payroll:view`.
 
 ## 6d. Feature & module management
+
+> **Change (2026-10-14): companies no longer switch modules themselves.**
+> - The company-side "ফিচার ব্যবস্থাপনা" page, its menu, the `features:view` / `features:manage` permissions and the switch action were removed.
+> - A module is on when it is AVAILABLE and in the company's plan, adjusted by the platform administrator's per-company override (`/admin/companies/[id]`).
+> - Choices stored earlier in `BusinessFeature.enabled` and the activation log are kept but no longer applied.
+> - Everything below about enforcement (`!permission` blocks, route gating, guards) still applies.
 Optional modules are declared once in `src/lib/features.ts`: key, Bengali/English name and description, icon, FREE/PAID, AVAILABLE/COMING_SOON, default, and the module's permissions per action (VIEW/CREATE/EDIT/DELETE/EXPORT/APPROVE). Each entry also lists:
 - `owns`: permissions used only by that module;
 - `routes`: page path prefixes;
@@ -321,6 +327,149 @@ Optional modules are declared once in `src/lib/features.ts`: key, Bengali/Englis
 **Tests.** `npm test` runs on PostgreSQL. `npm run test:mysql` runs the same suite on MySQL.
 
 See docs/MYSQL-MIGRATION-PLAN.md.
+
+## 6g. Production management (BOM / recipes)
+**Recipe.** A `Recipe` with `RecipeLine`s describes one reference batch:
+- inputs: materials, quantity in the base unit;
+- outputs: products and by-products, each with a cost share (%); the shares total 100.
+
+Example: 100 kg paddy → 65 kg rice (88 %), 5 kg broken rice (5 %), 8 kg bran (5 %), 20 kg husk (2 %); 2 kg process loss.
+
+**Production entry.** A production entry is a `PRODUCTION` voucher plus a `ProductionRun` (recipe, batches, extra cost), saved in one transaction:
+- materials leave stock as `PRODUCTION_OUT` movements (moving-average cost on the entry date; the replay refuses negative stock at any date);
+- products enter as `PRODUCTION_IN` movements (cost = (materials + extra cost) × share ÷ quantity, split to the paisa by `allocateCost` in `src/lib/production.ts`).
+
+**Ledger.** Materials and products are both inventory, so only the extra cost (labour, power…) is posted: Dr Inventory, Cr the chosen cash, bank or expense account. The normal process loss is absorbed by the products.
+
+**Re-costing.** `revalueProducts` detects production runs whose material cost changed (for example a backdated purchase edit). `recostProduction` re-splits the run's cost and the products are replayed in a cascade (depth guard 20), so later sales of the products get the corrected COGS. Output line costs are owned by `recostProduction`; the replay does not re-derive them from rounded unit costs.
+
+**Access.** Permissions are `production:view` and `production:manage`, owned by the PRODUCTION feature (in PREMIUM, and in the trial).
+- Pages: `/production`, `/production/new`, `/production/[id]/edit`, `/production/recipes…`.
+- Details are shown at `/vouchers/v/[id]`; delete uses the generic voucher delete.
+- "রাইস মিল টেমপ্লেট" creates ধান/চাল/খুদ/কুঁড়া/তুষ in kg and the recipe.
+
+**Backups.** Version 5 carries recipes, recipe lines, runs and each voucher line's `costShare`.
+
+**Migrations.** `20261014000000_production` exists for both PostgreSQL and MySQL.
+
+## 6h. Paddy purchase (weighbridge slip)
+**Fields.** A paddy purchase (`/purchases/paddy`) is entered in this order:
+1. bag count — information for the slip only, never used in a calculation;
+2. gross weight (kg);
+3. dhalta (kg) — a manual deduction;
+4. net = gross − dhalta;
+5. mon = net ÷ 40, rounded to 2 decimals;
+6. rate per mon;
+7. total = mon × rate, rounded to 2 decimals;
+8. notes (vehicle, driver…).
+
+The form recomputes 4, 5 and 7 as you type. The same function (`paddyFigures` in `src/lib/paddy.ts`) produces what the server saves.
+
+**Posting.** Saving creates a normal `PURCHASE` voucher plus a `PaddyPurchase` row in one transaction (`savePaddyPurchase`), so supplier dues, payments, returns, reports and the ledger work as for any purchase:
+- the single voucher line is in the unit "মণ (৪০ কেজি)" (created on first use; the product's base unit must be কেজি): quantity = mon, rate = rate per mon, so the amount is exactly the total;
+- stock receives the exact net kg through an internal `baseQuantity` override on the trade line, which must lie within half a percent of a unit of quantity × factor;
+- with a supplier, "এখন পরিশোধ" is paid now and the rest is owed; without one it is a cash purchase paid in full.
+
+**Edit and delete.** Editing (`/purchases/paddy/[id]/edit`, which the generic voucher edit redirects to) re-posts with the same number. Deleting uses the generic voucher delete; the slip row cascades.
+
+**Display.** The voucher page and the printed চালান ("ধান ক্রয় চালান") show the slip with "১. বস্তার সংখ্যা" first and prominent, before the items table.
+
+**Backups and migrations.** Backups carry `paddyPurchases` (an optional key; older files restore without it). Migration `20261014100000_paddy_purchase` exists for PostgreSQL and MySQL, with CHECK constraints (bags ≥ 0, gross > 0, 0 ≤ dhalta < gross, net > 0).
+
+## 6i. Account groups and sub-groups
+**Creating a group.** On `/accounts/new` and `/accounts/[id]/edit`, the "+ নতুন গ্রুপ" button next to the group dropdown opens a popup (`new-group-dialog.tsx`, a native `<dialog>` rendered in a portal so its form is not nested in the ledger form). It calls the server action `createAccountGroupAction` (`accounts:manage`, audited), which calls `createAccountGroup` in `services/master.ts`. The new group is added to the dropdown in tree order and selected; nothing reloads, and the ledger form keeps what was typed.
+
+**Fields.** `AccountGroup` has optional `parentId` (self-relation, ON DELETE SET NULL) and `description`.
+
+**Rules for a sub-group:**
+- it takes its parent's nature (it must match) and its P&L section (`isDirect`);
+- it sorts with its parent in reports (same `sortOrder`);
+- no sub-groups under নগদ, ব্যাংক, দেনাদার or পাওনাদার (`NO_SUBGROUP_KEYS`): their ledgers have their own pages and pickers, which are keyed on the group's system key;
+- at most 4 levels below a top group;
+- names are unique per business, case-insensitive.
+
+A new top group is listed last and is never "direct".
+
+**Reports.**
+- The balance sheet and P&L work per group as before. A sub-group is its own heading, next to its parent.
+- The cash-flow statement classifies an account by its effective system key, i.e. the nearest system ancestor (`effectiveGroupKeys` in `src/lib/account-groups.ts`). A sub-group of স্থায়ী সম্পদ is therefore investing, and one of ঋণ or মূলধন is financing.
+
+**Backups and migrations.** Backups carry `parentId` and `description`. Restore links parents after every group exists, and validation refuses a missing parent. Migration `20261014200000_account_group_tree` (PostgreSQL and MySQL) is additive: two nullable columns, an index and an FK.
+
+## 6j. Daily cash book (ডেইলী জমা-খরচ হিসাব)
+**Where.** `/reports/daily-cash` (`accounts:view`). It is listed first under "দৈনিক ও হিসাব বই" on the reports page and in the sidebar's রিপোর্ট menu.
+
+**Filters.** A date (default today, with previous/next-day links) and the accounts covered: all cash accounts (default), cash and bank, or one cash/bank account.
+
+**Figures.** `dailyCash` in `src/server/reports/daily-cash.ts` computes, from journal entries only:
+- পূর্বের জমা: the balance of the chosen accounts before the date (opening-balance vouchers dated on the day are brought forward here);
+- receipts and payments: one line per voucher, netted over the chosen accounts, so a transfer between two of them (cash → bank) drops out; each line shows the party or the other side's accounts, the voucher number and type, and the narration;
+- আজকের রিসিট, মোট রিসিট = পূর্বের জমা + আজকের রিসিট, মোট পেমেন্ট;
+- অবশিষ্ট ক্যাশ = মোট রিসিট − মোট পেমেন্ট. This always equals the ledger balance at the end of the day, and it is the next day's পূর্বের জমা.
+
+**Layout and print.** Two ruled columns like a cash khata: খরচ / পেমেন্ট on the left (with closing and a balancing সর্বমোট), জমা / রিসিট on the right. Both sides are padded to the same number of rows so the totals line up. Printing uses A4 portrait with the business header, the two columns side by side, the closing in words and signature lines; on phones receipts are stacked above payments. PDF is the browser's print → Save as PDF, as for every report (keeps Bangla shaping). Excel and CSV come from the generic `/api/reports/daily-cash?date=&scope=` export through the `DAILY_CASH_REPORT` registry entry.
+
+## 6k. Daily purchase report (ডেইলি ক্রয় রিপোর্ট)
+**Where.** `/reports/daily-purchase` (`purchases:view`). It belongs to the PURCHASE module (`reports: ["daily-purchase"]`), so a company without the module neither sees it nor can export it. It is listed under "বিক্রয়, ক্রয় ও মজুদ" and in the sidebar's রিপোর্ট menu.
+
+**Filter.** A date (default today), with previous/next-day links.
+
+**Section ১ — অন্যান্য ক্রয়.** `dailyPurchase` in `src/server/reports/daily-purchase.ts` lists every line of the day's PURCHASE vouchers that have no paddy slip:
+- columns: নম্বর | বিবরণ | পণ্যের নাম | পরিমাণ | দর | মোট টাকা | নোট;
+- বিবরণ is the supplier (or "নগদ ক্রয়") with the voucher number, পণ্যের নাম is the product, পরিমাণ includes the unit, and মোট টাকা is the line amount (quantity × rate − line discount, as posted);
+- নোট holds the batch and the voucher's narration;
+- below the total, voucher-level discount and VAT are shown with the net when present.
+
+**Section ২ — ধান ক্রয়.** The day's `PaddyPurchase` rows:
+- columns: নম্বর | পার্টির নাম | পণ্যের নাম | বস্তার সংখ্যা | মোট স্কেল | ঢলতা | নীট স্কেল | মণ | দর | মোট টাকা;
+- পণ্যের নাম is the product (paddy variety) on the slip's voucher line;
+- totals cover bags, kg, mon and money.
+
+Figure cells never wrap, so ৳ stays with the amount on A4.
+
+**Export columns.** The export puts both sections in one sheet: নম্বর | বিবরণ / পার্টির নাম | পণ্যের নাম | পরিমাণ | বস্তা | … | দর | মোট টাকা | নোট.
+
+Purchase returns are not included. The grand total is the other purchases' net plus the paddy total.
+
+**Print and export.** Printing uses A4 portrait: business header, two ruled tables, the grand total in words and signature lines. On phones the tables scroll inside their box. PDF is the browser's print → Save as PDF. Excel and CSV come from `/api/reports/daily-purchase?date=` through the `DAILY_PURCHASE_REPORT` registry entry.
+
+## 6l. Daily sales report (ডেইলি বিক্রয় রিপোর্ট)
+**Where.** `/reports/daily-sales` (`sales:view`). It belongs to the SALES module (`reports: ["daily-sales"]`). It is listed first under "বিক্রয়, ক্রয় ও মজুদ" and in the sidebar's রিপোর্ট menu.
+
+**Filter.** A date (default today), with previous/next-day links. The shared helpers `dayOrToday` and `addDays` in `src/lib/format.ts` serve all three daily reports.
+
+**Lines.** `dailySales` in `src/server/reports/daily-sales.ts` lists every line of the day's SALES vouchers. The sales form and POS both post SALES vouchers, so POS sales are included. Sales returns are left out. Columns:
+- নম্বর;
+- পার্টির নাম: the customer, or "নগদ বিক্রয়", with the voucher number;
+- পণ্যের নাম;
+- পরিমাণ, with the entered unit;
+- দর;
+- টাকা: the line amount as posted;
+- নোট: the reference as চালান, the batch and the narration.
+
+**Summary row.** মোট পরিমাণ is given per unit (e.g. "১৩০ কেজি · ৫ পিস"); different units are never added together. সর্বমোট is the sum of line amounts. Voucher-level discount and VAT, with the net, appear below when present. A summary box shows net sales, cash collected, due and the total in words.
+
+**Print and export.** Printing uses A4 portrait with the business header, the ruled table and signature lines; figure cells never wrap. PDF is the browser's print → Save as PDF. Excel and CSV come from `/api/reports/daily-sales?date=` through `DAILY_SALES_REPORT`. Columns: নম্বর | পার্টির নাম | পণ্যের নাম | পরিমাণ | একক | দর | টাকা | নোট, with পরিমাণ numeric in Excel.
+
+## 6m. Date lock: permission `transaction:change_date`
+**Permission.** "লেনদেনের তারিখ পরিবর্তন করার অনুমতি" sits in the roles catalogue under "সাধারণ অনুমতি (লেনদেন)", with a hint line. `*` (Owner) includes it.
+
+**Behaviour.** Defined in `src/lib/entry-date.ts`:
+- **with the permission:** any date, back-dated or future;
+- **without it:** a new entry is dated today, the business's calendar day (`APP_TIMEZONE`); an edit keeps the entry's own date, so an old voucher is never moved to today.
+
+**Forms.** `EntryDateInput` (`src/components/entry-date-input.tsx`) renders the locked date read-only, with `min = max` = the date and a 🔒 hint. `VoucherEditor` passes `dateLocked` to the sales, purchase, return, receipt, payment, expense, journal and stock-journal forms. The paddy purchase, production, salary payment and advance pages pass it to their forms.
+
+**Server.** Every action that posts an entry calls `assertEntryDate(ctx, input.date, originalEntryDate(...))` (`src/server/entry-date.ts`) after parsing:
+- covered: `saveVoucherAction` (all types), `savePaddyPurchaseAction`, `saveProductionAction`, `paySalariesAction`, `giveAdvanceAction`;
+- a refused date throws `ForbiddenError`, so the action returns the message ("তারিখ পরিবর্তনের অনুমতি আপনার নেই — শুধু আজকের তারিখে … এন্ট্রি দেওয়া যাবে") and nothing is saved;
+- server actions always answer HTTP 200 with the error in the result; a REST route using the same guard would map `ForbiddenError` to 403. No REST endpoint creates entries today.
+
+The payroll month-end posting date is not covered: an accrual must be dated at month end.
+
+**Roles and migration.** Default roles grant the permission to Admin, Manager, Accountant, Purchase and Inventory; Salesperson and Cashier start locked. Migration `20261014300000_transaction_change_date` (PostgreSQL and MySQL/MariaDB) is data-only and idempotent: it grants the permission to every existing role that can create or edit entries, so no current user is locked out. Roles are not part of backups, since restore recreates the defaults.
+
+**Tests.** The test database uses `connection_limit=5`, as production does (`vitest.config.ts`).
 
 ## 7b. UI runtime notes
 - Language: the `bl_lang` cookie selects Bangla or English. Bangla strings are the dictionary keys (`src/lib/i18n.ts`). Toasts after redirects travel in the short-lived `bl_flash` cookie.

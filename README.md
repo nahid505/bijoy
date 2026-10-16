@@ -99,7 +99,7 @@ All secrets come from the environment. `.env` is git- and docker-ignored. See [`
 | `CRON_SECRET` | Optional: enables `POST /api/cron/daily-check` (Bearer token) for an external scheduler |
 | `COOKIE_SECURE` | `true` behind HTTPS (Secure cookies, HSTS, `upgrade-insecure-requests`) |
 | `TRUSTED_PROXY_HOPS` | Trusted reverse proxies in front of the app (`1` with the bundled Caddy). `0` = forwarded headers are never trusted |
-| `APP_BIND` / `APP_DOMAIN` | Interface the app port is published on (default `127.0.0.1`) / domain for the HTTPS proxy |
+| `APP_BIND` / `APP_DOMAIN` | Interface the app port is published on (default `0.0.0.0` = local network; `127.0.0.1` = this computer only) / domain for the HTTPS proxy |
 
 ## Production checklist
 - HTTPS: `docker compose --profile https up -d` with `APP_DOMAIN`, `COOKIE_SECURE=true` and `TRUSTED_PROXY_HOPS=1` in `.env` (Caddy obtains certificates and sends HSTS). Keep `APP_BIND=127.0.0.1` so nothing bypasses the proxy.

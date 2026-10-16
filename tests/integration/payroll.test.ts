@@ -403,7 +403,7 @@ run("payroll", () => {
   it("backup → restore keeps payroll: employees, payslips, payables and books identical", async () => {
     const biz = A.ctx.business.id;
     const file = JSON.parse(JSON.stringify(await exportBusiness(biz)));
-    expect(file.version).toBe(4);
+    expect(file.version).toBe(5);
     const report = validateBackup(file);
     expect(report.ok).toBe(true);
     expect(report.stats["payroll.payslips"]).toBeGreaterThanOrEqual(4);

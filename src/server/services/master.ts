@@ -3,7 +3,10 @@
 import type { AccountKind } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { UserError } from "@/lib/errors";
-import type { PartyInput, ProductInput } from "@/lib/validation";
+import { NATURE_LABELS } from "@/lib/accounting";
+import { canHaveSubgroups, groupDepth, MAX_GROUP_DEPTH, NO_SUBGROUP_KEYS, orderGroupTree } from "@/lib/account-groups";
+import { ciEquals } from "@/lib/dialect";
+import type { AccountGroupInput, PartyInput, ProductInput } from "@/lib/validation";
 import { getAccountOpening, setAccountOpening, type Ctx, type Tx } from "./accounting";
 import { setOpeningStock } from "./inventory";
 
@@ -106,6 +109,63 @@ export async function partyOpening(businessId: string, kind: PartyKind, accountI
 // ───────────────────────── chart of accounts ─────────────────────────
 
 const RESERVED_GROUPS = ["SUNDRY_DEBTORS", "SUNDRY_CREDITORS"];
+
+export interface AccountGroupOption {
+  id: string;
+  name: string;
+  nature: string;
+  systemKey: string | null;
+  parentId: string | null;
+  depth: number;
+  /** a sub-group may be created under it */
+  canParent: boolean;
+}
+
+/** Groups for the account form, in tree order (debtors / creditors left out: their ledgers come from the party pages). */
+export async function accountGroupOptions(businessId: string): Promise<AccountGroupOption[]> {
+  const groups = await prisma.accountGroup.findMany({
+    where: { businessId },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    select: { id: true, name: true, nature: true, systemKey: true, parentId: true },
+  });
+  return orderGroupTree(groups)
+    .filter((g) => !RESERVED_GROUPS.includes(g.systemKey ?? ""))
+    .map((g) => ({ ...g, canParent: canHaveSubgroups(groups, g.id) }));
+}
+
+/** A new account group (top level or a sub-group). A sub-group takes its parent's nature and P&L section. */
+export async function createAccountGroup(ctx: Ctx, input: AccountGroupInput): Promise<AccountGroupOption> {
+  return prisma.$transaction(async (tx) => {
+    if (await tx.accountGroup.findFirst({ where: { businessId: ctx.businessId, name: ciEquals(input.name) }, select: { id: true } })) {
+      throw new UserError("এই নামে একটি গ্রুপ আগে থেকেই আছে", { name: ["এই নামে একটি গ্রুপ আগে থেকেই আছে"] });
+    }
+    let isDirect = false;
+    let sortOrder: number;
+    let depth = 0;
+    if (input.parentId) {
+      const all = await tx.accountGroup.findMany({ where: { businessId: ctx.businessId }, select: { id: true, parentId: true, systemKey: true } });
+      const parent = await tx.accountGroup.findFirst({ where: { id: input.parentId, businessId: ctx.businessId } });
+      if (!parent) throw new UserError("প্যারেন্ট গ্রুপ পাওয়া যায়নি", { parentId: ["প্যারেন্ট গ্রুপ পাওয়া যায়নি"] });
+      if (NO_SUBGROUP_KEYS.includes(parent.systemKey ?? "")) {
+        throw new UserError(`"${parent.name}" এর অধীনে সাব-গ্রুপ খোলা যায় না — এর হিসাবগুলো নিজস্ব পাতা থেকে পরিচালিত হয়`, { parentId: ["এই গ্রুপের অধীনে সাব-গ্রুপ খোলা যায় না"] });
+      }
+      if (!canHaveSubgroups(all, parent.id)) throw new UserError(`সর্বোচ্চ ${MAX_GROUP_DEPTH} স্তর পর্যন্ত সাব-গ্রুপ খোলা যায়`, { parentId: ["এর নিচে আর স্তর খোলা যাবে না"] });
+      if (parent.nature !== input.nature) {
+        throw new UserError(`সাব-গ্রুপের মূল ধরন প্যারেন্ট গ্রুপের মতোই হতে হবে (${NATURE_LABELS[parent.nature]})`, { nature: [`প্যারেন্টের ধরন: ${NATURE_LABELS[parent.nature]}`] });
+      }
+      isDirect = parent.isDirect;
+      sortOrder = parent.sortOrder; // listed with its parent in reports
+      depth = groupDepth(all, parent.id) + 1;
+    } else {
+      sortOrder = ((await tx.accountGroup.aggregate({ where: { businessId: ctx.businessId }, _max: { sortOrder: true } }))._max.sortOrder ?? 0) + 1;
+    }
+    const g = await tx.accountGroup.create({
+      data: { businessId: ctx.businessId, name: input.name, nature: input.nature, parentId: input.parentId, description: input.description, isDirect, sortOrder },
+      select: { id: true, name: true, nature: true, systemKey: true, parentId: true },
+    });
+    return { ...g, depth, canParent: depth < MAX_GROUP_DEPTH };
+  }, TX);
+}
 
 export interface AccountInput {
   name: string;

@@ -168,6 +168,15 @@ export const accountSchema = z.object({
   openingSide: z.enum(["DR", "CR"]).default("DR"),
 });
 
+/** A user account group; a sub-group (parentId) takes its parent's nature. */
+export const accountGroupSchema = z.object({
+  name: requiredText("গ্রুপের নাম", 100),
+  nature: z.enum(["ASSET", "LIABILITY", "EQUITY", "INCOME", "EXPENSE"], { errorMap: () => ({ message: "মূল ধরন নির্বাচন করুন" }) }),
+  parentId: optionalId,
+  description: optionalText(500),
+});
+export type AccountGroupInput = z.infer<typeof accountGroupSchema>;
+
 export const productSchema = z.object({
   name: requiredText("পণ্যের নাম"),
   code: optionalText(60),
@@ -283,6 +292,77 @@ export const stockJournalSchema = z.object({
     .max(200),
 });
 export type StockJournalInput = z.infer<typeof stockJournalSchema>;
+
+// ───────────────────────── paddy purchase (weighbridge slip) ─────────────────────────
+
+export const paddyPurchaseSchema = z
+  .object({
+    ...voucherHeader,
+    partyAccountId: optionalId, // supplier (empty = cash purchase, paid in full)
+    productId: z.string().min(1, "ধান (পণ্য) নির্বাচন করুন"),
+    warehouseId: optionalId,
+    batchNo: optionalText(60),
+    bagCount: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).int("বস্তার সংখ্যা পূর্ণসংখ্যা হবে").min(0, "ঋণাত্মক হতে পারবে না").max(1_000_000).default(0),
+    grossKg: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).positive("মোট ওজন দিন").max(100_000_000, "ওজন খুব বড়"),
+    dhaltaKg: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).min(0, "ঋণাত্মক হতে পারবে না").max(100_000_000).default(0),
+    ratePerMon: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).positive("প্রতি মণের দর দিন").max(10_000_000, "দর খুব বড়"),
+    paidAmount: money.default(0),
+    cashAccountId: optionalId,
+    notes: optionalText(500),
+  })
+  .superRefine((v, ctx) => {
+    if (v.dhaltaKg >= v.grossKg) ctx.addIssue({ code: "custom", path: ["dhaltaKg"], message: "ঢলতা মোট ওজনের চেয়ে কম হতে হবে" });
+    if (v.paidAmount > 0 && !v.cashAccountId) ctx.addIssue({ code: "custom", path: ["cashAccountId"], message: "পরিশোধের নগদ/ব্যাংক হিসাব নির্বাচন করুন" });
+    if (!v.partyAccountId && !v.cashAccountId) ctx.addIssue({ code: "custom", path: ["cashAccountId"], message: "সরবরাহকারী ছাড়া নগদ ক্রয়ে নগদ/ব্যাংক হিসাব নির্বাচন করুন" });
+  });
+export type PaddyPurchaseInput = z.infer<typeof paddyPurchaseSchema>;
+
+// ───────────────────────── production (BOM) ─────────────────────────
+
+const costShare = z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).min(0, "ঋণাত্মক হতে পারবে না").max(100, "সর্বোচ্চ ১০০%");
+const productLine = { productId: z.string().min(1, "পণ্য নির্বাচন করুন"), quantity };
+
+/** Shared rules: products not repeated, none both material and product, output shares total 100 %. */
+function productionRules(v: { inputs: { productId: string }[]; outputs: { productId: string; costShare: number }[] }, ctx: z.RefinementCtx) {
+  const seen = new Set<string>();
+  for (const [kind, list] of [["inputs", v.inputs], ["outputs", v.outputs]] as const) {
+    list.forEach((l, i) => {
+      if (seen.has(l.productId)) ctx.addIssue({ code: "custom", path: [kind, i, "productId"], message: "একই পণ্য একাধিকবার বা কাঁচামাল ও উৎপাদিত পণ্য — দুই জায়গায় দেওয়া যাবে না" });
+      seen.add(l.productId);
+    });
+  }
+  const total = v.outputs.reduce((s, o) => s + o.costShare, 0);
+  if (Math.abs(total - 100) >= 0.01) ctx.addIssue({ code: "custom", path: ["outputs"], message: `উৎপাদিত পণ্যের খরচ-ভাগের যোগফল ১০০% হতে হবে (এখন ${Math.round(total * 100) / 100}%)` });
+}
+
+export const recipeSchema = z
+  .object({
+    name: requiredText("রেসিপির নাম", 120),
+    code: optionalText(40),
+    description: optionalText(500),
+    isActive: z.boolean().default(true),
+    inputs: z.array(z.object(productLine)).min(1, "কমপক্ষে একটি কাঁচামাল দিন").max(50),
+    outputs: z.array(z.object({ ...productLine, costShare })).min(1, "কমপক্ষে একটি উৎপাদিত পণ্য দিন").max(50),
+  })
+  .superRefine(productionRules);
+export type RecipeInput = z.infer<typeof recipeSchema>;
+
+export const productionSchema = z
+  .object({
+    ...voucherHeader,
+    recipeId: optionalId,
+    batches: z.coerce.number().positive().max(1_000_000).default(1),
+    warehouseId: optionalId,
+    inputs: z.array(z.object({ ...productLine, batchNo: optionalText(60) })).min(1, "কমপক্ষে একটি কাঁচামাল দিন").max(50),
+    outputs: z.array(z.object({ ...productLine, costShare, batchNo: optionalText(60), expiryDate: optionalDate })).min(1, "কমপক্ষে একটি উৎপাদিত পণ্য দিন").max(50),
+    extraCost: money.default(0),
+    costAccountId: optionalId,
+  })
+  .superRefine((v, ctx) => {
+    productionRules(v, ctx);
+    if (v.extraCost > 0 && !v.costAccountId) ctx.addIssue({ code: "custom", path: ["costAccountId"], message: "অতিরিক্ত খরচ কোন হিসাব থেকে (নগদ/ব্যাংক/খরচ খাত) তা নির্বাচন করুন" });
+  });
+export type ProductionInput = z.infer<typeof productionSchema>;
 
 // ───────────────────────── business & users ─────────────────────────
 

@@ -45,6 +45,7 @@ enum VoucherType {
   SALES_RETURN
   PURCHASE_RETURN
   STOCK_JOURNAL
+  PRODUCTION
 }
 
 enum StockMovementType {
@@ -55,6 +56,8 @@ enum StockMovementType {
   PURCHASE_RETURN
   ADJUSTMENT_IN
   ADJUSTMENT_OUT
+  PRODUCTION_IN
+  PRODUCTION_OUT
 }
 
 enum NotificationKind {
@@ -154,6 +157,9 @@ model Business {
   subscription        Subscription?
   paymentTransactions PaymentTransaction[]
   saasInvoices        Invoice[]
+  recipes             Recipe[]
+  productionRuns      ProductionRun[]
+  paddyPurchases      PaddyPurchase[]
 }
 
 model User {
@@ -214,19 +220,25 @@ model Membership {
 // ───────────────────────────── chart of accounts ─────────────────────────────
 
 model AccountGroup {
-  id         String        @id @default(cuid())
-  businessId String
-  business   Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  name       String
-  nature     AccountNature
-  isDirect   Boolean       @default(false) // trading section of P&L (sales / cost of sales)
-  systemKey  String? // stable key for built-in groups, e.g. SUNDRY_DEBTORS
-  sortOrder  Int           @default(0)
-  accounts   Account[]
-  createdAt  DateTime      @default(now())
+  id          String         @id @default(cuid())
+  businessId  String
+  business    Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name        String
+  nature      AccountNature
+  isDirect    Boolean        @default(false) // trading section of P&L (sales / cost of sales)
+  systemKey   String? // stable key for built-in groups, e.g. SUNDRY_DEBTORS
+  sortOrder   Int            @default(0)
+  /// optional parent: a user sub-group shares its parent's nature and P&L section
+  parentId    String?
+  parent      AccountGroup?  @relation("GroupTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    AccountGroup[] @relation("GroupTree")
+  description String?
+  accounts    Account[]
+  createdAt   DateTime       @default(now())
 
   @@unique([businessId, systemKey])
   @@unique([businessId, name])
+  @@index([parentId])
 }
 
 /// A ledger. Balance = Σ debit − Σ credit of its journal entries (opening balance is an OPENING voucher).
@@ -310,6 +322,8 @@ model Voucher {
 
   entries        JournalEntry[]
   items          VoucherItem[]
+  productionRun  ProductionRun?
+  paddyPurchase  PaddyPurchase?
   payments       VoucherPayment[]
   stockMovements StockMovement[]
   smsMessages    SmsMessage[]
@@ -379,7 +393,8 @@ model VoucherItem {
   amount         Decimal         @db.Decimal(14, 2) // quantity × rate − discount
   costRate       Decimal         @default(0) @db.Decimal(14, 4) // average cost per base unit at posting
   costAmount     Decimal         @default(0) @db.Decimal(14, 2)
-  direction      Int             @default(0) // stock journal: +1 in, −1 out
+  direction      Int             @default(0) // stock journal / production: +1 in, −1 out
+  costShare      Decimal?        @db.Decimal(7, 4) // production output: % of the run's total cost
   batchNo        String? // set when the line uses exactly one batch (FEFO lines may span several — see its movements)
   expiryDate     DateTime?
   batchId        String?
@@ -522,6 +537,7 @@ model Product {
   voucherItems   VoucherItem[]
   batches        ProductBatch[]
   notifications  Notification[]
+  recipeLines    RecipeLine[]
 
   @@unique([businessId, code])
   @@unique([businessId, barcode])
@@ -1421,4 +1437,87 @@ model Invoice {
   subscriptionPayment SubscriptionPayment?
 
   @@index([businessId, createdAt])
+}
+
+// ───────────────────────────── production (BOM / recipes) ─────────────────────────────
+
+enum ProductionLineKind {
+  INPUT
+  OUTPUT
+}
+
+/// Bill of materials: raw materials consumed and products obtained for one reference batch
+/// (e.g. 100 kg paddy → 65 kg rice, 20 kg husk, 8 kg bran, 5 kg broken rice). Output costShare (%)
+/// splits the batch cost between the main product and its by-products.
+model Recipe {
+  id          String          @id @default(cuid())
+  businessId  String
+  business    Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name        String
+  code        String?
+  description String?
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  lines       RecipeLine[]
+  runs        ProductionRun[]
+
+  @@unique([businessId, name])
+  @@index([businessId])
+}
+
+model RecipeLine {
+  id        String             @id @default(cuid())
+  recipeId  String
+  recipe    Recipe             @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product            @relation(fields: [productId], references: [id])
+  kind      ProductionLineKind
+  quantity  Decimal            @db.Decimal(14, 3) // base unit, per reference batch
+  costShare Decimal            @default(0) @db.Decimal(7, 4) // outputs only: % of the batch cost
+  lineNo    Int                @default(0)
+
+  @@index([recipeId])
+  @@index([productId])
+}
+
+/// A production entry (voucher type PRODUCTION): materials out, products in, costs allocated.
+model ProductionRun {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  voucherId  String   @unique
+  voucher    Voucher  @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  recipeId   String?
+  recipe     Recipe?  @relation(fields: [recipeId], references: [id], onDelete: SetNull)
+  batches    Decimal  @default(1) @db.Decimal(14, 4) // multiples of the recipe's reference batch
+  extraCost  Decimal  @default(0) @db.Decimal(14, 2) // labour, power… added to the products' cost
+  createdAt  DateTime @default(now())
+
+  @@index([businessId])
+  @@index([recipeId])
+}
+
+/// Paddy purchase details (rice mill weighbridge slip) of a PURCHASE voucher:
+///   net = gross − dhalta (manual deduction, kg) · mon = net ÷ 40 (2 dp) · total = mon × rate per mon.
+/// The voucher line is in মণ (quantity = mon, rate = rate per mon → amount = total exactly) while the
+/// stock receives the exact net kg. bagCount is information for the slip only (no calculation).
+model PaddyPurchase {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  voucherId  String   @unique
+  voucher    Voucher  @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  bagCount   Int      @default(0) // bag_count — shown first on the slip, not used in any calculation
+  grossKg    Decimal  @db.Decimal(14, 3) // gross_scale
+  dhaltaKg   Decimal  @default(0) @db.Decimal(14, 3) // dhalta — manual deduction in kg
+  netKg      Decimal  @db.Decimal(14, 3) // net_scale = gross − dhalta
+  mon        Decimal  @db.Decimal(14, 2) // net ÷ 40
+  ratePerMon Decimal  @db.Decimal(14, 2) // rate_per_mon
+  totalPrice Decimal  @db.Decimal(14, 2) // mon × rate_per_mon
+  notes      String? // vehicle number, driver, remarks
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([businessId])
 }

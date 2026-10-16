@@ -13,6 +13,8 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
+  // `npm run dev` opened from other computers on the local network (private address ranges only)
+  allowedDevOrigins: ["192.168.*.*", "10.*.*.*", "172.*.*.*"],
   // business backup restore uploads files up to 50 MB through a server action (default limit: 1 MB)
   experimental: { serverActions: { bodySizeLimit: "55mb" } },
   async headers() {

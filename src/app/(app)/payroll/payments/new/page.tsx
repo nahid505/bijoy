@@ -5,6 +5,7 @@ import { toDateInput } from "@/lib/format";
 import { periodLabel } from "@/lib/payroll";
 import { EmptyState, PageHeader } from "@/components/ui";
 import { requirePayroll } from "@/server/payroll-context";
+import { canChangeEntryDate } from "@/server/entry-date";
 import { readParams, type SearchParams } from "@/server/params";
 import { paySalariesAction } from "@/server/actions/payroll";
 import { accountOptions } from "@/server/voucher-editor";
@@ -33,7 +34,7 @@ export default async function NewSalaryPaymentPage({ searchParams }: { searchPar
       {rows.length === 0 ? (
         <section className="panel"><EmptyState message="কোনো প্রদেয় বেতন নেই — আগে মাসিক বেতন পোস্ট (চূড়ান্ত) করুন" /></section>
       ) : (
-        <SalaryPaymentForm action={paySalariesAction} employees={rows} cashAccounts={cashAccounts} today={toDateInput()} currency={ctx.business.currencySymbol} />
+        <SalaryPaymentForm action={paySalariesAction} employees={rows} cashAccounts={cashAccounts} today={toDateInput()} currency={ctx.business.currencySymbol} dateLocked={!canChangeEntryDate(ctx)} />
       )}
     </>
   );

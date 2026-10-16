@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma, num } from "@/lib/db";
 import { round2 } from "@/lib/calc";
+import { effectiveGroupKeys } from "@/lib/account-groups";
 import { VOUCHER_TYPES } from "@/lib/accounting";
 import { formatDate, formatMoney, toDateInput } from "@/lib/format";
 import { reportPeriod } from "../period";
@@ -267,12 +268,14 @@ export const EXTRA_REPORTS: ReportDef[] = [
       const cashEntries = await prisma.journalEntry.findMany({ where: { businessId: b, date: range, accountId: { in: [...cashIds] } }, select: { voucherId: true, debit: true, credit: true } });
       const voucherIds = [...new Set(cashEntries.map((e) => e.voucherId))];
       const counter = voucherIds.length
-        ? await prisma.journalEntry.findMany({ where: { voucherId: { in: voucherIds }, accountId: { notIn: [...cashIds] } }, select: { voucherId: true, debit: true, credit: true, account: { select: { kind: true, name: true, group: { select: { systemKey: true, name: true } } } } } })
+        ? await prisma.journalEntry.findMany({ where: { voucherId: { in: voucherIds }, accountId: { notIn: [...cashIds] } }, select: { voucherId: true, debit: true, credit: true, account: { select: { kind: true, name: true, group: { select: { id: true, name: true } } } } } })
         : [];
+      // a sub-group counts as its nearest system ancestor (e.g. a sub-group of স্থায়ী সম্পদ is investing)
+      const groupKeys = effectiveGroupKeys(await prisma.accountGroup.findMany({ where: { businessId: b }, select: { id: true, parentId: true, systemKey: true } }));
       const classify = (voucherId: string): { section: "operating" | "investing" | "financing" | "transfer"; label: string } => {
         const lines = counter.filter((c) => c.voucherId === voucherId);
         if (!lines.length) return { section: "transfer", label: "নগদ ↔ ব্যাংক স্থানান্তর" };
-        const keys = lines.map((l) => l.account.group.systemKey);
+        const keys = lines.map((l) => groupKeys.get(l.account.group.id) ?? null);
         if (keys.includes("FIXED_ASSETS")) return { section: "investing", label: "স্থায়ী সম্পদ ক্রয়/বিক্রয়" };
         if (keys.includes("LOANS")) return { section: "financing", label: "ঋণ গ্রহণ/পরিশোধ" };
         if (keys.includes("CAPITAL")) return { section: "financing", label: "মূলধন / মালিকের উত্তোলন" };

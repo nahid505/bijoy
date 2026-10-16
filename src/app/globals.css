@@ -124,3 +124,8 @@ body {
   a { color: inherit !important; text-decoration: none !important; }
 }
 .print-only { display: none; }
+
+/* in-page links (e.g. "যোগাযোগ" → #contact) scroll smoothly, unless the visitor prefers less motion */
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}

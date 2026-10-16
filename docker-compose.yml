@@ -89,9 +89,10 @@ services:
       PLATFORM_SUPPORT_PHONE: ${PLATFORM_SUPPORT_PHONE:-}
       PLATFORM_SUPPORT_EMAIL: ${PLATFORM_SUPPORT_EMAIL:-}
     ports:
-      # localhost only by default. To serve other machines use the "https" profile (recommended)
-      # or set APP_BIND=0.0.0.0 on a trusted network.
-      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-3000}:3000"
+      # all interfaces (0.0.0.0:3000:3000), so other computers on the local network can open
+      # http://<this-PC-IP>:3000. Set APP_BIND=127.0.0.1 in .env to allow this computer only; for the
+      # internet use the "https" profile below. The database above stays localhost-only.
+      - "${APP_BIND:-0.0.0.0}:${APP_PORT:-3000}:3000"
     depends_on:
       db:
         condition: service_healthy

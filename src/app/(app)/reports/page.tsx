@@ -8,9 +8,9 @@ import { featureForPath } from "@/lib/features";
 export const metadata: Metadata = { title: "রিপোর্ট" };
 
 const SECTIONS = [
-  { title: "দৈনিক ও হিসাব বই", slugs: ["daily-summary", "day-book", "ledger", "cash-book", "bank-book"] },
+  { title: "দৈনিক ও হিসাব বই", slugs: ["daily-cash", "daily-summary", "day-book", "ledger", "cash-book", "bank-book"] },
   { title: "আর্থিক বিবরণী", slugs: ["trial-balance", "profit-loss", "balance-sheet", "cash-flow", "income-expense", "expenses", "integrity"] },
-  { title: "বিক্রয়, ক্রয় ও মজুদ", slugs: ["sales", "purchases", "collection", "stock", "stock-valuation"] },
+  { title: "বিক্রয়, ক্রয় ও মজুদ", slugs: ["daily-sales", "daily-purchase", "sales", "purchases", "collection", "stock", "stock-valuation"] },
   { title: "পণ্যের মেয়াদ (Expiry)", slugs: ["expired-stock", "expiring-stock", "expiry", "product-expiry", "expiry-value"] },
   { title: "বাকি ও পার্টি", slugs: ["customer-dues", "supplier-dues", "customer-statement", "supplier-statement", "customers", "suppliers"] },
   { title: "বেতন (Payroll)", slugs: ["payroll-monthly", "payroll-employee-history", "payroll-payable", "payroll-payments", "payroll-department", "payroll-components"] },

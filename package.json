@@ -4,9 +4,9 @@
   "private": true,
   "description": "বিজয় লেনদেন (Bijoy Lenden) — ব্যবসায়িক হিসাব ও লেনদেন ব্যবস্থাপনা",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -H 0.0.0.0 -p 3000",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -H 0.0.0.0 -p 3000",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",

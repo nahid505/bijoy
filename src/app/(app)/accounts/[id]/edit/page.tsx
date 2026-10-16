@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { PageHeader } from "@/components/ui";
 import { requirePermission } from "@/server/auth";
+import { accountGroupOptions } from "@/server/services/master";
 import { getAccountOpening } from "@/server/services/accounting";
 import { saveAccountAction } from "@/server/actions/masters";
 import { AccountForm } from "../../account-form";
@@ -16,11 +17,7 @@ export default async function EditAccountPage({ params }: { params: Promise<{ id
   if (!a) notFound();
   if (a.customer) redirect(`/customers/${a.customer.id}/edit`);
   if (a.supplier) redirect(`/suppliers/${a.supplier.id}/edit`);
-  const groups = await prisma.accountGroup.findMany({
-    where: { businessId: ctx.business.id, NOT: { systemKey: { in: ["SUNDRY_DEBTORS", "SUNDRY_CREDITORS"] } } },
-    orderBy: { sortOrder: "asc" },
-    select: { id: true, name: true, nature: true, systemKey: true },
-  });
+  const groups = await accountGroupOptions(ctx.business.id);
   const opening = await getAccountOpening(prisma, ctx.business.id, a.id);
   return (
     <>

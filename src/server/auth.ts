@@ -156,8 +156,8 @@ export async function requireContext(): Promise<AppContext> {
 }
 
 export class ForbiddenError extends Error {
-  constructor() {
-    super("এই কাজের অনুমতি আপনার নেই");
+  constructor(message = "এই কাজের অনুমতি আপনার নেই") {
+    super(message);
   }
 }
 

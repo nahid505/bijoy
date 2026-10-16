@@ -13,8 +13,8 @@ import { isMySql, rawExec, sql } from "@/lib/dialect";
 import { assertVouchersBalanced } from "./accounting";
 
 export const BACKUP_FORMAT = "bijoy-lenden-backup";
-export const BACKUP_VERSION = 4;
-const SUPPORTED_VERSIONS = [2, 3, 4]; // v2 (before batches / notifications) and v3 (before payroll) files can still be restored
+export const BACKUP_VERSION = 5;
+const SUPPORTED_VERSIONS = [2, 3, 4, 5]; // v2 (before batches / notifications), v3 (before payroll) and v4 (before production) files can still be restored
 
 const TABLES = [
   "accountGroups", "accounts", "units", "categories", "brands", "warehouses", "products", "customers", "suppliers",
@@ -26,8 +26,11 @@ type Row = Record<string, unknown>;
 /** v4: payroll (employees, structures, attendance, runs, payslips, advances, salary payments). */
 const PAYROLL_TABLES = ["departments", "employees", "payComponents", "employeeComponents", "salaryRevisions", "attendances", "payrollRuns", "payslips", "payslipLines", "advances", "salaryPayments"] as const;
 type PayrollData = { settings: Row | null } & Record<(typeof PAYROLL_TABLES)[number], Row[]>;
+/** v5: production (recipes / BOM and production entries; their vouchers are in "vouchers"). */
+type ProductionData = { recipes: Row[]; recipeLines: Row[]; runs: Row[] };
 /** features: the business's module choices (Feature Management); absent in older files = defaults */
-export type BackupData = { business: Row; smsTemplates?: Row[]; smsSettings?: Row | null; payroll?: PayrollData; features?: Row[] } & Record<Table, Row[]>;
+/** paddyPurchases: weighbridge slips of paddy purchases (their vouchers are in "vouchers"); optional. */
+export type BackupData = { business: Row; smsTemplates?: Row[]; smsSettings?: Row | null; payroll?: PayrollData; features?: Row[]; production?: ProductionData; paddyPurchases?: Row[] } & Record<Table, Row[]>;
 
 async function exportPayroll(businessId: string): Promise<PayrollData> {
   const where = { businessId };
@@ -73,15 +76,19 @@ export async function exportBusiness(businessId: string) {
       prisma.productBatch.findMany({ where }),
       prisma.notification.findMany({ where, orderBy: { createdAt: "asc" } }),
     ]);
-  const [smsTemplates, smsSettingsRow, payroll, features] = await Promise.all([
+  const [smsTemplates, smsSettingsRow, payroll, features, recipes, recipeLines, runs, paddyPurchases] = await Promise.all([
     prisma.smsTemplate.findMany({ where }),
     // the encrypted API key, balance and on/off state are NOT exported (secrets stay on the server)
     prisma.smsSettings.findUnique({ where: { businessId }, select: { provider: true, senderId: true, lowBalanceThreshold: true, events: true, alertMobiles: true, expiryAlertDays: true, dueReminderEveryDays: true } }),
     exportPayroll(businessId),
     prisma.businessFeature.findMany({ where: { businessId }, select: { featureKey: true, enabled: true, changedAt: true } }),
+    prisma.recipe.findMany({ where }),
+    prisma.recipeLine.findMany({ where: { recipe: { businessId } } }),
+    prisma.productionRun.findMany({ where }),
+    prisma.paddyPurchase.findMany({ where }),
   ]);
   const data = JSON.parse(
-    JSON.stringify({ business, accountGroups, accounts, units, categories, brands, warehouses, products, customers, suppliers, vouchers, journalEntries, voucherItems, voucherPayments, stockMovements, counters, productBatches, notifications, smsTemplates, smsSettings: smsSettingsRow, payroll, features }),
+    JSON.stringify({ business, accountGroups, accounts, units, categories, brands, warehouses, products, customers, suppliers, vouchers, journalEntries, voucherItems, voucherPayments, stockMovements, counters, productBatches, notifications, smsTemplates, smsSettings: smsSettingsRow, payroll, features, production: { recipes, recipeLines, runs }, paddyPurchases }),
   ) as BackupData;
   return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: new Date().toISOString(), checksum: checksumOf(data), data };
 }
@@ -125,6 +132,7 @@ export function validateBackup(raw: unknown): ValidationReport {
     if (!cond && errors.length < 50) errors.push(msg);
   };
   for (const a of data.accounts) ref(groupIds.has(a.groupId as string), `হিসাব "${a.name}" এর গ্রুপ পাওয়া যায়নি`);
+  for (const g of data.accountGroups) if (g.parentId) ref(groupIds.has(g.parentId as string) && g.parentId !== g.id, `গ্রুপ "${g.name}" এর প্যারেন্ট গ্রুপ পাওয়া যায়নি`);
   for (const p of data.products) ref(unitIds.has(p.unitId as string), `পণ্য "${p.name}" এর ইউনিট পাওয়া যায়নি`);
   for (const c of [...data.customers, ...data.suppliers]) ref(accountIds.has(c.accountId as string), `পার্টি "${c.name}" এর লেজার পাওয়া যায়নি`);
   for (const e of data.journalEntries) ref(voucherIds.has(e.voucherId as string) && accountIds.has(e.accountId as string), "জার্নাল এন্ট্রির ভাউচার/হিসাব পাওয়া যায়নি");
@@ -143,6 +151,24 @@ export function validateBackup(raw: unknown): ValidationReport {
     if (m.batchId) ref(batchIds.has(m.batchId as string), "স্টক মুভমেন্টের ব্যাচ পাওয়া যায়নি");
   }
   for (const v of data.vouchers) if (v.adjustmentAccountId) ref(accountIds.has(v.adjustmentAccountId as string), "স্টক জার্নালের সমন্বয় হিসাব পাওয়া যায়নি");
+  if (Array.isArray(data.paddyPurchases)) {
+    stats.paddyPurchases = data.paddyPurchases.length;
+    for (const x of data.paddyPurchases) ref(voucherIds.has(x.voucherId as string), "ধান ক্রয়ের ভাউচার পাওয়া যায়নি");
+  }
+  if ((file.version ?? 0) >= 5) {
+    const pd = data.production;
+    if (!pd || !Array.isArray(pd.recipes) || !Array.isArray(pd.recipeLines) || !Array.isArray(pd.runs)) errors.push("উৎপাদনের (রেসিপি) তালিকা নেই");
+    else {
+      stats["production.recipes"] = pd.recipes.length;
+      stats["production.runs"] = pd.runs.length;
+      const recipeIds = new Set(pd.recipes.map((r) => r.id as string));
+      for (const l of pd.recipeLines) ref(recipeIds.has(l.recipeId as string) && productIds.has(l.productId as string), "রেসিপি লাইনের রেসিপি/পণ্য পাওয়া যায়নি");
+      for (const r of pd.runs) {
+        ref(voucherIds.has(r.voucherId as string), "উৎপাদন এন্ট্রির ভাউচার পাওয়া যায়নি");
+        if (r.recipeId) ref(recipeIds.has(r.recipeId as string), "উৎপাদন এন্ট্রির রেসিপি পাওয়া যায়নি");
+      }
+    }
+  }
   if ((file.version ?? 0) >= 4) {
     const pr = data.payroll;
     if (!pr || PAYROLL_TABLES.some((t) => !Array.isArray(pr[t]))) errors.push("বেতনের (payroll) তালিকা নেই");
@@ -241,7 +267,9 @@ export async function restoreBackup(raw: unknown, userId: string): Promise<{ bus
         },
       });
       const businessId = business.id;
-      await tx.accountGroup.createMany({ data: data.accountGroups.map((g) => ({ id: must(g.id), businessId, name: String(g.name), nature: g.nature as never, isDirect: Boolean(g.isDirect), systemKey: (g.systemKey as string) ?? null, sortOrder: Number(g.sortOrder ?? 0) })) });
+      await tx.accountGroup.createMany({ data: data.accountGroups.map((g) => ({ id: must(g.id), businessId, name: String(g.name), nature: g.nature as never, isDirect: Boolean(g.isDirect), systemKey: (g.systemKey as string) ?? null, sortOrder: Number(g.sortOrder ?? 0), description: (g.description as string) ?? null })) });
+      // sub-groups: link parents once every group exists (createMany order is not a tree order)
+      for (const g of data.accountGroups.filter((x) => x.parentId)) await tx.accountGroup.update({ where: { id: must(g.id) }, data: { parentId: must(g.parentId) } });
       await tx.account.createMany({
         data: data.accounts.map((a) => ({
           id: must(a.id), businessId, groupId: must(a.groupId), name: String(a.name), code: (a.code as string) ?? null, nature: a.nature as never, kind: a.kind as never,
@@ -286,6 +314,7 @@ export async function restoreBackup(raw: unknown, userId: string): Promise<{ bus
           id: must(i.id), voucherId: must(i.voucherId), productId: must(i.productId), warehouseId: id(i.warehouseId), unitId: id(i.unitId), unitFactor: Number(i.unitFactor ?? 1),
           quantity: Number(i.quantity), baseQuantity: Number(i.baseQuantity), rate: Number(i.rate), discount: Number(i.discount ?? 0), amount: Number(i.amount),
           costRate: Number(i.costRate ?? 0), costAmount: Number(i.costAmount ?? 0), direction: Number(i.direction ?? 0), batchId: id(i.batchId), batchNo: (i.batchNo as string) ?? null, expiryDate: date(i.expiryDate), lineNo: Number(i.lineNo ?? 0),
+          costShare: i.costShare === null || i.costShare === undefined ? null : Number(i.costShare),
         })),
       });
       await tx.voucherPayment.createMany({ data: data.voucherPayments.map((p) => ({ id: must(p.id), voucherId: must(p.voucherId), accountId: must(p.accountId), amount: Number(p.amount), reference: (p.reference as string) ?? null, lineNo: Number(p.lineNo ?? 0) })) });
@@ -314,6 +343,20 @@ export async function restoreBackup(raw: unknown, userId: string): Promise<{ bus
       });
       await tx.counter.createMany({ data: data.counters.map((c) => ({ businessId, key: String(c.key), value: Number(c.value) })) });
       if (data.payroll) await restorePayroll(tx, businessId, data.payroll, { id, must, date, userId });
+      if (Array.isArray(data.paddyPurchases) && data.paddyPurchases.length) {
+        await tx.paddyPurchase.createMany({
+          data: data.paddyPurchases.map((x) => ({
+            id: must(x.id), businessId, voucherId: must(x.voucherId), bagCount: Number(x.bagCount ?? 0), grossKg: Number(x.grossKg), dhaltaKg: Number(x.dhaltaKg ?? 0), netKg: Number(x.netKg),
+            mon: Number(x.mon), ratePerMon: Number(x.ratePerMon), totalPrice: Number(x.totalPrice), notes: (x.notes as string) ?? null, createdAt: date(x.createdAt) ?? undefined,
+          })),
+        });
+      }
+      if (data.production) {
+        const pd = data.production;
+        await tx.recipe.createMany({ data: pd.recipes.map((r) => ({ id: must(r.id), businessId, name: String(r.name), code: (r.code as string) ?? null, description: (r.description as string) ?? null, isActive: r.isActive !== false, createdAt: date(r.createdAt) ?? undefined })) });
+        await tx.recipeLine.createMany({ data: pd.recipeLines.map((l) => ({ id: must(l.id), recipeId: must(l.recipeId), productId: must(l.productId), kind: (l.kind === "OUTPUT" ? "OUTPUT" : "INPUT") as "INPUT" | "OUTPUT", quantity: Number(l.quantity), costShare: Number(l.costShare ?? 0), lineNo: Number(l.lineNo ?? 0) })) });
+        await tx.productionRun.createMany({ data: pd.runs.map((r) => ({ id: must(r.id), businessId, voucherId: must(r.voucherId), recipeId: id(r.recipeId), batches: Number(r.batches ?? 1), extraCost: Number(r.extraCost ?? 0), createdAt: date(r.createdAt) ?? undefined })) });
+      }
       if (Array.isArray(data.features) && data.features.length) {
         const known = new Set((await tx.feature.findMany({ select: { key: true } })).map((f) => f.key));
         await tx.businessFeature.createMany({

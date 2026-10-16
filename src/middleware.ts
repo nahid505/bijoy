@@ -40,8 +40,9 @@ export async function middleware(req: NextRequest) {
   const nonce = btoa(crypto.randomUUID());
   const csp = contentSecurityPolicy(nonce, https);
 
-  // "/" is the public landing page; /screenshots holds its images
-  const isPublic = pathname === "/" || pathname.startsWith("/screenshots/") || PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  // "/" is the public landing page; /screenshots and the owner's profile photo are its images
+  const isPublic =
+    pathname === "/" || pathname.startsWith("/screenshots/") || /^\/profile\.(jpe?g|png|webp)$/.test(pathname) || PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
   const session = await verifySessionToken(req.cookies.get(SESSION_COOKIE)?.value);
   if (!session && !isPublic) {
     const url = req.nextUrl.clone();

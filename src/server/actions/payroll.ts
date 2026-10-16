@@ -11,6 +11,7 @@ import {
 import { assertPermission } from "../auth";
 import { audit } from "../audit";
 import { guard, parseForm, parseJsonPayload, toResult, UserError, type ActionState } from "../action-utils";
+import { assertEntryDate } from "../entry-date";
 import { flash } from "../flash";
 import {
   adjustPayslip, calculatePayrollRun, deleteAdvance, deleteDepartment, deleteEmployee, deletePayComponent, deletePayrollRun, deleteSalaryPayment, giveAdvance, paySalaries,
@@ -211,6 +212,7 @@ export async function paySalariesAction(_prev: ActionState, fd: FormData): Promi
   const r = await guard(async () => {
     const ctx = await assertPermission("payroll:pay");
     const input = parseJsonPayload(salaryPaymentSchema, fd);
+    assertEntryDate(ctx, input.date);
     const v = await paySalaries(ctx.svc, input);
     await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: "CREATE", entity: "SalaryPayment", entityId: v.id, details: { voucherNo: v.voucherNo, amount: num(v.amount), employees: input.items.length } });
     return v;
@@ -233,6 +235,7 @@ export async function giveAdvanceAction(_prev: ActionState, fd: FormData): Promi
   const r = await guard(async () => {
     const ctx = await assertPermission("payroll:pay");
     const input = parseJsonPayload(advanceSchema, fd);
+    assertEntryDate(ctx, input.date);
     const a = await giveAdvance(ctx.svc, input);
     await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: "CREATE", entity: "EmployeeAdvance", entityId: a.id, details: { employeeId: a.employeeId, kind: a.kind, amount: num(a.amount), installment: num(a.installment) } });
   });

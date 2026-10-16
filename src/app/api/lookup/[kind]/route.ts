@@ -9,9 +9,9 @@ export const dynamic = "force-dynamic";
 const ACCESS: Record<string, Permission[]> = {
   customers: ["customers:view", "sales:view", "sales:create", "vouchers:create", "reports:view"],
   suppliers: ["suppliers:view", "purchases:view", "purchases:create", "vouchers:create", "reports:view"],
-  products: ["inventory:view", "sales:create", "purchases:create", "stock:adjust"],
+  products: ["inventory:view", "sales:create", "purchases:create", "stock:adjust", "production:manage"],
   employees: ["payroll:view", "payroll:attendance"],
-  accounts: ["accounts:view", "vouchers:create", "vouchers:view", "reports:view", "sales:create", "purchases:create"],
+  accounts: ["accounts:view", "vouchers:create", "vouchers:view", "reports:view", "sales:create", "purchases:create", "production:manage"],
 };
 // Who may use the picker's "create new" (the same permission the create action checks).
 const CREATE: Record<string, Permission> = { customers: "customers:manage", suppliers: "suppliers:manage", products: "inventory:manage", accounts: "accounts:manage", employees: "payroll:manage" };

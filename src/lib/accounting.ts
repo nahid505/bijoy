@@ -260,25 +260,28 @@ export const VOUCHER_TYPES = {
   SALES_RETURN: { slug: "sales-return", label: "বিক্রয় ফেরত", long: "বিক্রয় ফেরত ভাউচার", prefix: "SR" },
   PURCHASE_RETURN: { slug: "purchase-return", label: "ক্রয় ফেরত", long: "ক্রয় ফেরত ভাউচার", prefix: "PR" },
   STOCK_JOURNAL: { slug: "stock-journal", label: "স্টক জার্নাল", long: "স্টক জার্নাল", prefix: "SJ" },
+  PRODUCTION: { slug: "production", label: "উৎপাদন", long: "উৎপাদন এন্ট্রি", prefix: "PRD" },
   OPENING: { slug: "opening", label: "প্রারম্ভিক", long: "প্রারম্ভিক ব্যালেন্স", prefix: "OB" },
 } as const;
 
 export type VoucherTypeKey = keyof typeof VOUCHER_TYPES;
 
-export type EditableVoucherType = Exclude<VoucherTypeKey, "OPENING">;
+/** Types edited in the generic voucher screens (/vouchers/…); production runs live under /production. */
+export type EditableVoucherType = Exclude<VoucherTypeKey, "OPENING" | "PRODUCTION">;
 
 export function voucherTypeFromSlug(slug: string): EditableVoucherType | null {
   const hit = (Object.keys(VOUCHER_TYPES) as VoucherTypeKey[]).find((k) => VOUCHER_TYPES[k].slug === slug);
-  return hit && hit !== "OPENING" ? hit : null;
+  return hit && hit !== "OPENING" && hit !== "PRODUCTION" ? hit : null;
 }
 
 export const TRADE_TYPES: VoucherTypeKey[] = ["SALES", "PURCHASE", "SALES_RETURN", "PURCHASE_RETURN"];
 
 /** Which permission family governs a voucher type. */
-export function voucherPermissionFamily(type: VoucherTypeKey): "sales" | "purchases" | "vouchers" | "stock" {
+export function voucherPermissionFamily(type: VoucherTypeKey): "sales" | "purchases" | "vouchers" | "stock" | "production" {
   if (type === "SALES" || type === "SALES_RETURN") return "sales";
   if (type === "PURCHASE" || type === "PURCHASE_RETURN") return "purchases";
   if (type === "STOCK_JOURNAL") return "stock";
+  if (type === "PRODUCTION") return "production";
   return "vouchers";
 }
 

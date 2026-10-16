@@ -10,6 +10,7 @@ import { audit } from "../audit";
 import { flash } from "../flash";
 import { guard, parseJsonPayload, toResult, UserError, type ActionState } from "../action-utils";
 import { voucherPermission } from "../voucher-permissions";
+import { assertEntryDate, originalEntryDate } from "../entry-date";
 import { smsForCancelledInvoice, smsForVoucher } from "../sms/events";
 import { deleteVoucher, saveCashVoucher, saveJournalVoucher, saveStockJournal, saveTradeVoucher, voucherSnapshot } from "../services/voucher";
 
@@ -24,6 +25,8 @@ export async function saveVoucherAction(type: EditableType, id: string | null, _
     const ctx = await assertPermission(voucherPermission(type, id ? "edit" : "create"));
     const before = id ? await voucherSnapshot(ctx.business.id, id) : null;
     const editId = id ?? undefined;
+    // date lock (transaction:change_date): new entries today, edits keep their date
+    const original = await originalEntryDate(ctx.business.id, id);
     let voucher;
     switch (type) {
       case "SALES":
@@ -32,20 +35,30 @@ export async function saveVoucherAction(type: EditableType, id: string | null, _
       case "PURCHASE_RETURN":
         {
           const input = parseJsonPayload(tradeVoucherSchema, fd);
+          assertEntryDate(ctx, input.date, original);
           if (!id && !ctx.features.includes("MULTI_WAREHOUSE")) input.warehouseId = null; // → main warehouse
           voucher = await saveTradeVoucher(ctx.svc, type, input, editId);
         }
         break;
       case "RECEIPT":
       case "PAYMENT":
-        voucher = await saveCashVoucher(ctx.svc, type, parseJsonPayload(cashVoucherSchema, fd), editId);
+        {
+          const input = parseJsonPayload(cashVoucherSchema, fd);
+          assertEntryDate(ctx, input.date, original);
+          voucher = await saveCashVoucher(ctx.svc, type, input, editId);
+        }
         break;
       case "JOURNAL":
-        voucher = await saveJournalVoucher(ctx.svc, parseJsonPayload(journalVoucherSchema, fd), editId);
+        {
+          const input = parseJsonPayload(journalVoucherSchema, fd);
+          assertEntryDate(ctx, input.date, original);
+          voucher = await saveJournalVoucher(ctx.svc, input, editId);
+        }
         break;
       case "STOCK_JOURNAL":
         {
           const input = parseJsonPayload(stockJournalSchema, fd);
+          assertEntryDate(ctx, input.date, original);
           if (!id && !ctx.features.includes("MULTI_WAREHOUSE")) {
             const main = await mainWarehouseId(ctx.business.id);
             input.lines = input.lines.map((l) => ({ ...l, warehouseId: main }));
@@ -99,7 +112,7 @@ export async function deleteVoucherAction(id: string, _prev: ActionState, _fd: F
   if (cancelled.v) await smsForCancelledInvoice(prisma, cancelled.v.businessId, cancelled.v, cancelled.v.userId); // after the delete committed
   await flash(`${label} মুছে ফেলা হয়েছে — স্টক ও হিসাব পুনর্গণনা করা হয়েছে`);
   revalidatePath("/", "layout");
-  redirect(`/vouchers/${slug}`);
+  redirect(slug === "production" ? "/production" : `/vouchers/${slug}`);
 }
 
 /** The default warehouse (single-warehouse mode). */

@@ -241,7 +241,7 @@ export function visibleKinds(can: (p: string) => boolean, features?: readonly st
   if (can("sms:manage")) kinds.push("SMS_BALANCE_LOW");
   if (can("billing:view")) kinds.push("TRIAL_STARTED", "SUBSCRIPTION_ACTIVATED", "SUBSCRIPTION_EXPIRING", "SUBSCRIPTION_EXPIRED", "PAYMENT_SUCCESS", "PAYMENT_FAILED", "PLAN_CHANGED");
   if (can("users:manage")) kinds.push("USER_ADDED");
-  if (can("features:view")) kinds.push("FEATURE_CHANGED");
+  if (can("billing:view")) kinds.push("FEATURE_CHANGED");
   return kinds;
 }
 

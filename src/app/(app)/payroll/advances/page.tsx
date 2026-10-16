@@ -5,6 +5,7 @@ import { formatDate, formatMoney, toDateInput } from "@/lib/format";
 import { ActionButton } from "@/components/forms";
 import { Badge, EmptyState, PageHeader, StatCard, TableWrap } from "@/components/ui";
 import { can } from "@/server/auth";
+import { canChangeEntryDate } from "@/server/entry-date";
 import { requirePayroll } from "@/server/payroll-context";
 import { readParams, type SearchParams } from "@/server/params";
 import { deleteAdvanceAction, giveAdvanceAction } from "@/server/actions/payroll";
@@ -41,7 +42,7 @@ export default async function AdvancesPage({ searchParams }: { searchParams: Sea
       {can(ctx, "payroll:pay") && (
         <section className="panel mb-4 p-4">
           <h2 className="panel-title mb-3">অগ্রিম / ঋণ প্রদান</h2>
-          <AdvanceForm action={giveAdvanceAction} cashAccounts={cashAccounts} today={toDateInput()} currency={cur} employee={preselected[0] ?? null} />
+          <AdvanceForm action={giveAdvanceAction} cashAccounts={cashAccounts} today={toDateInput()} currency={cur} employee={preselected[0] ?? null} dateLocked={!canChangeEntryDate(ctx)} />
         </section>
       )}
       <section className="panel">

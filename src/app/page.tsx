@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { CONTACT } from "@/lib/contact";
+import { ProfileSection } from "@/components/profile-section";
 import { getCurrentUser } from "@/server/auth";
 import { loadPlans } from "@/server/billing/plans";
 import { PricingSection } from "@/components/pricing-section";
@@ -60,7 +62,6 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   const cycle = (await searchParams).cycle === "YEARLY" ? "YEARLY" : "MONTHLY";
   const [user, { plans, features, settings }] = await Promise.all([getCurrentUser(), loadPlans({ publicOnly: true, activeOnly: true })]);
   const trial = settings.trialDays;
-  const phone = process.env.PLATFORM_SUPPORT_PHONE;
   const email = process.env.PLATFORM_SUPPORT_EMAIL;
   return (
     <div className="min-h-screen bg-paper">
@@ -179,18 +180,26 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           </div>
         </section>
 
+        {/* owner profile */}
+        <ProfileSection />
+
         {/* contact + final CTA */}
-        <section id="contact" className="scroll-mt-20 bg-brand-700 text-white">
+        <section id="contact" aria-labelledby="contact-heading" className="scroll-mt-20 bg-brand-700 text-white">
           <div className="mx-auto flex max-w-6xl flex-col items-start gap-6 px-4 py-12 md:flex-row md:items-center md:justify-between">
             <div>
-              <h2 className="text-2xl font-bold">আজই শুরু করুন</h2>
-              <p className="mt-1 text-brand-50">প্রশ্ন আছে? আমাদের সাথে যোগাযোগ করুন{phone || email ? ":" : "।"}</p>
-              {(phone || email) && (
-                <p className="mt-2 flex flex-wrap gap-4 text-sm">
-                  {phone && <a href={`tel:${phone}`} className="underline">📞 {phone}</a>}
-                  {email && <a href={`mailto:${email}`} className="underline">✉ {email}</a>}
+              <h2 id="contact-heading" className="text-2xl font-bold">যোগাযোগ</h2>
+              <p className="mt-1 text-brand-50">প্রশ্ন আছে বা ডেমো দেখতে চান? সরাসরি যোগাযোগ করুন:</p>
+              <address className="mt-4 space-y-2 not-italic">
+                <p className="text-lg font-semibold">
+                  {CONTACT.person} <span className="text-sm font-normal text-brand-100">({CONTACT.role})</span>
                 </p>
-              )}
+                <p className="flex items-start gap-2"><span aria-hidden>📍</span><span><span className="sr-only">ঠিকানা: </span>{CONTACT.address}</span></p>
+                <p className="flex items-center gap-2">
+                  <span aria-hidden>📞</span>
+                  <a href={CONTACT.phoneHref} className="text-lg font-bold underline decoration-2 underline-offset-4 hover:text-brand-50" aria-label={`কল করুন: ${CONTACT.phoneDisplay}`}>{CONTACT.phoneDisplay}</a>
+                </p>
+                {email && <p className="flex items-center gap-2"><span aria-hidden>✉</span><a href={`mailto:${email}`} className="underline">{email}</a></p>}
+              </address>
             </div>
             <Link prefetch={false} href={user ? "/dashboard" : "/register"} className="rounded-md bg-white px-5 py-2.5 font-semibold text-brand-800 hover:bg-brand-50">
               {user ? "ড্যাশবোর্ডে যান →" : "ফ্রি ট্রায়াল শুরু করুন"}

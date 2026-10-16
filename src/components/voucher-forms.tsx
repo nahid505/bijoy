@@ -6,6 +6,7 @@ import { unitConversionFactor } from "@/lib/accounting";
 import { computeTotals, lineAmount, round2 } from "@/lib/calc";
 import { formatDrCr, formatMoney, formatQty } from "@/lib/format";
 import { SearchSelect } from "./search-select";
+import { EntryDateInput } from "./entry-date-input";
 import { ActionForm, FieldError, SubmitButton, useFormCtx, type FormAction } from "./forms";
 import { SearchableAccountSelect, type AccountItem } from "./account-select";
 import {
@@ -25,12 +26,12 @@ import {
 
 export type { AccountOption, ProductOption, UnitOption, WarehouseOption, BatchOption, PartyOption };
 
-function Header({ date, setDate, reference, setReference }: { date: string; setDate: (v: string) => void; reference: string; setReference: (v: string) => void }) {
+function Header({ date, setDate, reference, setReference, dateLocked }: { date: string; setDate: (v: string) => void; reference: string; setReference: (v: string) => void; dateLocked?: boolean }) {
   return (
     <>
       <div>
         <label className="label" htmlFor="v-date">তারিখ *</label>
-        <input id="v-date" type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} />
+        <EntryDateInput id="v-date" value={date} onChange={setDate} locked={dateLocked} />
         <FieldError name="date" />
       </div>
       <div>
@@ -56,6 +57,8 @@ function Footer({ cancelHref, label, disabled, extra }: { cancelHref: string; la
 
 export interface TradeDefaults {
   date: string;
+  /** no transaction:change_date permission: the date is fixed */
+  dateLocked?: boolean;
   reference: string;
   narration: string;
   partyAccountId: string;
@@ -197,7 +200,7 @@ export function TradeVoucherForm({
           <PartyInfo party={party ?? undefined} currency={currency} projectedDue={projectedDue} />
           <FieldError name="partyAccountId" />
         </div>
-        <Header date={date} setDate={setDate} reference={reference} setReference={setReference} />
+        <Header date={date} setDate={setDate} reference={reference} setReference={setReference} dateLocked={defaults.dateLocked} />
         <div>
           <label className="label" htmlFor="v-wh">গুদাম</label>
           <select id="v-wh" className="input" value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
@@ -364,6 +367,8 @@ function Row({ label, value, strong }: { label: string; value: string; strong?: 
 
 export interface CashDefaults {
   date: string;
+  /** no transaction:change_date permission: the date is fixed */
+  dateLocked?: boolean;
   reference: string;
   narration: string;
   cashAccountId: string;
@@ -415,7 +420,7 @@ export function CashVoucherForm({
           {cash?.balance !== undefined && <p className="mt-1 text-xs text-slate-500">বর্তমান ব্যালেন্স: {formatDrCr(cash.balance, currency)}</p>}
           <FieldError name="cashAccountId" />
         </div>
-        <Header date={date} setDate={setDate} reference={reference} setReference={setReference} />
+        <Header date={date} setDate={setDate} reference={reference} setReference={setReference} dateLocked={defaults.dateLocked} />
       </section>
 
       <section className="panel">
@@ -479,6 +484,8 @@ export function SubmitThenPrint({ label = "সংরক্ষণ ও প্র�
 
 export interface JournalDefaults {
   date: string;
+  /** no transaction:change_date permission: the date is fixed */
+  dateLocked?: boolean;
   reference: string;
   narration: string;
   lines: { accountId: string; debit: number; credit: number; narration: string }[];
@@ -503,7 +510,7 @@ export function JournalVoucherForm({ action, accounts, defaults, currency, cance
   return (
     <ActionForm action={action} className="space-y-4">
       <input type="hidden" name="payload" value={payload} />
-      <section className="panel grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4"><Header date={date} setDate={setDate} reference={reference} setReference={setReference} /></section>
+      <section className="panel grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4"><Header date={date} setDate={setDate} reference={reference} setReference={setReference} dateLocked={defaults.dateLocked} /></section>
       <section className="panel">
         <div className="panel-head"><h2 className="panel-title">জার্নাল এন্ট্রি</h2></div>
         <div className="overflow-x-auto">
@@ -550,6 +557,8 @@ export function JournalVoucherForm({ action, accounts, defaults, currency, cance
 
 export interface StockJournalDefaults {
   date: string;
+  /** no transaction:change_date permission: the date is fixed */
+  dateLocked?: boolean;
   reference: string;
   narration: string;
   lines: { productId: string; warehouseId: string; direction: 1 | -1; quantity: number; rate: number | null; batchNo: string; expiryDate: string; mfgDate?: string }[];
@@ -604,7 +613,7 @@ export function StockJournalForm({
   return (
     <ActionForm action={action} className="space-y-4">
       <input type="hidden" name="payload" value={payload} />
-      <section className="panel grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4"><Header date={date} setDate={setDate} reference={reference} setReference={setReference} /></section>
+      <section className="panel grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4"><Header date={date} setDate={setDate} reference={reference} setReference={setReference} dateLocked={defaults.dateLocked} /></section>
       <section className="panel">
         <div className="panel-head"><h2 className="panel-title">স্টক সমন্বয় / স্থানান্তর</h2><span className="text-xs text-slate-500">স্থানান্তর: এক গুদাম থেকে “বাহির” ও অন্য গুদামে “আগমন” লাইন দিন</span></div>
         <div className="overflow-x-auto">

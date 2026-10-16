@@ -64,6 +64,10 @@ describe("feature registry", () => {
     expect(featureForPath("/products/stock")).toBe("INVENTORY");
     expect(featureForPath("/products/batches/x")).toBe("PRODUCT_EXPIRY");
     expect(featureForPath("/products/categories")).toBe("ADVANCED_INVENTORY");
+    expect(featureForPath("/production/new")).toBe("PRODUCTION");
+    expect(featureForPath("/production/recipes/abc")).toBe("PRODUCTION");
+    expect(ownerFeature("production:manage")).toBe("PRODUCTION");
+    expect(blockedPermissions(["PRODUCTION"])).toEqual(["production:view", "production:manage"]);
     expect(featureForPath("/productsx")).toBeNull();
     for (const core of ["/dashboard", "/reports/trial-balance", "/reports/ledger", "/account", "/billing", "/payrolls", null]) {
       expect(featureForPath(core)).toBeNull();
@@ -91,6 +95,6 @@ describe("permission blocking", () => {
     expect(isPermission("!payroll:view")).toBe(false); // can never be stored on a role
   });
   it("feature management permissions exist", () => {
-    expect(ALL_PERMISSIONS).toEqual(expect.arrayContaining(["features:view", "features:manage"]));
+    expect(ALL_PERMISSIONS.some((p) => p.startsWith("features:"))).toBe(false); // modules follow the plan; no company switch
   });
 });

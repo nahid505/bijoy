@@ -6,6 +6,7 @@ import { TRADE_TYPES, VOUCHER_TYPES } from "@/lib/accounting";
 import { paymentStatus, PAYMENT_STATUS_LABELS, round2 } from "@/lib/calc";
 import { formatDate, formatDateTime, formatMoney, formatQty } from "@/lib/format";
 import { ActionButton } from "@/components/forms";
+import { PaddySlip } from "@/components/paddy-slip";
 import { Badge, DetailRow, PageHeader, TableWrap } from "@/components/ui";
 import { can, requireContext } from "@/server/auth";
 import { batchesOfItem, loadVoucher } from "@/server/voucher-detail";
@@ -43,7 +44,7 @@ export default async function VoucherDetailPage({ params }: { params: Promise<{ 
       <PageHeader
         title={`${meta.long} · ${v.voucherNo}`}
         description={`${formatDate(v.date)}${v.partyAccount ? ` · ${v.partyAccount.name}` : ""}`}
-        crumbs={[{ label: "লেনদেন" }, { label: meta.label, href: editable ? `/vouchers/${meta.slug}` : undefined }, { label: v.voucherNo }]}
+        crumbs={[{ label: "লেনদেন" }, { label: meta.label, href: v.type === "PRODUCTION" ? "/production" : editable ? `/vouchers/${meta.slug}` : undefined }, { label: v.voucherNo }]}
         actions={
           <>
             <Link prefetch={false} href={`/vouchers/v/${v.id}/print`} className="btn-primary">{v.type === "SALES" ? "🧾 ইনভয়েস / প্রিন্ট" : "🖨 প্রিন্ট / PDF"}</Link>
@@ -51,7 +52,7 @@ export default async function VoucherDetailPage({ params }: { params: Promise<{ 
             {v.type === "PURCHASE" && can(ctx, "purchases:create") && <Link prefetch={false} href={`/vouchers/purchase-return/new?from=${v.id}`} className="btn-secondary">↩ ফেরত দিন</Link>}
             {v.type === "SALES" && v.partyAccountId && amount - paid > 0 && can(ctx, "vouchers:create") && <Link prefetch={false} href={`/vouchers/receipt/new?party=${v.partyAccountId}`} className="btn-secondary">বাকি আদায়</Link>}
             {payrollHref && can(ctx, "payroll:view") && <Link prefetch={false} href={payrollHref} className="btn-secondary">বেতন মডিউলে দেখুন</Link>}
-            {editable && can(ctx, voucherPermission(v.type, "edit")) && <Link prefetch={false} href={`/vouchers/v/${v.id}/edit`} className="btn-secondary">সম্পাদনা</Link>}
+            {editable && can(ctx, voucherPermission(v.type, "edit")) && <Link prefetch={false} href={v.type === "PRODUCTION" ? `/production/${v.id}/edit` : v.paddyPurchase ? `/purchases/paddy/${v.id}/edit` : `/vouchers/v/${v.id}/edit`} className="btn-secondary">সম্পাদনা</Link>}
             {editable && can(ctx, voucherPermission(v.type, "delete")) && (
               <ActionButton action={deleteVoucherAction.bind(null, v.id)} label="মুছুন" className="btn-danger" confirmText="ভাউচারটি মুছে ফেললে সংশ্লিষ্ট সব জার্নাল এন্ট্রি ও স্টক মুভমেন্ট বাতিল হবে। নিশ্চিত?" />
             )}
@@ -106,13 +107,14 @@ export default async function VoucherDetailPage({ params }: { params: Promise<{ 
             <DetailRow label="মোট টাকা">{formatMoney(amount, cur)}</DetailRow>
             {trade && <DetailRow label="নগদে লেনদেন">{formatMoney(paid, cur)}</DetailRow>}
             {trade && <DetailRow label="বাকি"><span className={amount - paid > 0 ? "text-credit" : ""}>{formatMoney(amount - paid, cur)}</span></DetailRow>}
-            {v.narration && <DetailRow label="বিবরণ">{v.narration}</DetailRow>}
+            {v.narration && v.narration !== v.paddyPurchase?.notes && <DetailRow label="বিবরণ">{v.narration}</DetailRow>}
             <DetailRow label="তৈরি">{v.createdBy.name} · {formatDateTime(v.createdAt)}</DetailRow>
             {v.updatedBy && <DetailRow label="সর্বশেষ সম্পাদনা">{v.updatedBy.name} · {formatDateTime(v.updatedAt)}</DetailRow>}
           </dl>
         </section>
       </div>
 
+      {v.paddyPurchase && <div className="panel mt-4 px-4">{v.paddyPurchase && <PaddySlip currency={cur} d={{ bagCount: v.paddyPurchase.bagCount, grossKg: num(v.paddyPurchase.grossKg), dhaltaKg: num(v.paddyPurchase.dhaltaKg), netKg: num(v.paddyPurchase.netKg), mon: num(v.paddyPurchase.mon), ratePerMon: num(v.paddyPurchase.ratePerMon), totalPrice: num(v.paddyPurchase.totalPrice), notes: v.paddyPurchase.notes }} />}</div>}
       {v.items.length > 0 && (
         <section className="panel mt-4">
           <div className="panel-head"><h2 className="panel-title">পণ্যের বিবরণ</h2></div>

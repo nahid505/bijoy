@@ -7,5 +7,6 @@ export type VoucherAction = "view" | "create" | "edit" | "delete";
 export function voucherPermission(type: VoucherTypeKey, action: VoucherAction): Permission {
   const family = voucherPermissionFamily(type);
   if (family === "stock") return action === "view" ? "inventory:view" : "stock:adjust";
+  if (family === "production") return action === "view" ? "production:view" : "production:manage";
   return `${family}:${action}` as Permission;
 }

@@ -96,7 +96,6 @@ export default async function DashboardPage() {
               <span aria-hidden>{m.icon}</span>{m.nameBn}
             </Link>
           ))}
-          {can(ctx, "features:view") && <Link prefetch={false} href="/features" className="text-xs text-brand-700 hover:underline">{t("সব ফিচার")} →</Link>}
         </nav>
       )}
 

@@ -19,6 +19,7 @@ import {
 } from "@/lib/accounting";
 import { round2, round3, round4, weightedAverageCost } from "@/lib/calc";
 import { formatDate } from "@/lib/format";
+import { allocateCost } from "@/lib/production";
 import { UserError } from "@/lib/errors";
 import { systemAccounts, writeEntries, type Tx } from "./accounting";
 import { syncBatchQuantities } from "./batches";
@@ -48,11 +49,13 @@ export async function repostVoucher(tx: Tx, voucherId: string, acc?: SystemAccou
       : v.type === "SALES_RETURN" ? salesReturnEntries(input, accounts)
       : purchaseReturnEntries(input, accounts);
     await writeEntries(tx, v, lines);
-  } else if (v.type === "STOCK_JOURNAL") {
+  } else if (v.type === "STOCK_JOURNAL" || v.type === "PRODUCTION") {
     const valueIn = round2(v.items.filter((i) => i.direction === 1).reduce((s, i) => s + Number(i.costAmount), 0));
     const valueOut = round2(v.items.filter((i) => i.direction === -1).reduce((s, i) => s + Number(i.costAmount), 0));
     await tx.voucher.update({ where: { id: v.id }, data: { amount: Math.max(valueIn, valueOut) } });
-    const label = v.adjustmentAccountId ? "মজুদ বাতিল (ক্ষতি)" : undefined;
+    // production: materials out and products in are both inventory; only the extra cost (labour,
+    // power…) reaches the ledger — Dr Inventory / Cr the chosen cash, bank or expense account
+    const label = v.type === "PRODUCTION" ? "উৎপাদন খরচ (মজুরি, বিদ্যুৎ ইত্যাদি)" : v.adjustmentAccountId ? "মজুদ বাতিল (ক্ষতি)" : undefined;
     await writeEntries(tx, v, stockJournalEntries(valueIn, valueOut, accounts, v.adjustmentAccountId, label), { allowEmpty: true });
   }
 }
@@ -63,7 +66,7 @@ type Move = Prisma.StockMovementGetPayload<{ include: { voucher: { select: { typ
  * Replays every product's movements chronologically. Returns ids of vouchers whose
  * line costs changed (they have already been reposted).
  */
-export async function revalueProducts(tx: Tx, businessId: string, productIds: Iterable<string>, opts: { skipRepost?: Set<string> } = {}) {
+export async function revalueProducts(tx: Tx, businessId: string, productIds: Iterable<string>, opts: { skipRepost?: Set<string>; depth?: number } = {}) {
   const changedVouchers = new Set<string>();
   for (const productId of new Set(productIds)) {
     const product = await tx.product.findUniqueOrThrow({ where: { id: productId }, select: { id: true, name: true, purchasePrice: true, trackBatch: true } });
@@ -104,7 +107,9 @@ export async function revalueProducts(tx: Tx, businessId: string, productIds: It
         await tx.stockMovement.update({ where: { id: m.id }, data: { unitCost, value } });
         if (m.voucherId) changedVouchers.add(m.voucherId);
       }
-      if (m.voucherItemId && m.voucherId) {
+      // a production output's line cost is the allocated share of the run's cost (recostProduction);
+      // re-deriving it from the rounded unit cost would leave paisa differences in the ledger
+      if (m.voucherItemId && m.voucherId && m.type !== "PRODUCTION_IN") {
         const c = itemCost.get(m.voucherItemId) ?? { voucherId: m.voucherId, cost: 0, qty: 0 };
         c.cost += (qin || qout) * unitCost;
         c.qty += qin || qout;
@@ -124,7 +129,38 @@ export async function revalueProducts(tx: Tx, businessId: string, productIds: It
     await syncBatchQuantities(tx, productId);
   }
 
+  // production runs whose material cost changed: re-split the cost over their products and replay those
+  const runs = changedVouchers.size ? await tx.voucher.findMany({ where: { id: { in: [...changedVouchers] }, type: "PRODUCTION" }, select: { id: true } }) : [];
+  for (const r of runs) {
+    const outputs = await recostProduction(tx, r.id);
+    if (!outputs.length) continue;
+    if ((opts.depth ?? 0) >= 20) throw new UserError("উৎপাদন রেসিপিগুলো একে অপরের উপর চক্রাকারে নির্ভরশীল — হিসাব করা যাচ্ছে না");
+    for (const id of await revalueProducts(tx, businessId, outputs, { ...opts, depth: (opts.depth ?? 0) + 1 })) changedVouchers.add(id);
+  }
+
   const acc = changedVouchers.size ? await systemAccounts(tx, businessId) : undefined;
   for (const id of changedVouchers) if (!opts.skipRepost?.has(id)) await repostVoucher(tx, id, acc);
   return changedVouchers;
+}
+
+/**
+ * Production costing: materials consumed (their replayed cost) + the run's extra cost, split between
+ * the products made by cost share. Updates the output lines and their stock movements; returns the
+ * products whose cost changed (the caller replays them).
+ */
+export async function recostProduction(tx: Tx, voucherId: string): Promise<string[]> {
+  const v = await tx.voucher.findUniqueOrThrow({ where: { id: voucherId }, include: { items: { orderBy: { lineNo: "asc" } }, productionRun: true } });
+  const materials = round2(v.items.filter((i) => i.direction === -1).reduce((s, i) => s + Number(i.costAmount), 0));
+  const total = round2(materials + Number(v.productionRun?.extraCost ?? 0));
+  const outputs = v.items.filter((i) => i.direction === 1);
+  const split = allocateCost(total, outputs.map((o) => ({ quantity: Number(o.baseQuantity), costShare: Number(o.costShare ?? 0) })));
+  const changed: string[] = [];
+  for (const [i, o] of outputs.entries()) {
+    const { amount, unitCost } = split[i];
+    if (Math.abs(Number(o.costAmount) - amount) <= 0.004 && Math.abs(Number(o.costRate) - unitCost) <= 0.00005) continue;
+    await tx.voucherItem.update({ where: { id: o.id }, data: { costAmount: amount, costRate: unitCost, rate: round2(unitCost), amount } });
+    await tx.stockMovement.updateMany({ where: { voucherItemId: o.id }, data: { unitCost, value: amount } });
+    changed.push(o.productId);
+  }
+  return changed;
 }

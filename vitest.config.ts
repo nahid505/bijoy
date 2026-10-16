@@ -6,7 +6,11 @@ import path from "path";
 // Integration tests: tests/integration/*.test.ts run against TEST_DATABASE_URL
 // (a separate database — never the development DB). They are skipped if it is unset.
 const env = loadEnv("test", process.cwd(), "");
-const testDb = process.env.TEST_DATABASE_URL ?? env.TEST_DATABASE_URL;
+// Same pool cap as production (cPanel DATABASE_URL uses connection_limit=5): bursts of parallel
+// queries (e.g. a backup export) queue instead of opening many connections at once, which Docker
+// Desktop's port proxy sometimes refuses ("Can't reach database server").
+const withPoolCap = (url: string | undefined) => (url && !/[?&]connection_limit=/.test(url) ? `${url}${url.includes("?") ? "&" : "?"}connection_limit=5` : url);
+const testDb = withPoolCap(process.env.TEST_DATABASE_URL ?? env.TEST_DATABASE_URL);
 if (testDb) process.env.TEST_DATABASE_URL = testDb; // visible to globalSetup
 
 export default defineConfig({

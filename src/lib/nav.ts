@@ -32,6 +32,7 @@ const I = {
   sms: "M4 5h16v11H8l-4 4V5zm4 5h8M8 13h5",
   wallet: "M3 7h15a3 3 0 013 3v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7zm0 0l12-4v4M16 14h2",
   puzzle: "M10 3h4v3a2 2 0 104 0V5h3v5h-1a2 2 0 100 4h1v7h-6v-1a2 2 0 10-4 0v1H4v-6h1a2 2 0 100-4H4V5h6V3z",
+  factory: "M3 21V10l5 3V10l5 3V7l5 3V3h3v18H3zm4-4h2m4 0h2m4 0h0",
   db: "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zm0 0v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3",
 };
 
@@ -48,6 +49,7 @@ export const NAV: NavEntry[] = [
       { href: "/vouchers/journal", label: "জার্নাল", permission: "vouchers:view" },
       { href: "/vouchers/sales", label: "বিক্রয়", permission: "sales:view" },
       { href: "/vouchers/purchase", label: "ক্রয়", permission: "purchases:view" },
+      { href: "/purchases/paddy", label: "ধান ক্রয় (ওজন স্লিপ)", permission: "purchases:view" },
       { href: "/vouchers/sales-return", label: "বিক্রয় ফেরত", permission: "sales:view" },
       { href: "/vouchers/purchase-return", label: "ক্রয় ফেরত", permission: "purchases:view" },
       { href: "/vouchers/stock-journal", label: "স্টক জার্নাল", permission: "inventory:view" },
@@ -94,6 +96,16 @@ export const NAV: NavEntry[] = [
   },
   { key: "expenses", label: "খরচ", icon: I.swap, href: "/expenses", permission: "vouchers:view" },
   {
+    key: "production",
+    label: "উৎপাদন ব্যবস্থাপনা",
+    icon: I.factory,
+    children: [
+      { href: "/production", label: "উৎপাদন ড্যাশবোর্ড", permission: "production:view" },
+      { href: "/production/new", label: "নতুন উৎপাদন", permission: "production:manage" },
+      { href: "/production/recipes", label: "রেসিপি (BOM)", permission: "production:view" },
+    ],
+  },
+  {
     key: "payroll",
     label: "বেতন",
     icon: I.wallet,
@@ -113,6 +125,9 @@ export const NAV: NavEntry[] = [
     label: "রিপোর্ট",
     icon: I.chart,
     children: [
+      { href: "/reports/daily-cash", label: "ডেইলী জমা-খরচ হিসাব", permission: "accounts:view" },
+      { href: "/reports/daily-sales", label: "ডেইলি বিক্রয় রিপোর্ট", permission: "sales:view" },
+      { href: "/reports/daily-purchase", label: "ডেইলি ক্রয় রিপোর্ট", permission: "purchases:view" },
       { href: "/reports/daily-summary", label: "দৈনিক সারসংক্ষেপ", permission: "reports:view" },
       { href: "/reports/day-book", label: "ডে বুক", permission: "reports:view" },
       { href: "/reports/ledger", label: "লেজার রিপোর্ট", permission: "reports:view" },
@@ -156,7 +171,6 @@ export const NAV: NavEntry[] = [
     ],
   },
   { key: "billing", label: "সাবস্ক্রিপশন", icon: I.receipt, href: "/billing", permission: "billing:view" },
-  { key: "features", label: "ফিচার ব্যবস্থাপনা", icon: I.puzzle, href: "/features", permission: "features:view" },
   { key: "business", label: "ব্যবসা সেটিং", icon: I.store, href: "/business", permission: "business:manage" },
   { key: "account", label: "অ্যাকাউন্ট সেটিং", icon: I.gear, href: "/account" },
   { key: "backup", label: "ব্যাকআপ", icon: I.db, href: "/backup", permission: "backup:manage" },

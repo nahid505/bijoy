@@ -341,9 +341,10 @@
         "sms:send",
         "sms:bulk",
         "sms:manage",
-        "features:view",
-        "features:manage",
-        "billing:view"
+        "billing:view",
+        "production:view",
+        "production:manage",
+        "transaction:change_date"
       ]
     },
     {
@@ -375,7 +376,10 @@
         "audit:view",
         "sms:view",
         "sms:send",
-        "sms:bulk"
+        "sms:bulk",
+        "production:view",
+        "production:manage",
+        "transaction:change_date"
       ]
     },
     {
@@ -396,7 +400,8 @@
         "customers:view",
         "suppliers:view",
         "audit:view",
-        "sms:view"
+        "sms:view",
+        "transaction:change_date"
       ]
     },
     {
@@ -425,7 +430,8 @@
         "inventory:manage",
         "stock:adjust",
         "suppliers:view",
-        "suppliers:manage"
+        "suppliers:manage",
+        "transaction:change_date"
       ]
     },
     {
@@ -476,7 +482,10 @@
         "inventory:manage",
         "stock:adjust",
         "purchases:view",
-        "suppliers:view"
+        "suppliers:view",
+        "production:view",
+        "production:manage",
+        "transaction:change_date"
       ]
     }
   ]

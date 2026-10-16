@@ -16,7 +16,7 @@ import { defaultWarehouseId, lockProducts, writeMovements, type MovementInput } 
 import { repostVoucher, revalueProducts } from "./posting";
 import { allocateSaleBatches, ensureInboundBatch, expiryLossAccount, requireBatch, type BatchAllocation } from "./batches";
 
-const TX_OPTIONS = { timeout: 60_000, maxWait: 10_000 };
+export const TX_OPTIONS = { timeout: 60_000, maxWait: 10_000 };
 
 /** Vouchers created by the payroll module (posting, salary payment, advance) are changed only there. */
 export const isPayrollVoucher = (sourceKey: string | null | undefined) => !!sourceKey?.startsWith("payroll:");
@@ -39,7 +39,7 @@ const addDays = (d: Date, days: number) => {
 
 // ───────────────────────── shared helpers ─────────────────────────
 
-async function loadEditable(tx: Tx, ctx: Ctx, id: string, type: VoucherType) {
+export async function loadEditable(tx: Tx, ctx: Ctx, id: string, type: VoucherType) {
   const v = await tx.voucher.findFirst({ where: { id, businessId: ctx.businessId } });
   if (!v) throw new UserError("ভাউচার পাওয়া যায়নি");
   if (v.type !== type) throw new UserError("ভাউচারের ধরন মিলছে না");
@@ -48,7 +48,7 @@ async function loadEditable(tx: Tx, ctx: Ctx, id: string, type: VoucherType) {
 }
 
 /** Removes entries, lines (and their stock movements) and payments; returns products touched. */
-async function clearPostings(tx: Tx, voucherId: string) {
+export async function clearPostings(tx: Tx, voucherId: string) {
   const moves = await tx.stockMovement.findMany({ where: { voucherId }, select: { productId: true } });
   await tx.journalEntry.deleteMany({ where: { voucherId } });
   await tx.stockMovement.deleteMany({ where: { voucherId } });
@@ -57,7 +57,7 @@ async function clearPostings(tx: Tx, voucherId: string) {
   return moves.map((m) => m.productId);
 }
 
-async function assertWarehouse(tx: Tx, businessId: string, warehouseId: string | null | undefined) {
+export async function assertWarehouse(tx: Tx, businessId: string, warehouseId: string | null | undefined) {
   if (!warehouseId) return defaultWarehouseId(tx, businessId);
   const w = await tx.warehouse.findFirst({ where: { id: warehouseId, businessId } });
   if (!w) throw new UserError("গুদাম পাওয়া যায়নি");
@@ -71,9 +71,22 @@ async function ledgerBalance(tx: Tx, businessId: string, accountId: string) {
 
 // ───────────────────────── trade vouchers ─────────────────────────
 
-export async function saveTradeVoucher(ctx: Ctx, type: TradeType, input: TradeVoucherInput, editId?: string) {
+/**
+ * A trade line may carry its exact base quantity when the entered quantity is a rounded figure in a
+ * larger unit (paddy: 25.93 মণ for 1 037 kg on the scale). Only server code can set it (the public
+ * form schema strips it), and only within the rounding of the entered quantity (±0.005 × factor).
+ */
+export type TradeLineInput = TradeVoucherInput["items"][number] & { baseQuantity?: number };
+export type TradeInputWithBase = Omit<TradeVoucherInput, "items"> & { items: TradeLineInput[] };
+
+export async function saveTradeVoucher(ctx: Ctx, type: TradeType, input: TradeInputWithBase, editId?: string) {
+  return prisma.$transaction((tx) => tradeVoucherTx(tx, ctx, type, input, editId), TX_OPTIONS);
+}
+
+/** Posts a sale / purchase / return inside the caller's transaction (also used by the paddy purchase). */
+export async function tradeVoucherTx(tx: Tx, ctx: Ctx, type: TradeType, input: TradeInputWithBase, editId?: string) {
   const rule = TRADE_RULES[type];
-  return prisma.$transaction(async (tx) => {
+  {
     const business = await tx.business.findUniqueOrThrow({ where: { id: ctx.businessId } });
     const existing = editId ? await loadEditable(tx, ctx, editId, type) : null;
     await assertNotLocked(tx, ctx.businessId, input.date, existing?.date);
@@ -112,13 +125,17 @@ export async function saveTradeVoucher(ctx: Ctx, type: TradeType, input: TradeVo
       if (factor === null) throw new UserError(`"${p.name}" এর জন্য "${unit.name}" ইউনিট প্রযোজ্য নয়`);
       // Sales may leave the batch empty: FEFO picks it. Receipts and purchase returns must name it.
       if (p.trackBatch && type !== "SALES" && !item.batchNo) throw new UserError(`"${p.name}" ব্যাচভিত্তিক পণ্য — ব্যাচ নম্বর দিন`);
+      const computedBase = round3(item.quantity * factor);
+      if (item.baseQuantity !== undefined && Math.abs(item.baseQuantity - computedBase) > factor * 0.005 + 1e-9) {
+        throw new UserError(`"${p.name}" — পরিমাণ ও মূল এককের পরিমাণ মিলছে না`);
+      }
       return {
         id: randomUUID(),
         product: p,
         unitId: unit.id,
         factor,
         quantity: item.quantity,
-        baseQuantity: round3(item.quantity * factor),
+        baseQuantity: item.baseQuantity !== undefined ? round3(item.baseQuantity) : computedBase,
         rate: item.rate,
         discount: item.discount,
         amount: lineAmount({ quantity: item.quantity, unitPrice: item.rate, discount: item.discount }),
@@ -280,7 +297,7 @@ export async function saveTradeVoucher(ctx: Ctx, type: TradeType, input: TradeVo
     await revalueProducts(tx, ctx.businessId, [...productIds, ...removedProducts], { skipRepost: new Set([voucher.id]) });
     await repostVoucher(tx, voucher.id);
     return voucher;
-  }, TX_OPTIONS);
+  }
 }
 
 // ───────────────────────── receipt / payment / journal ─────────────────────────
