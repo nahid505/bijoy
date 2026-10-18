@@ -7,6 +7,7 @@ import { requirePermission } from "@/server/auth";
 import { removeMemberAction, saveMemberAction } from "@/server/actions/business";
 import { UserForm } from "../../user-form";
 import { assignedPartiesOf, isRestricted, roleChoices } from "@/server/party-scope";
+import { isDepot } from "@/lib/depot";
 
 export const metadata: Metadata = { title: "ব্যবহারকারী সম্পাদনা" };
 
@@ -32,6 +33,7 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
           roles={roles}
           isEdit
           assigned={isRestricted(ctx) ? null : assigned} // an assigned-only admin cannot hand out parties
+          depot={isDepot(ctx.business.businessType)}
           defaults={{ name: membership.user.name, email: membership.user.email ?? "", roleId: membership.roleId, isActive: membership.isActive }}
         />
       </section>

@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { formatMoney } from "@/lib/format";
 import { requirePermission } from "@/server/auth";
+import { allowedAccounts } from "@/server/party-scope";
 import { balancesByKind, sumBalances } from "@/server/services/ledger";
 
 /** Current balance of every cash / bank ledger — shown above the cash and bank books. */
 export async function BalanceStrip({ kind }: { kind: "CASH" | "BANK" }) {
   const ctx = await requirePermission("accounts:view");
-  const rows = await balancesByKind(ctx.business.id, [kind]);
+  const heads = allowedAccounts(ctx); // account-head restriction: my cash / bank ledgers only
+  const rows = (await balancesByKind(ctx.business.id, [kind])).filter((r) => heads === null || heads.includes(r.id));
   const cur = ctx.business.currencySymbol;
   return (
     <section className="panel mb-4">

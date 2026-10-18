@@ -146,6 +146,7 @@ model Business {
   memberships         Membership[]
   userCustomers       UserCustomer[]
   userSuppliers       UserSupplier[]
+  userAccounts        UserAccount[]
   roles               Role[]
   accountGroups       AccountGroup[]
   accounts            Account[]
@@ -200,6 +201,7 @@ model User {
   memberships       Membership[]
   assignedCustomers UserCustomer[]
   assignedSuppliers UserSupplier[]
+  assignedAccounts  UserAccount[]
   auditLogs         AuditLog[]
   notificationReads NotificationRead[]
   sessions          Session[]
@@ -253,6 +255,22 @@ model UserCustomer {
   createdAt  DateTime @default(now())
 
   @@unique([userId, customerId])
+  @@index([businessId, userId])
+}
+
+/// Account-head restriction: a member whose role holds "accounts:assigned_only" sees only these ledgers
+/// (cash, bank, income, expense … — party ledgers follow the customer / supplier restriction).
+model UserAccount {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId  String
+  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, accountId])
   @@index([businessId, userId])
 }
 
@@ -314,6 +332,7 @@ model Account {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
+  assignedTo             UserAccount[]
   entries                JournalEntry[]
   customer               Customer?
   supplier               Supplier?

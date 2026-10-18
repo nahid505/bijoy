@@ -9,7 +9,7 @@ import { isDepot } from "@/lib/depot";
 export const metadata: Metadata = { title: "রিপোর্ট" };
 
 const SECTIONS: { title: string; slugs: string[]; depotOnly?: boolean }[] = [
-  { title: "ডিপো ব্যবস্থাপনা", slugs: ["depot-deliveries", "depot-market-dues", "depot-commission", "depot-profit-loss", "depot-cash-book", "depot-free"], depotOnly: true },
+  { title: "ডিপো ব্যবস্থাপনা", slugs: ["depot-deliveries", "depot-market-dues", "depot-commission", "depot-company-ledger", "depot-profit-loss", "depot-cash-book", "depot-free"], depotOnly: true },
   { title: "দৈনিক ও হিসাব বই", slugs: ["daily-cash", "daily-summary", "day-book", "ledger", "cash-book", "bank-book"] },
   { title: "আর্থিক বিবরণী", slugs: ["trial-balance", "profit-loss", "balance-sheet", "cash-flow", "income-expense", "expenses", "integrity"] },
   { title: "বিক্রয়, ক্রয় ও মজুদ", slugs: ["daily-sales", "daily-purchase", "sales", "purchases", "collection", "stock", "stock-valuation"] },

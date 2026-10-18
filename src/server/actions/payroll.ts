@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { num, prisma } from "@/lib/db";
 import { parsePeriod, PAYROLL_KIND_LABELS, periodLabel } from "@/lib/payroll";
+import { assertPartiesAllowed } from "../party-scope";
 import {
   advanceSchema, attendanceSchema, departmentSchema, employeeSchema, payComponentSchema, payrollRunSchema, payrollSettingsSchema, payslipAdjustSchema, salaryPaymentSchema,
 } from "@/lib/validation";
@@ -212,6 +213,7 @@ export async function paySalariesAction(_prev: ActionState, fd: FormData): Promi
   const r = await guard(async () => {
     const ctx = await assertPermission("payroll:pay");
     const input = parseJsonPayload(salaryPaymentSchema, fd);
+    await assertPartiesAllowed(ctx, [input.cashAccountId]); // account-head restriction
     assertEntryDate(ctx, input.date);
     const v = await paySalaries(ctx.svc, input);
     await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: "CREATE", entity: "SalaryPayment", entityId: v.id, details: { voucherNo: v.voucherNo, amount: num(v.amount), employees: input.items.length } });
@@ -235,6 +237,7 @@ export async function giveAdvanceAction(_prev: ActionState, fd: FormData): Promi
   const r = await guard(async () => {
     const ctx = await assertPermission("payroll:pay");
     const input = parseJsonPayload(advanceSchema, fd);
+    await assertPartiesAllowed(ctx, [input.cashAccountId]); // account-head restriction
     assertEntryDate(ctx, input.date);
     const a = await giveAdvance(ctx.svc, input);
     await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: "CREATE", entity: "EmployeeAdvance", entityId: a.id, details: { employeeId: a.employeeId, kind: a.kind, amount: num(a.amount), installment: num(a.installment) } });

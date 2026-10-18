@@ -20,7 +20,7 @@ export async function saveDepotDeliveryAction(id: string | null, _prev: ActionSt
     const ctx = await assertPermission(id ? DEPOT_ACCESS.deliveryEdit : DEPOT_ACCESS.deliveryCreate);
     const input = parseJsonPayload(depotDeliverySchema, fd);
     await assertVoucherAllowed(ctx, id);
-    await assertPartiesAllowed(ctx, [input.dealerAccountId, input.companyAccountId]);
+    await assertPartiesAllowed(ctx, [input.dealerAccountId, input.companyAccountId, input.cashAccountId]);
     assertEntryDate(ctx, input.date, await originalEntryDate(ctx.business.id, id));
     if (!id && !ctx.features.includes("MULTI_WAREHOUSE")) input.warehouseId = null; // → main warehouse
     const before = id ? await voucherSnapshot(ctx.business.id, id) : null;
@@ -42,7 +42,7 @@ export async function settleCommissionAction(_prev: ActionState, fd: FormData): 
   const r = await guard(async () => {
     const ctx = await assertPermission(DEPOT_ACCESS.settle);
     const input = commissionSettlementSchema.parse(formToObject(fd));
-    await assertPartiesAllowed(ctx, [input.companyAccountId]);
+    await assertPartiesAllowed(ctx, [input.companyAccountId, input.cashAccountId]);
     assertEntryDate(ctx, input.date);
     const v = await settleCommission(ctx.svc, input);
     await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: "CREATE", entity: "Voucher", entityId: v.id, details: { depotCommission: { companyAccountId: input.companyAccountId, amount: input.amount, method: input.method }, voucherNo: v.voucherNo } });
@@ -59,6 +59,7 @@ export async function transferCommissionAction(_prev: ActionState, fd: FormData)
   const r = await guard(async () => {
     const ctx = await assertPermission("vouchers:create");
     const input = commissionTransferSchema.parse(formToObject(fd));
+    await assertPartiesAllowed(ctx, [input.depotCashAccountId, input.generalCashAccountId]);
     assertEntryDate(ctx, input.date);
     const v = await transferCommission(ctx.svc, input);
     await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: "CREATE", entity: "Voucher", entityId: v.general.id, details: { depotCommissionTransfer: { amount: input.amount }, depotVoucher: v.depot.voucherNo, generalVoucher: v.general.voucherNo } });

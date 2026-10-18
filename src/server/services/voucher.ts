@@ -94,7 +94,12 @@ export async function tradeVoucherTx(tx: Tx, ctx: Ctx, type: TradeType, input: T
     const business = await tx.business.findUniqueOrThrow({ where: { id: ctx.businessId } });
     const existing = editId ? await loadEditable(tx, ctx, editId, type) : null;
     await assertNotLocked(tx, ctx.businessId, input.date, existing?.date);
-    const vBook: BookKey = existing ? existing.book : book ?? "GENERAL";
+    // a return always lives in its invoice's book (a depot stock-in / market-sale return stays in the depot book)
+    const originalBook = !existing && input.returnOfId
+      ? (await tx.voucher.findFirst({ where: { id: input.returnOfId, businessId: ctx.businessId }, select: { book: true } }))?.book
+      : undefined;
+    if (originalBook && book && book !== originalBook) throw new UserError("ফেরত মূল ইনভয়েসের হিসাবেই (সাধারণ / ডিপো) হবে");
+    const vBook: BookKey = existing ? existing.book : originalBook ?? book ?? "GENERAL";
     await assertBookAccounts(tx, ctx.businessId, vBook, [input.partyAccountId, ...input.payments.map((p) => p.accountId)]);
     const removedProducts = existing ? await clearPostings(tx, existing.id) : [];
 
@@ -356,10 +361,11 @@ export async function saveJournalVoucher(ctx: Ctx, input: JournalVoucherInput, e
 
 // ───────────────────────── stock journal ─────────────────────────
 
-export async function saveStockJournal(ctx: Ctx, input: StockJournalInput, editId?: string) {
+/** book DEPOT: a depot stock adjustment (its value moves the depot's inventory, never the general one). */
+export async function saveStockJournal(ctx: Ctx, input: StockJournalInput, editId?: string, book?: BookKey) {
   return prisma.$transaction(async (tx) => {
     const existing = editId ? await loadEditable(tx, ctx, editId, "STOCK_JOURNAL") : null;
-    return stockJournalTx(tx, ctx, input, existing);
+    return stockJournalTx(tx, ctx, input, existing, { book: existing ? existing.book : book ?? "GENERAL" });
   }, TX_OPTIONS);
 }
 
@@ -369,7 +375,7 @@ async function stockJournalTx(
   ctx: Ctx,
   input: StockJournalInput,
   existing: { id: string; date: Date } | null,
-  opts: { adjustmentAccountId?: string } = {},
+  opts: { adjustmentAccountId?: string; book?: BookKey } = {},
 ) {
   {
     await assertNotLocked(tx, ctx.businessId, input.date, existing?.date);
@@ -389,7 +395,7 @@ async function stockJournalTx(
     const header = { date: input.date, reference: input.reference, narration: input.narration, amount: 0, ...(opts.adjustmentAccountId ? { adjustmentAccountId: opts.adjustmentAccountId } : {}) };
     const voucher = existing
       ? await tx.voucher.update({ where: { id: existing.id }, data: { ...header, updatedById: ctx.userId } })
-      : await tx.voucher.create({ data: { ...header, businessId: ctx.businessId, type: "STOCK_JOURNAL", voucherNo: await nextVoucherNo(tx, ctx.businessId, "STOCK_JOURNAL"), createdById: ctx.userId } });
+      : await tx.voucher.create({ data: { ...header, businessId: ctx.businessId, type: "STOCK_JOURNAL", book: opts.book ?? "GENERAL", voucherNo: await nextVoucherNo(tx, ctx.businessId, "STOCK_JOURNAL", undefined, opts.book ?? "GENERAL"), createdById: ctx.userId } });
 
     const lines = [];
     for (const l of input.lines) {

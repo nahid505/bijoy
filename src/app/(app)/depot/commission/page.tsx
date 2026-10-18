@@ -11,6 +11,7 @@ import { commissionSummary, transferableCommission } from "@/server/services/dep
 import { CommissionTransferForm } from "./transfer-form";
 import { DepotOnlyNotice } from "../depot-ui";
 import { CommissionSettleForm } from "./settle-form";
+import { accountScopeWhere, canSeeParty, isRestricted } from "@/server/party-scope";
 
 export const metadata: Metadata = { title: "কোম্পানি কমিশন হিসাব" };
 
@@ -20,9 +21,12 @@ export default async function DepotCommissionPage() {
   const cur = ctx.business.currencySymbol;
   const [summary, cash, transfer] = await Promise.all([
     commissionSummary(ctx.business.id),
-    prisma.account.findMany({ where: { businessId: ctx.business.id, kind: { in: ["CASH", "BANK"] }, isActive: true }, orderBy: [{ kind: "asc" }, { name: "asc" }], select: { id: true, name: true } }),
+    prisma.account.findMany({ where: { businessId: ctx.business.id, kind: { in: ["CASH", "BANK"] }, isActive: true, ...accountScopeWhere(ctx) }, orderBy: [{ kind: "asc" }, { name: "asc" }], select: { id: true, name: true } }),
     transferableCommission(ctx.business.id),
   ]);
+  // supplier-restricted users: only their own companies
+  summary.rows = summary.rows.filter((r) => canSeeParty(ctx, "SUPPLIER", r.companyAccountId));
+  summary.outstanding = summary.rows.reduce((s, r) => s + r.outstanding, 0);
   const earned = summary.rows.reduce((s, r) => s + r.earned, 0);
   const settled = summary.rows.reduce((s, r) => s + r.settled, 0);
   return (
@@ -47,7 +51,7 @@ export default async function DepotCommissionPage() {
               <tbody>
                 {summary.rows.map((r) => (
                   <tr key={r.companyAccountId}>
-                    <td className="font-semibold">{r.company}</td>
+                    <td className="font-semibold"><Link prefetch={false} href={`/reports/depot-company-ledger?accountId=${r.companyAccountId}`} className="text-brand-700 hover:underline">{r.company}</Link></td>
                     <td className="num">{toBnDigits(r.deliveries)}</td>
                     <td className="num">{formatMoney(r.earned, cur)}</td>
                     <td className="num">{formatMoney(r.settled, cur)}</td>
@@ -73,6 +77,7 @@ export default async function DepotCommissionPage() {
           />
         </section>
       )}
+      {!isRestricted(ctx) && (
       <section className="panel mt-4 p-5" id="commission-transfer">
         <h2 className="text-base font-semibold text-ink-900">কমিশন সাধারণ আয়ে স্থানান্তর</h2>
         <p className="mb-3 mt-1 text-sm text-slate-600">
@@ -89,6 +94,7 @@ export default async function DepotCommissionPage() {
           <p className="text-sm text-slate-500">স্থানান্তর সাধারণ হিসাবে এন্ট্রি দেয় — এর জন্য &quot;ভাউচার তৈরি&quot; অনুমতি লাগবে।</p>
         )}
       </section>
+      )}
     </>
   );
 }

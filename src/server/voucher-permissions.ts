@@ -17,7 +17,8 @@ export function depotVoucherPermissions(type: VoucherTypeKey, action: VoucherAct
   if (type === "DEPOT_DELIVERY") return action === "view" ? ["depot:view", "depot:delivery_manage"] : ["depot:delivery_manage"];
   if ((type === "PURCHASE" || type === "PURCHASE_RETURN") && (action === "view" || action === "create")) return ["depot:stock_in"];
   if (type === "RECEIPT" && (action === "view" || action === "create")) return ["depot:collection_create"];
-  if (type === "PAYMENT" && (action === "view" || action === "create")) return ["depot:stock_in"]; // paying the company
+  if (type === "PAYMENT" && (action === "view" || action === "create")) return ["depot:company_payment"]; // paying the company
+  if (type === "STOCK_JOURNAL" && (action === "view" || action === "create")) return ["depot:stock_adjust"]; // depot stock adjustment
   if (type === "SALES") return action === "view" ? ["depot:view", "depot:delivery_manage"] : ["depot:delivery_manage"]; // a depot-book sale is a market-sale challan
   return [];
 }

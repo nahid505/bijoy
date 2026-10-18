@@ -21,7 +21,8 @@
     "package:cpanel": "node scripts/package-cpanel.mjs",
     "test:mysql": "node scripts/test-mysql.mjs",
     "db:mysql:schema": "node scripts/mysql-schema.mjs && node scripts/mysql-migration.mjs",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "audit:integrity": "tsx scripts/audit-integrity.ts"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",

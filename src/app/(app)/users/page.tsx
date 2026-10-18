@@ -16,14 +16,15 @@ export default async function UsersPage() {
     include: { user: true, role: { select: { name: true, isSystem: true, permissions: true } } },
   });
   // customer / supplier assignment per member (only meaningful on assigned-only roles)
-  const [cs, ss] = await Promise.all([
+  const [cs, ss, as] = await Promise.all([
     prisma.userCustomer.groupBy({ by: ["userId"], where: { businessId: ctx.business.id }, _count: true }),
     prisma.userSupplier.groupBy({ by: ["userId"], where: { businessId: ctx.business.id }, _count: true }),
+    prisma.userAccount.groupBy({ by: ["userId"], where: { businessId: ctx.business.id }, _count: true }),
   ]);
   const countOf = (rows: { userId: string; _count: number }[], userId: string) => rows.find((x) => x.userId === userId)?._count ?? 0;
   const scopeText = (m: (typeof members)[number]) => {
     const r = restrictionsOf(m.role.permissions, m.role.isSystem);
-    const parts = [r.customers ? `${toBnDigits(countOf(cs, m.userId))} কাস্টমার` : null, r.suppliers ? `${toBnDigits(countOf(ss, m.userId))} সরবরাহকারী` : null].filter(Boolean);
+    const parts = [r.customers ? `${toBnDigits(countOf(cs, m.userId))} কাস্টমার` : null, r.suppliers ? `${toBnDigits(countOf(ss, m.userId))} সরবরাহকারী` : null, r.accounts ? `${toBnDigits(countOf(as, m.userId))} হিসাব খাত` : null].filter(Boolean);
     return parts.length ? `শুধু নির্ধারিত: ${parts.join(" · ")}` : "সব";
   };
 
@@ -37,7 +38,7 @@ export default async function UsersPage() {
       <section className="panel">
         <TableWrap>
           <table className="table">
-            <thead><tr><th>নাম</th><th>ইমেইল</th><th>রোল</th><th>কাস্টমার/সরবরাহকারী</th><th>শেষ লগইন</th><th>অবস্থা</th><th /></tr></thead>
+            <thead><tr><th>নাম</th><th>ইমেইল</th><th>রোল</th><th>কাস্টমার/সরবরাহকারী/হিসাব</th><th>শেষ লগইন</th><th>অবস্থা</th><th /></tr></thead>
             <tbody>
               {members.map((m) => (
                 <tr key={m.id}>

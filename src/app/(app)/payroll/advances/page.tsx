@@ -13,6 +13,7 @@ import { searchEmployees } from "@/server/lookup";
 import { advanceOutstanding } from "@/server/services/payroll";
 import { accountOptions } from "@/server/voucher-editor";
 import { AdvanceForm } from "../payroll-forms";
+import { accountScopeWhere } from "@/server/party-scope";
 
 export const metadata: Metadata = { title: "অগ্রিম ও ঋণ" };
 
@@ -24,7 +25,7 @@ export default async function AdvancesPage({ searchParams }: { searchParams: Sea
   const show = p.show ?? "open";
   const [all, cashAccounts, preselected] = await Promise.all([
     advanceOutstanding(prisma, biz, p.employee ? [p.employee] : undefined),
-    can(ctx, "payroll:pay") ? accountOptions(biz, { kind: { in: ["CASH", "BANK"] } }) : Promise.resolve([]),
+    can(ctx, "payroll:pay") ? accountOptions(biz, { kind: { in: ["CASH", "BANK"] }, ...accountScopeWhere(ctx) }) : Promise.resolve([]),
     p.employee ? searchEmployees(biz, "", { ids: [p.employee] }) : Promise.resolve([]),
   ]);
   const emps = new Map((await prisma.employee.findMany({ where: { id: { in: [...new Set(all.map((a) => a.employeeId))] } }, select: { id: true, code: true, name: true } })).map((e) => [e.id, e]));

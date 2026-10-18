@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRef } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { DEPOT_PERMISSIONS, PERMISSION_GROUPS } from "@/lib/permissions";
 import { featureDef, ownerFeature } from "@/lib/features";
 import { ActionForm, Field, SubmitButton, type FormAction } from "@/components/forms";
@@ -29,11 +29,7 @@ export function RoleForm({
     box.current?.querySelectorAll<HTMLInputElement>('input[type=checkbox][name="permissions"]').forEach((c) => {
       c.checked = keys.includes(c.value);
     });
-  };
-  const tickGroup = (keys: readonly string[], on: boolean) => {
-    box.current?.querySelectorAll<HTMLInputElement>('input[type=checkbox][name="permissions"]').forEach((c) => {
-      if (keys.includes(c.value)) c.checked = on;
-    });
+    box.current?.dispatchEvent(new Event("change", { bubbles: true })); // the "select all" box follows
   };
   return (
     <ActionForm action={action}>
@@ -65,14 +61,9 @@ export function RoleForm({
                   {depotGroup ? "🏬 " : ""}{g.label}
                 </legend>
                 {depotGroup && (
-                  <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-slate-600">
-                    <span>শুধু এই গ্রুপের অনুমতি দিলে ব্যবহারকারী লগইন করে কেবল ডিপো ড্যাশবোর্ড ও &quot;ডিপো ব্যবস্থাপনা&quot; মেনু দেখবেন — সাধারণ লেনদেন, লেজার, ভাউচার, লাভ-ক্ষতি ও সেটিং দেখা যাবে না।</span>
-                    {!readOnly && !all && (
-                      <span className="ml-auto flex gap-1">
-                        <button type="button" className="btn-ghost px-2 py-0.5 text-xs" onClick={() => tickGroup(g.permissions.map((p) => p.key), true)}>সব নির্বাচন</button>
-                        <button type="button" className="btn-ghost px-2 py-0.5 text-xs" onClick={() => tickGroup(g.permissions.map((p) => p.key), false)}>সব বাদ</button>
-                      </span>
-                    )}
+                  <div className="mb-3 space-y-2">
+                    {!readOnly && !all && <GroupSelectAll box={box} keys={g.permissions.map((p) => p.key)} label="ডিপো ব্যবস্থাপনার সব অনুমতি দিন (Select All)" />}
+                    <p className="text-xs text-slate-600">শুধু এই গ্রুপের অনুমতি দিলে ব্যবহারকারী লগইন করে কেবল ডিপো ড্যাশবোর্ড ও &quot;ডিপো ব্যবস্থাপনা&quot; মেনু দেখবেন — সাধারণ লেনদেন, লেজার, ভাউচার, লাভ-ক্ষতি ও সেটিং দেখা যাবে না। প্রতিটি মেনু ও পেজ শুধু তার অনুমতি থাকলেই খোলে।</p>
                   </div>
                 )}
                 <div className={depotGroup ? "grid gap-2 sm:grid-cols-2" : "space-y-2"}>
@@ -108,5 +99,44 @@ export function RoleForm({
         <Link prefetch={false} href="/roles" className="btn-secondary">{readOnly ? "ফিরে যান" : "বাতিল"}</Link>
       </div>
     </ActionForm>
+  );
+}
+
+/** Master checkbox of a permission group: ticks / clears the whole group; half-ticked (indeterminate) when only some are on. */
+function GroupSelectAll({ box, keys, label }: { box: RefObject<HTMLDivElement | null>; keys: string[]; label: string }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [state, setState] = useState<"all" | "some" | "none">("none");
+  const boxes = useCallback(
+    () => [...(box.current?.querySelectorAll<HTMLInputElement>('input[type=checkbox][name="permissions"]') ?? [])].filter((c) => keys.includes(c.value)),
+    [box, keys],
+  );
+  const sync = useCallback(() => {
+    const list = boxes();
+    const on = list.filter((c) => c.checked).length;
+    setState(on === 0 ? "none" : on === list.length ? "all" : "some");
+  }, [boxes]);
+  useEffect(() => {
+    sync();
+    const el = box.current;
+    el?.addEventListener("change", sync);
+    return () => el?.removeEventListener("change", sync);
+  }, [box, sync]);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = state === "some";
+  }, [state]);
+  return (
+    <label className="flex w-fit items-center gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-ink-900 shadow-sm">
+      <input
+        ref={ref}
+        type="checkbox"
+        id="depot-select-all"
+        checked={state === "all"}
+        onChange={(e) => {
+          for (const c of boxes()) c.checked = e.target.checked;
+          sync();
+        }}
+      />
+      {label}
+    </label>
   );
 }

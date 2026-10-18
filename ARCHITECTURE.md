@@ -530,11 +530,19 @@ The internal voucher print (commission) remains available as "অফিস ক�
 
 ## 6p. Depot permissions (RBAC)
 
-A permission group, **ডিপো ব্যবস্থাপনা**, in `PERMISSION_GROUPS`, marked `depotOnly`. It has six keys: `depot:view`, `depot:delivery_manage`, `depot:stock_in`, `depot:collection_create`, `depot:reports_view` and `depot:scheme_manage`.
+A permission group, **ডিপো ব্যবস্থাপনা**, in `PERMISSION_GROUPS`, marked `depotOnly`. It has 13 keys, in this order: `depot:view`, `depot:delivery_manage`, `depot:dealers_manage`, `depot:stock_in`, `depot:stock_adjust`, `depot:collection_create`, `depot:company_payment`, `depot:reports_view`, `depot:register_view`, `depot:scheme_manage`, `depot:company_ledger`, `depot:profit_loss` and `depot:cashbook`.
 
 **Role form.** The group is shown only in a depot business, or on a role that already holds a depot key. It comes with:
-- a "🏬 শুধু ডিপো (ডিপো হিসাবরক্ষক)" preset that ticks exactly the six keys;
-- "সব নির্বাচন" and "সব বাদ" buttons for the group.
+- a "🏬 শুধু ডিপো (ডিপো হিসাবরক্ষক)" preset that ticks exactly the 13 keys and nothing else;
+- a master checkbox, "ডিপো ব্যবস্থাপনার সব অনুমতি দিন (Select All)" (`GroupSelectAll`), that ticks or clears the whole group and shows half-ticked (indeterminate) when only some keys are on.
+
+**Upgrade.** Migration `20261018200000_depot_permissions_v2` gives roles made with the first six keys the new keys that used to be part of them (`DEPOT_PERMISSION_UPGRADE`), so no role loses a screen:
+- `depot:view` → `register_view`;
+- `delivery_manage` → `dealers_manage`;
+- `stock_in` → `stock_adjust`, `company_payment`, `company_ledger`;
+- `reports_view` → `register_view`, `profit_loss`, `cashbook`.
+
+It only adds keys and runs once, so a key an admin removes later stays removed.
 
 `saveRoleAction` drops depot keys outside a depot business.
 
@@ -546,17 +554,26 @@ A permission group, **ডিপো ব্যবস্থাপনা**, in `PERM
 | --- | --- | --- |
 | Depot dashboard, challan list, dealer copy | `depot:view` (or `depot:delivery_manage`) | `sales:view` |
 | Create / edit challan | `depot:delivery_manage` | `sales:create` / `sales:edit` |
-| Stock in (`/depot/stock-in`), company payment (`/depot/payments`) | `depot:stock_in` | `purchases:create` / `vouchers:create` |
-| Market collection (`/depot/collections`) | `depot:collection_create` | `vouchers:create` |
+| Dealer list, profile, create / edit (`/depot/dealers`) | `depot:dealers_manage` | `customers:view` / `customers:manage` |
+| "+ নতুন ডিলার" inside a challan | `depot:dealers_manage` or `depot:delivery_manage` | `customers:manage` |
+| Stock in (`/depot/stock-in`) | `depot:stock_in` | `purchases:create` |
+| **Depot stock adjustment** (`/depot/stock-adjust` and sub-routes) | `depot:stock_adjust` **only** | — |
+| Market collection (`/depot/collections`), commission settlement | `depot:collection_create` | `vouchers:create` |
+| Company payment (`/depot/payments`) | `depot:company_payment` | `vouchers:create` |
 | Commission page | `depot:reports_view` or `depot:view` | `sales:view` |
-| Commission settlement | `depot:collection_create` | `vouchers:create` |
 | Market dues, commission report | `depot:reports_view` | `reports:view` |
-| Delivery register and the list's Excel export | `depot:view` or `depot:reports_view` | `reports:view` |
+| Delivery register and the list's Excel export | `depot:register_view` | `reports:view` |
 | Free scheme report | `depot:scheme_manage` | `reports:view` |
+| Company ledger (depot) | `depot:company_ledger` | `reports:view` |
+| Depot P&L | `depot:profit_loss` | `reports:view` |
+| Depot cash book | `depot:cashbook` | `reports:view` |
+
+Without `depot:stock_adjust` the stock-adjustment menu item is hidden and every `/depot/stock-adjust` route is refused, even for a general `stock:adjust` holder (`kindAllowed` in `depot-vouchers.tsx`). The Owner (`*`) has every key.
 
 **Vouchers.** `voucherAccess(type, action, businessType, book)` in `src/server/voucher-permissions.ts` adds the depot keys to `voucherPermission` — in a depot business, and only for DEPOT-book vouchers (6r) and challans:
 - **PURCHASE / PURCHASE_RETURN:** view and create with `depot:stock_in`.
-- **PAYMENT** (to the company): view and create with `depot:stock_in`.
+- **PAYMENT** (to the company): view and create with `depot:company_payment`.
+- **STOCK_JOURNAL** (depot stock adjustment): view and create with `depot:stock_adjust`.
 - **RECEIPT:** view and create with `depot:collection_create`.
 - **SALES** (a market-sale challan): view with `depot:view` or `depot:delivery_manage`; edit and delete with `depot:delivery_manage`.
 - **DEPOT_DELIVERY:** view with `depot:view` or `depot:delivery_manage`; create, edit and delete with `depot:delivery_manage`.
@@ -694,6 +711,51 @@ The integrity report, the stock-valuation comparison and the restore check use A
 - entries follow their voucher.
 
 **Backups** carry `book` and `isDepotDealer`. Older backups restore as GENERAL.
+
+**Further depot-book rules (integration audit):**
+- **Returns:** a return always lives in its invoice's book (`tradeVoucherTx`); forcing the other book is refused. A stock-in return (SIR-) or market-sale return (MSR-) stays in the depot book, and the return editor loads dealers for a depot invoice. The voucher page's "বাকি আদায়" opens the depot collection for a depot sale.
+- **Depot stock adjustment** (`/depot/stock-adjust`): a STOCK_JOURNAL in the DEPOT book (DSA-), opened with `depot:stock_adjust` only. The value moves the depot's inventory and the depot P&L; the general inventory and stock journal list are untouched. Product quantities stay physical (one stock).
+- **Company ledger** (`depot-company-ledger`): a company's depot-book account — stock in, DO releases, payments, commission adjustments. The commission page links to it.
+- **Party restriction:** the user form has a separate "নির্ধারিত ডিপো ডিলারসমূহ" selector in depot businesses. Backups (page, export API, restore) are refused to assigned-only users, because a backup holds every party. The commission page shows a supplier-restricted user only their companies, and hides the transfer.
+
+**Integrity audit:** `npm run audit:integrity` (scripts/audit-integrity.ts, read-only) checks what the schema does not enforce:
+- tenant copies of businessId match their parent, and audit user columns point at real users;
+- every voucher and each book balances; entries carry their voucher's book;
+- no dealer in GENERAL vouchers and no general customer in DEPOT vouchers;
+- stock equals the movements, and paid + free equals what a line moved;
+- assignments stay inside one business.
+
+It exits 1 on any problem.
+
+## 6s. User-specific account heads (row-level, chart of accounts)
+
+**Permission.** `accounts:assigned_only` — "শুধু নির্ধারিত হিসাব খাত দেখতে পারবে", in the "হিসাব (লেজার)" group. Like the party keys it is a restriction, not a grant: it applies only when a role names it, never through `*` or the Owner role (`restrictionsOf`).
+
+**Data.** Migration `20261018300000_user_account_assignment` (PostgreSQL and MySQL) adds the table `UserAccount` (businessId, userId, accountId):
+- unique per user and account;
+- cascade on user, business and account delete.
+
+Only general heads can be assigned: cash, bank, income, expense, capital and other non-party ledgers. Customer and supplier ledgers follow the party restriction (6q); `saveAssignments` drops them from `accountIds`.
+
+**User form.** A third multi-select, "নির্ধারিত হিসাব খাতসমূহ" (`PartyMultiSelect kind="accounts"`), searches `/api/lookup/accounts?scope=heads`, which offers no party ledgers. It saves through the same `saveAssignments`. `/users` shows "N হিসাব খাত"; removing a member clears the list.
+
+**Scope.** `ctx.partyScope.accounts` holds the assigned head ids (null = every head) — `allowedAccounts(ctx)` in `src/server/party-scope.ts`:
+
+| Area | Rule |
+| --- | --- |
+| Ledger list, account pickers (`/api/lookup/accounts`, cash / bank selects on vouchers, POS, payroll, depot) | `accountScopeWhere`: unassigned heads are hidden (`hiddenAccounts`) |
+| Ledger page / ledger report by id | `canOpenLedger`: an unassigned head → `/forbidden`, and the export returns nothing |
+| Vouchers (lists, detail, print, edit, delete) | `voucherScopeWhere`: a voucher is visible when it posts to at least one assigned head; otherwise `/forbidden` by URL |
+| Saving | `assertPartiesAllowed` checks the cash / payment / line accounts of receipts, payments, journals, sales / purchases, paddy, depot challans, commission settlement / transfer and salary / advance payments: "হিসাব খাত … আপনার জন্য নির্ধারিত নয়" |
+| Reports | With only this restriction, the cash book, bank book (assigned cash / bank heads) and day book (vouchers of my heads) open as well; trial balance, P&L, balance sheet, daily cash and expenses stay closed (`reportOpenFor`) |
+| Dashboard | The assigned-user dashboard adds "আমার হিসাব খাত" (heads with balances) |
+| Cash / bank balance strip | My heads only |
+
+Backups are refused, as for every restricted user.
+
+A user with the restriction and no heads sees no general ledger.
+
+The integrity audit checks that assignments stay inside one business and never hold a party ledger.
 
 ## 7b. UI runtime notes
 - Language: the `bl_lang` cookie selects Bangla or English. Bangla strings are the dictionary keys (`src/lib/i18n.ts`). Toasts after redirects travel in the short-lived `bl_flash` cookie.

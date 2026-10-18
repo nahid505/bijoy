@@ -6,7 +6,7 @@ import { systemAccounts, type Ctx } from "@/server/services/accounting";
 import { saveParty } from "@/server/services/master";
 import { saveCashVoucher, saveTradeVoucher } from "@/server/services/voucher";
 import {
-  assertPartiesAllowed, canOpenLedger, canSeeVoucher, loadPartyScope, partyListWhere, restrictionsOf, saveAssignments, voucherScopeWhere, type PartyScope,
+  assertPartiesAllowed, assignedPartiesOf, canOpenLedger, canSeeVoucher, loadPartyScope, partyListWhere, restrictionsOf, saveAssignments, voucherScopeWhere, type PartyScope,
 } from "@/server/party-scope";
 import { findReport, reportOpenFor } from "@/server/reports/registry";
 import { searchParties } from "@/server/lookup";
@@ -68,7 +68,7 @@ run("party restriction (শুধু নির্ধারিত কাস্ট
     v.receiptBoth = (await saveCashVoucher(owner, "RECEIPT", { date: D("2026-10-11"), reference: null, narration: null, cashAccountId: acc.CASH, lines: [{ accountId: rahim.accountId, amount: 100, narration: null }, { accountId: karim.accountId, amount: 100, narration: null }] })).id;
     v.receiptRahim = (await saveCashVoucher(owner, "RECEIPT", { date: D("2026-10-11"), reference: null, narration: null, cashAccountId: acc.CASH, lines: [{ accountId: rahim.accountId, amount: 200, narration: null }] })).id;
     // assignment: Rahim (and a foreign id that must be ignored)
-    expect(await saveAssignments(owner.businessId, rep.id, [rahim.id, "foreign-id"], [aci.id])).toEqual({ customers: 1, suppliers: 1 });
+    expect(await saveAssignments(owner.businessId, rep.id, [rahim.id, "foreign-id"], [aci.id])).toEqual({ customers: 1, suppliers: 1, accounts: 0 });
     scope = await loadPartyScope(owner.businessId, rep.id, restrictionsOf(role.permissions, false));
   });
   afterAll(async () => {
@@ -76,11 +76,11 @@ run("party restriction (শুধু নির্ধারিত কাস্ট
   });
 
   it("restriction keys count only when the role names them; Owner / '*' are never restricted", () => {
-    expect(restrictionsOf(["customers:view", "customers:assigned_only"], false)).toEqual({ customers: true, suppliers: false });
-    expect(restrictionsOf(["*"], false)).toEqual({ customers: false, suppliers: false });
-    expect(restrictionsOf(["customers:assigned_only"], true)).toEqual({ customers: false, suppliers: false });
+    expect(restrictionsOf(["customers:view", "customers:assigned_only"], false)).toEqual({ customers: true, suppliers: false, accounts: false });
+    expect(restrictionsOf(["*"], false)).toEqual({ customers: false, suppliers: false, accounts: false });
+    expect(restrictionsOf(["customers:assigned_only"], true)).toEqual({ customers: false, suppliers: false, accounts: false });
     // only customers are restricted here: suppliers stay open (the supplier assignment is kept, not applied)
-    expect(scope).toEqual({ customers: [rahim.accountId], suppliers: null });
+    expect(scope).toEqual({ customers: [rahim.accountId], suppliers: null, accounts: null });
   });
 
   it("customer list and picker: only the assigned customers", async () => {
@@ -133,6 +133,16 @@ run("party restriction (শুধু নির্ধারিত কাস্ট
     for (const slug of ["trial-balance", "profit-loss", "balance-sheet", "day-book", "cash-book", "daily-cash", "daily-summary"]) expect(reportOpenFor(ctxOf(), slug), slug).toBe(false);
     for (const slug of ["customers", "sales", "ledger", "customer-dues", "stock", "expiry"]) expect(reportOpenFor(ctxOf(), slug), slug).toBe(true);
     expect(reportOpenFor({ partyScope: { customers: null, suppliers: null } }, "trial-balance")).toBe(true);
+  });
+
+  it("the user form loads the assignment (customers, dealers and suppliers apart)", async () => {
+    const dealer = await saveParty(owner, "CUSTOMER", party("ডিলার ১"), undefined, { dealer: true });
+    await saveAssignments(owner.businessId, rep.id, [rahim.id, dealer.id], [aci.id]);
+    const a = await assignedPartiesOf(owner.businessId, rep.id);
+    expect(a.customers.map((x) => x.name)).toEqual(["রহিম"]);
+    expect(a.dealers.map((x) => x.name)).toEqual(["ডিলার ১"]);
+    expect(a.suppliers.map((x) => x.name)).toEqual(["এসিআই"]);
+    await saveAssignments(owner.businessId, rep.id, [rahim.id], [aci.id]);
   });
 
   it("a customer deleted from the business drops out of the assignment (cascade)", async () => {

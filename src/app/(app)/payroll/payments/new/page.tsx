@@ -11,6 +11,7 @@ import { paySalariesAction } from "@/server/actions/payroll";
 import { accountOptions } from "@/server/voucher-editor";
 import { unpaidPayslips } from "@/server/services/payroll";
 import { SalaryPaymentForm } from "../../payroll-forms";
+import { accountScopeWhere } from "@/server/party-scope";
 
 export const metadata: Metadata = { title: "বেতন পরিশোধ" };
 
@@ -21,7 +22,7 @@ export default async function NewSalaryPaymentPage({ searchParams }: { searchPar
   // ?run= pays that month's employees, ?employee= one employee; otherwise everyone with payable salary
   const runEmployees = p.run ? (await prisma.payslip.findMany({ where: { runId: p.run, businessId: biz }, select: { employeeId: true } })).map((s) => s.employeeId) : undefined;
   const ids = p.employee ? [p.employee] : runEmployees;
-  const [unpaid, cashAccounts] = await Promise.all([unpaidPayslips(prisma, biz, ids), accountOptions(biz, { kind: { in: ["CASH", "BANK"] } })]);
+  const [unpaid, cashAccounts] = await Promise.all([unpaidPayslips(prisma, biz, ids), accountOptions(biz, { kind: { in: ["CASH", "BANK"] }, ...accountScopeWhere(ctx) })]);
   const emps = await prisma.employee.findMany({ where: { businessId: biz, id: { in: [...new Set(unpaid.map((u) => u.employeeId))] } }, include: { department: { select: { name: true } } }, orderBy: { code: "asc" } });
   const rows = emps.map((e) => {
     const mine = unpaid.filter((u) => u.employeeId === e.id);

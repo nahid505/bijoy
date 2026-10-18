@@ -145,14 +145,16 @@ export async function searchProducts(businessId: string, q: string, opts: { ids?
 // ───────────────────────── ledger accounts (SearchableAccountSelect) ─────────────────────────
 
 /** Which accounts a picker offers. */
-export type AccountScope = "all" | "cash" | "cash-in-hand" | "bank" | "expense";
-export const ACCOUNT_SCOPES: AccountScope[] = ["all", "cash", "cash-in-hand", "bank", "expense"];
+export type AccountScope = "all" | "cash" | "cash-in-hand" | "bank" | "expense" | "heads";
+export const ACCOUNT_SCOPES: AccountScope[] = ["all", "cash", "cash-in-hand", "bank", "expense", "heads"];
 const SCOPE_WHERE: Record<AccountScope, Prisma.AccountWhereInput> = {
   all: {},
   cash: { kind: { in: ["CASH", "BANK"] } }, // cash, bank and mobile banking
   "cash-in-hand": { kind: "CASH" },
   bank: { kind: "BANK" },
   expense: { nature: "EXPENSE", group: { isDirect: false }, isSystem: false },
+  // general account heads (no customer / supplier ledgers) — the user form's "নির্ধারিত হিসাব খাতসমূহ"
+  heads: { customer: { is: null }, supplier: { is: null } },
 };
 /** Groups a new account may be created in from a picker of this scope (customer/supplier ledgers come from their own pages). */
 export const SCOPE_GROUPS: Record<AccountScope, Prisma.AccountGroupWhereInput> = {
@@ -161,6 +163,7 @@ export const SCOPE_GROUPS: Record<AccountScope, Prisma.AccountGroupWhereInput> =
   "cash-in-hand": { systemKey: "CASH_IN_HAND" },
   bank: { systemKey: "BANK_ACCOUNTS" },
   expense: { nature: "EXPENSE", isDirect: false },
+  heads: { NOT: { systemKey: { in: ["SUNDRY_DEBTORS", "SUNDRY_CREDITORS"] } } },
 };
 
 export interface AccountHit {

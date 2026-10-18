@@ -11,7 +11,7 @@ import type { ReportDef, ReportParams, ReportResult, ReportRow } from "./types";
 import type { AppContext } from "../auth";
 import { ci } from "@/lib/dialect";
 import type { BookKey } from "@/lib/book";
-import { canOpenLedger, partyListWhere, voucherScopeWhere } from "../party-scope";
+import { allowedAccounts, canOpenLedger, partyListWhere, voucherScopeWhere } from "../party-scope";
 
 const typeLabel = (t: VoucherType) => VOUCHER_TYPES[t as VoucherTypeKey].label;
 const periodText = (from: string, to: string) => `${formatDate(from)} — ${formatDate(to)}`;
@@ -70,8 +70,9 @@ export async function ledgerReport(ctx: AppContext, p: ReportParams, accountIds:
   };
 }
 
-async function kindAccounts(businessId: string, kind: "CASH" | "BANK", selected?: string) {
-  const all = await prisma.account.findMany({ where: { businessId, kind }, select: { id: true, name: true }, orderBy: { name: "asc" } });
+/** heads: the assigned account heads of a restricted user (null = all) */
+async function kindAccounts(businessId: string, kind: "CASH" | "BANK", selected?: string, heads: string[] | null = null) {
+  const all = await prisma.account.findMany({ where: { businessId, kind, ...(heads ? { id: { in: heads } } : {}) }, select: { id: true, name: true }, orderBy: { name: "asc" } });
   const ids = selected && all.some((a) => a.id === selected) ? [selected] : all.map((a) => a.id);
   return { ids, names: all.filter((a) => ids.includes(a.id)).map((a) => a.name) };
 }
@@ -110,7 +111,7 @@ export async function plReport(ctx: AppContext, p: ReportParams, book: BookKey =
 
 /** Cash book (all cash ledgers, or one) of one book. */
 export async function cashBookReport(ctx: AppContext, p: ReportParams, book: BookKey = "GENERAL", title = "ক্যাশ বুক"): Promise<ReportResult> {
-  const { ids, names } = await kindAccounts(ctx.business.id, "CASH", p.accountId);
+  const { ids, names } = await kindAccounts(ctx.business.id, "CASH", p.accountId, allowedAccounts(ctx));
   if (!ids.length) return { title, columns: [], rows: [], emptyMessage: "কোনো নগদ হিসাব নেই" };
   return ledgerReport(ctx, p, ids, `${title} — ${names.join(", ")}`, book);
 }
@@ -231,6 +232,7 @@ export const REPORTS: ReportDef[] = [
         where: {
           businessId: ctx.business.id,
           book: "GENERAL", // the depot keeps its own day book
+          ...voucherScopeWhere(ctx), // account-head restriction: vouchers of my heads
           date: range,
           ...(type ? { type } : {}),
           ...(q ? { OR: [{ voucherNo: ci(q) }, { narration: ci(q) }, { reference: ci(q) }, { partyAccount: { name: ci(q) } }] } : {}),
@@ -293,7 +295,7 @@ export const REPORTS: ReportDef[] = [
     filters: ["bankAccount", "range", "q"],
     permission: "accounts:view",
     async run(ctx, p) {
-      const { ids, names } = await kindAccounts(ctx.business.id, "BANK", p.accountId);
+      const { ids, names } = await kindAccounts(ctx.business.id, "BANK", p.accountId, allowedAccounts(ctx));
       if (!ids.length) return { title: "ব্যাংক বুক", columns: [], rows: [], emptyMessage: "কোনো ব্যাংক হিসাব নেই" };
       return ledgerReport(ctx, p, ids, `ব্যাংক বুক — ${names.join(", ")}`);
     },

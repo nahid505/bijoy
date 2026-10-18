@@ -19,7 +19,7 @@ export function findReport(slug: string) {
 /** these filter their rows to the user's customers / suppliers */
 const PARTY_FILTERED = new Set([
   "ledger", "customers", "suppliers", "sales", "purchases", "customer-dues", "supplier-dues", "customer-statement", "supplier-statement",
-  "collection", "daily-sales", "daily-purchase", "depot-deliveries", "depot-market-dues", "depot-dealer-ledger",
+  "collection", "daily-sales", "daily-purchase", "depot-deliveries", "depot-market-dues", "depot-dealer-ledger", "depot-company-ledger",
 ]);
 /** these hold no customer / supplier data */
 const NO_PARTY_DATA = new Set([
@@ -34,10 +34,16 @@ const SUPPLIER_NAMES = new Set(["expired-stock", "expiring-stock", "expiry"]);
  * parties or hold no party data — business-wide books (day book, cash book, trial balance, P&L, balance sheet…)
  * list every party and are refused.
  */
+/** with only the account-head restriction: these filter to the assigned heads too */
+const HEAD_FILTERED = new Set(["cash-book", "bank-book", "day-book"]);
+
 export function reportOpenFor(ctx: { partyScope: PartyScope }, slug: string) {
   const { customers, suppliers } = ctx.partyScope;
-  if (customers === null && suppliers === null) return true;
+  const heads = ctx.partyScope.accounts ?? null;
+  if (customers === null && suppliers === null && heads === null) return true;
   if (PARTY_FILTERED.has(slug) || NO_PARTY_DATA.has(slug)) return true;
+  // business-wide books stay closed to party-restricted users (they list every party)
+  if (customers === null && suppliers === null && HEAD_FILTERED.has(slug)) return true;
   return SUPPLIER_NAMES.has(slug) && suppliers === null;
 }
 

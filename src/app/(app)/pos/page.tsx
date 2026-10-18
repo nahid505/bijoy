@@ -9,6 +9,7 @@ import { readParams, type SearchParams } from "@/server/params";
 import { accountOptions, inventoryOptions } from "@/server/voucher-editor";
 import type { PartyOption } from "@/components/trade-parts";
 import { saveVoucherAction } from "@/server/actions/vouchers";
+import { accountScopeWhere } from "@/server/party-scope";
 
 export const metadata: Metadata = { title: "পস বিক্রয়" };
 
@@ -18,7 +19,7 @@ export default async function PosPage({ searchParams }: { searchParams: SearchPa
   const businessId = ctx.business.id;
   const [customers, cashAccounts, inv, last] = await Promise.all([
     Promise.resolve([] as PartyOption[]), // the customer picker searches on demand
-    accountOptions(businessId, { kind: { in: ["CASH", "BANK"] } }),
+    accountOptions(businessId, { kind: { in: ["CASH", "BANK"] }, ...accountScopeWhere(ctx) }),
     inventoryOptions(businessId),
     p.last ? prisma.voucher.findFirst({ where: { id: p.last, businessId, type: "SALES" }, select: { id: true, voucherNo: true, amount: true } }) : null,
   ]);

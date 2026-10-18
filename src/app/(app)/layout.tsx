@@ -14,7 +14,7 @@ import { getT } from "@/server/i18n";
 import { LangToggle } from "@/components/lang";
 import { SubscriptionBanner } from "@/components/subscription-banner";
 import { unreadCount, visibleKinds } from "@/server/services/notifications";
-import { notificationScopeWhere } from "@/server/party-scope";
+import { isRestricted, notificationScopeWhere } from "@/server/party-scope";
 import { reportOpenFor, reportSlugForPath } from "@/server/reports/registry";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +34,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   };
   // assigned-only roles: menu entries of business-wide reports they may not open are hidden
   const reportOk = (href: string) => {
+    if (href === "/backup" && isRestricted(ctx)) return false; // a backup holds every party
     const slug = reportSlugForPath(href);
     return !slug || reportOpenFor(ctx, slug);
   };

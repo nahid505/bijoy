@@ -19,7 +19,7 @@ export async function savePaddyPurchaseAction(id: string | null, _prev: ActionSt
     const ctx = await assertPermission(id ? "purchases:edit" : "purchases:create");
     const input = parseJsonPayload(paddyPurchaseSchema, fd);
     await assertVoucherAllowed(ctx, id);
-    await assertPartiesAllowed(ctx, [input.partyAccountId]);
+    await assertPartiesAllowed(ctx, [input.partyAccountId, input.cashAccountId]);
     assertEntryDate(ctx, input.date, await originalEntryDate(ctx.business.id, id));
     if (!id && !ctx.features.includes("MULTI_WAREHOUSE")) input.warehouseId = null; // → main warehouse
     const before = id ? await voucherSnapshot(ctx.business.id, id) : null;

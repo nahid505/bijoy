@@ -24,5 +24,6 @@ export const DEPOT_PREFIX: Partial<Record<VoucherTypeKey, string>> = {
   RECEIPT: "MC", // market collection
   PAYMENT: "DP", // depot payment (to the company)
   JOURNAL: "DJ",
+  STOCK_JOURNAL: "DSA", // depot stock adjustment
   OPENING: "DOB",
 };

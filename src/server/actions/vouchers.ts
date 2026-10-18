@@ -56,7 +56,7 @@ async function saveVoucher(type: EditableType, id: string | null, fd: FormData, 
         {
           const input = parseJsonPayload(tradeVoucherSchema, fd);
           assertEntryDate(ctx, input.date, original);
-          await assertPartiesAllowed(ctx, [input.partyAccountId]);
+          await assertPartiesAllowed(ctx, [input.partyAccountId, ...input.payments.map((p) => p.accountId)]);
           if (!id && !ctx.features.includes("MULTI_WAREHOUSE")) input.warehouseId = null; // → main warehouse
           voucher = await saveTradeVoucher(ctx.svc, type, input, editId, book);
         }
@@ -66,7 +66,7 @@ async function saveVoucher(type: EditableType, id: string | null, fd: FormData, 
         {
           const input = parseJsonPayload(cashVoucherSchema, fd);
           assertEntryDate(ctx, input.date, original);
-          await assertPartiesAllowed(ctx, input.lines.map((l) => l.accountId));
+          await assertPartiesAllowed(ctx, [input.cashAccountId, ...input.lines.map((l) => l.accountId)]);
           voucher = await saveCashVoucher(ctx.svc, type, input, editId, book);
         }
         break;
@@ -86,7 +86,7 @@ async function saveVoucher(type: EditableType, id: string | null, fd: FormData, 
             const main = await mainWarehouseId(ctx.business.id);
             input.lines = input.lines.map((l) => ({ ...l, warehouseId: main }));
           }
-          voucher = await saveStockJournal(ctx.svc, input, editId);
+          voucher = await saveStockJournal(ctx.svc, input, editId, book);
         }
         break;
       default:

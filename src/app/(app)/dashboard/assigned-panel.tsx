@@ -4,10 +4,10 @@ import Link from "next/link";
 import { prisma, num } from "@/lib/db";
 import { round2 } from "@/lib/calc";
 import { VOUCHER_TYPES } from "@/lib/accounting";
-import { dayRange, formatDate, formatMoney, toBnDigits, toDateInput } from "@/lib/format";
+import { dayRange, formatDate, formatDrCr, formatMoney, toBnDigits, toDateInput } from "@/lib/format";
 import { EmptyState, TableWrap } from "@/components/ui";
 import { can, type AppContext } from "@/server/auth";
-import { voucherScopeWhere } from "@/server/party-scope";
+import { allowedAccounts, voucherScopeWhere } from "@/server/party-scope";
 import { balancesBefore } from "@/server/services/ledger";
 
 type Kind = "CUSTOMER" | "SUPPLIER";
@@ -63,6 +63,37 @@ async function PartyBlock({ ctx, kind }: { ctx: AppContext; kind: Kind }) {
   );
 }
 
+/** Account-head restriction: my heads with their balance (links to their ledgers). */
+async function AccountBlock({ ctx }: { ctx: AppContext }) {
+  const heads = allowedAccounts(ctx);
+  if (heads === null) return null;
+  const cur = ctx.business.currencySymbol;
+  const accounts = await prisma.account.findMany({ where: { businessId: ctx.business.id, id: { in: heads } }, select: { id: true, name: true, group: { select: { name: true } } }, orderBy: { name: "asc" } });
+  const bal = await balancesBefore(ctx.business.id, undefined, accounts.map((a) => a.id));
+  const ledger = can(ctx, "accounts:view");
+  return (
+    <section className="panel" aria-label="আমার হিসাব খাত" id="my-heads">
+      <div className="panel-head"><h2 className="panel-title">আমার হিসাব খাত</h2><span className="text-xs text-slate-500">{toBnDigits(accounts.length)} টি</span></div>
+      {accounts.length === 0 ? <EmptyState message="আপনার জন্য এখনও কোনো হিসাব খাত নির্ধারিত হয়নি — অ্যাডমিনের সাথে যোগাযোগ করুন" /> : (
+        <TableWrap>
+          <table className="table">
+            <thead><tr><th>হিসাব খাত</th><th>গ্রুপ</th><th className="num">ব্যালেন্স</th></tr></thead>
+            <tbody>
+              {accounts.map((a) => (
+                <tr key={a.id}>
+                  <td>{ledger ? <Link prefetch={false} href={`/accounts/${a.id}`} className="font-semibold text-brand-700 hover:underline">{a.name}</Link> : a.name}</td>
+                  <td className="text-xs text-slate-500">{a.group.name}</td>
+                  <td className="num">{formatDrCr(bal.get(a.id) ?? 0, cur)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TableWrap>
+      )}
+    </section>
+  );
+}
+
 export async function AssignedDashboard({ ctx }: { ctx: AppContext }) {
   const cur = ctx.business.currencySymbol;
   const viewable = (["SALES", "SALES_RETURN", "PURCHASE", "PURCHASE_RETURN", "RECEIPT", "PAYMENT"] as const).filter((t) =>
@@ -79,11 +110,12 @@ export async function AssignedDashboard({ ctx }: { ctx: AppContext }) {
   return (
     <>
       <p className="mb-3 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-800" id="assigned-note">
-        আপনি শুধু আপনার জন্য নির্ধারিত কাস্টমার/সরবরাহকারীর তথ্য ও লেনদেন দেখতে পাবেন।
+        আপনি শুধু আপনার জন্য নির্ধারিত কাস্টমার/সরবরাহকারী/হিসাব খাতের তথ্য ও লেনদেন দেখতে পাবেন।
       </p>
       <div className="mb-4 grid gap-4 lg:grid-cols-2">
         <PartyBlock ctx={ctx} kind="CUSTOMER" />
         <PartyBlock ctx={ctx} kind="SUPPLIER" />
+        <AccountBlock ctx={ctx} />
       </div>
       {viewable.length > 0 && (
         <section className="panel">

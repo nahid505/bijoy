@@ -96,7 +96,9 @@ export async function VoucherEditor({
         include: { items: { orderBy: { lineNo: "asc" }, include: { batch: { select: { mfgDate: true } } } }, entries: { orderBy: { lineNo: "asc" } }, payments: { orderBy: { lineNo: "asc" } }, returnOf: { select: { voucherNo: true } } },
       })
     : null;
-  const book: BookKey = existing?.book ?? newBook ?? "GENERAL";
+  // a return against an invoice is in that invoice's book (depot stock in / market sale → DEPOT)
+  const fromBook = !existing && fromInvoiceId ? (await prisma.voucher.findFirst({ where: { id: fromInvoiceId, businessId }, select: { book: true } }))?.book : undefined;
+  const book: BookKey = existing?.book ?? fromBook ?? newBook ?? "GENERAL";
   const depot = book === "DEPOT";
   const pickerBook = depot ? ("depot" as const) : undefined;
   const action = !existing && depot ? saveDepotVoucherAction.bind(null, type, null) : saveVoucherAction.bind(null, type, voucherId ?? null);
@@ -156,7 +158,7 @@ export async function VoucherEditor({
     // only the party and products already on the voucher are sent; the pickers search the rest
     const [parties, cashAccounts, inv] = await Promise.all([
       defaults.partyAccountId ? searchParties(businessId, partyKind, "", { accountIds: [defaults.partyAccountId], allowed: partyKind === "CUSTOMER" ? ctx.partyScope.customers : ctx.partyScope.suppliers, dealer: depot && partyKind === "CUSTOMER", book }) : Promise.resolve([]),
-      accountOptions(businessId, { kind: { in: ["CASH", "BANK"] } }, true, false, book),
+      accountOptions(businessId, { kind: { in: ["CASH", "BANK"] }, ...accountScopeWhere(ctx) }, true, false, book),
       inventoryOptions(businessId, { productIds: defaults.items.map((i) => i.productId) }),
     ]);
     if (defaults.partyAccountId && parties.length === 0) defaults = { ...defaults, partyAccountId: "" }; // ?party= of another business / kind
@@ -170,7 +172,7 @@ export async function VoucherEditor({
     // cash / bank ledgers are few (they are the default and the quick choices); of the other ledgers only
     // those already on the voucher are sent — the line pickers search the rest on the server
     const [cashAccounts, accounts] = await Promise.all([
-      accountOptions(businessId, { kind: { in: ["CASH", "BANK"] } }, true, false, book),
+      accountOptions(businessId, { kind: { in: ["CASH", "BANK"] }, ...accountScopeWhere(ctx) }, true, false, book),
       lineIds.length ? accountOptions(businessId, { id: { in: lineIds }, AND: [accountScopeWhere(ctx), bookAccountWhere(book)] }, true, true, book) : Promise.resolve([]),
     ]);
     const lines = existing

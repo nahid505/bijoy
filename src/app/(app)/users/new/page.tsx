@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/ui";
 import { requirePermission } from "@/server/auth";
 import { saveMemberAction } from "@/server/actions/business";
 import { isRestricted, roleChoices } from "@/server/party-scope";
+import { isDepot } from "@/lib/depot";
 import { UserForm } from "../user-form";
 
 export const metadata: Metadata = { title: "নতুন ব্যবহারকারী" };
@@ -14,7 +15,7 @@ export default async function NewUserPage() {
     <>
       <PageHeader title="নতুন ব্যবহারকারী" crumbs={[{ label: "ব্যবহারকারী", href: "/users" }, { label: "নতুন" }]} />
       <section className="panel max-w-3xl p-5">
-        <UserForm action={saveMemberAction.bind(null, null)} roles={roles} isEdit={false} assigned={isRestricted(ctx) ? null : { customers: [], suppliers: [] }} />
+        <UserForm action={saveMemberAction.bind(null, null)} roles={roles} isEdit={false} assigned={isRestricted(ctx) ? null : { customers: [], suppliers: [], dealers: [] }} depot={isDepot(ctx.business.businessType)} />
       </section>
     </>
   );

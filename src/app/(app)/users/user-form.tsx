@@ -11,6 +11,7 @@ export interface RoleChoice {
   /** the role ticks "শুধু নির্ধারিত কাস্টমার / সরবরাহকারী" */
   customersOnly?: boolean;
   suppliersOnly?: boolean;
+  accountsOnly?: boolean;
 }
 
 export function UserForm({
@@ -19,13 +20,16 @@ export function UserForm({
   defaults,
   isEdit,
   assigned,
+  depot = false,
 }: {
   action: FormAction;
   roles: RoleChoice[];
   defaults?: { name: string; email: string; roleId: string; isActive: boolean };
   isEdit: boolean;
   /** user-specific customer / supplier assignment (null: the section is not shown) */
-  assigned?: { customers: PartyChoice[]; suppliers: PartyChoice[] } | null;
+  assigned?: { customers: PartyChoice[]; suppliers: PartyChoice[]; dealers?: PartyChoice[]; accounts?: PartyChoice[] } | null;
+  /** depot business: depot dealers are assigned in their own list */
+  depot?: boolean;
 }) {
   const [roleId, setRoleId] = useState(defaults?.roleId ?? "");
   const role = roles.find((r) => r.id === roleId);
@@ -59,8 +63,8 @@ export function UserForm({
       </div>
       {assigned && (
         <fieldset className="rounded-lg border border-slate-200 p-4" id="party-assignment">
-          <legend className="px-1 text-sm font-semibold text-slate-700">কাস্টমার ও সরবরাহকারী নির্ধারণ</legend>
-          <p className="mb-3 text-xs text-slate-500">রোলে &quot;শুধু নির্ধারিত কাস্টমার/সরবরাহকারী দেখতে পারবে&quot; টিক দেওয়া থাকলে এই ব্যবহারকারী শুধু এখানে নির্বাচিতদের তথ্য, লেনদেন, লেজার ও রিপোর্ট দেখবেন।</p>
+          <legend className="px-1 text-sm font-semibold text-slate-700">কাস্টমার, সরবরাহকারী ও হিসাব খাত নির্ধারণ</legend>
+          <p className="mb-3 text-xs text-slate-500">রোলে &quot;শুধু নির্ধারিত কাস্টমার/সরবরাহকারী/হিসাব খাত দেখতে পারবে&quot; টিক দেওয়া থাকলে এই ব্যবহারকারী শুধু এখানে নির্বাচিতদের তথ্য, লেনদেন, লেজার ও রিপোর্ট দেখবেন।</p>
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <PartyMultiSelect kind="customers" name="customerIds" label="নির্ধারিত কাস্টমারসমূহ" initial={assigned.customers} />
@@ -70,6 +74,16 @@ export function UserForm({
               <PartyMultiSelect kind="suppliers" name="supplierIds" label="নির্ধারিত সরবরাহকারীসমূহ" initial={assigned.suppliers} />
               {note(role?.suppliersOnly, "সরবরাহকারী")}
             </div>
+            <div>
+              <PartyMultiSelect kind="accounts" name="accountIds" label="নির্ধারিত হিসাব খাতসমূহ" initial={assigned.accounts ?? []} />
+              {note(role?.accountsOnly, "হিসাব খাত")}
+            </div>
+            {depot && (
+              <div>
+                <PartyMultiSelect kind="customers" book="depot" id="dealerIds-search" name="customerIds" label="নির্ধারিত ডিপো ডিলারসমূহ" initial={assigned.dealers ?? []} />
+                {note(role?.customersOnly, "ডিলার")}
+              </div>
+            )}
           </div>
           <input type="hidden" name="assignment" value="1" />
         </fieldset>

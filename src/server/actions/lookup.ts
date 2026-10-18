@@ -18,7 +18,7 @@ type Result<T> = { ok: true; item: T } | { ok: false; message: string; errors?: 
 export async function quickCreatePartyAction(kind: "CUSTOMER" | "SUPPLIER", input: { name: string; mobile: string; dealer?: boolean }): Promise<Result<PartyOption>> {
   const dealer = kind === "CUSTOMER" && !!input.dealer; // "+ নতুন ডিলার তৈরি করুন" (depot forms)
   const r = await guard(async () => {
-    const ctx = await assertPermission(dealer ? DEPOT_ACCESS.dealers : kind === "CUSTOMER" ? "customers:manage" : "suppliers:manage");
+    const ctx = await assertPermission(dealer ? DEPOT_ACCESS.dealerQuickCreate : kind === "CUSTOMER" ? "customers:manage" : "suppliers:manage");
     if (dealer && !isDepot(ctx.business.businessType)) throw new UserError("ডিলার শুধু ডিপো ব্যবসায় তৈরি করা যায়");
     const data = partySchema.parse({ name: input.name, mobile: input.mobile, email: "", address: "", notes: "", openingBalance: 0, creditLimit: 0, creditDays: 0 });
     const party = await saveParty(ctx.svc, kind, data, undefined, { dealer });

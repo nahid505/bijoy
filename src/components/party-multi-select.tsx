@@ -20,12 +20,19 @@ interface Hit {
 
 export function PartyMultiSelect({
   kind,
+  book,
+  id,
   name,
   label,
   initial,
   disabled,
 }: {
-  kind: "customers" | "suppliers";
+  /** accounts: general account heads (no customer / supplier ledgers) */
+  kind: "customers" | "suppliers" | "accounts";
+  /** "depot": customers = depot dealers */
+  book?: "depot";
+  /** id of the search box (default `<name>-search`) */
+  id?: string;
   /** form field name of the hidden inputs */
   name: string;
   label: string;
@@ -45,9 +52,10 @@ export function PartyMultiSelect({
     const ctl = new AbortController();
     setLoading(true);
     const t = window.setTimeout(() => {
-      fetch(`/api/lookup/${kind}?q=${encodeURIComponent(query)}`, { signal: ctl.signal })
+      fetch(`/api/lookup/${kind}?q=${encodeURIComponent(query)}${kind === "accounts" ? "&scope=heads" : ""}${book ? `&book=${book}` : ""}`, { signal: ctl.signal })
         .then((r) => (r.ok ? r.json() : { items: [] }))
-        .then((d: { items?: Hit[] }) => setHits(d.items ?? []))
+        // an account hit carries its group in place of a mobile
+        .then((d: { items?: (Hit & { id?: string; group?: string })[] }) => setHits((d.items ?? []).map((x) => (kind === "accounts" ? { partyId: x.id!, name: x.name, mobile: x.group ?? null } : x))))
         .catch(() => {})
         .finally(() => setLoading(false));
     }, 200);
@@ -55,7 +63,7 @@ export function PartyMultiSelect({
       ctl.abort();
       window.clearTimeout(t);
     };
-  }, [kind, query, open]);
+  }, [kind, query, open, book]);
 
   useEffect(() => {
     const close = (e: MouseEvent) => {
@@ -91,7 +99,7 @@ export function PartyMultiSelect({
           </span>
         ))}
         <input
-          id={`${name}-search`}
+          id={id ?? `${name}-search`}
           role="combobox"
           aria-expanded={open}
           aria-controls={listId}

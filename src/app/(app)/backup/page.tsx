@@ -1,14 +1,17 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { toBnDigits } from "@/lib/format";
 import { PageHeader } from "@/components/ui";
 import { requirePermission } from "@/server/auth";
 import { RestorePanel } from "./restore-form";
+import { isRestricted } from "@/server/party-scope";
 
 export const metadata: Metadata = { title: "ব্যাকআপ" };
 
 export default async function BackupPage() {
   const ctx = await requirePermission("backup:manage");
+  if (isRestricted(ctx)) redirect("/forbidden"); // assigned-only users: a backup holds every party
   const businessId = ctx.business.id;
   const [accounts, vouchers, entries, products, customers, suppliers] = await Promise.all([
     prisma.account.count({ where: { businessId } }),

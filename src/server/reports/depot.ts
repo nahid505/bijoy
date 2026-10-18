@@ -192,6 +192,15 @@ async function dealerLedger(ctx: AppContext, p: Record<string, string | undefine
   return ledgerReport(ctx, p, [dealer.accountId], `ডিলার লেজার: ${dealer.name}`, "DEPOT");
 }
 
+/** A company's depot-book ledger: stock in, DO releases, payments and commission adjustments (its general ledger is separate). */
+async function companyLedger(ctx: AppContext, p: Record<string, string | undefined>): Promise<ReportResult> {
+  const title = "কোম্পানি লেজার (ডিপো হিসাব)";
+  if (!isDepot(ctx.business.businessType)) return notDepot(title);
+  const company = p.accountId ? await prisma.supplier.findFirst({ where: { businessId: ctx.business.id, accountId: p.accountId, ...partyListWhere(ctx, "SUPPLIER") }, select: { name: true, accountId: true } }) : null;
+  if (!company) return { title, columns: [], rows: [], emptyMessage: "কোম্পানি (সরবরাহকারী) নির্বাচন করুন" };
+  return ledgerReport(ctx, p, [company.accountId], `কোম্পানি লেজার (ডিপো): ${company.name}`, "DEPOT");
+}
+
 /** The depot's own profit & loss: commission, market-sale margin and depot expenses — nothing of the general books. */
 async function depotProfitLoss(ctx: AppContext, p: Record<string, string | undefined>): Promise<ReportResult> {
   if (!isDepot(ctx.business.businessType)) return notDepot("ডিপো লাভ-ক্ষতি");
@@ -208,8 +217,9 @@ export const DEPOT_REPORTS: ReportDef[] = [
   { slug: "depot-free", title: "ফ্রি স্কিম রিপোর্ট", description: "কোম্পানি থেকে ফ্রি প্রাপ্ত, ডিলারদের ফ্রি প্রদান ও ডিপোতে অবশিষ্ট ফ্রি স্টক", filters: ["range"], permission: DEPOT_ACCESS.scheme, run: freeSchemeReport },
   { slug: "depot-deliveries", title: "ডেলিভারি চালান রেজিস্টার", description: "ডিও রিলিজ ও মার্কেট সেলস চালান — ডিলার, রুট, পরিমাণ, ফ্রি, বিক্রয় মূল্য ও কমিশন", filters: ["range", "q"], permission: DEPOT_ACCESS.register, run: deliveryRegister },
   { slug: "depot-market-dues", title: "রুট / এরিয়া ভিত্তিক মার্কেট বাকি", description: "রুট/এরিয়া অনুযায়ী ডিলারদের মার্কেট বাকি — রুটের মোট ও সর্বমোট", filters: ["asOf", "q"], permission: DEPOT_ACCESS.reports, run: marketDuesByRoute },
-  { slug: "depot-profit-loss", title: "ডিপো লাভ-ক্ষতি", description: "শুধু ডিপো হিসাব — কোম্পানি কমিশন, মার্কেট সেলসের লাভ ও ডিপোর খরচ; সাধারণ ব্যবসার লাভ-ক্ষতিতে যুক্ত হয় না", filters: ["range"], permission: DEPOT_ACCESS.reports, run: depotProfitLoss },
-  { slug: "depot-cash-book", title: "ডিপো ক্যাশ বুক", description: "শুধু ডিপো হিসাবের নগদ — মার্কেট কালেকশন, নগদ বিক্রয়, কোম্পানি পেমেন্ট, কমিশন আদায় ও স্থানান্তর", filters: ["cashAccount", "range", "q"], permission: DEPOT_ACCESS.reports, run: depotCashBook },
+  { slug: "depot-profit-loss", title: "ডিপো লাভ-ক্ষতি", description: "শুধু ডিপো হিসাব — কোম্পানি কমিশন, মার্কেট সেলসের লাভ ও ডিপোর খরচ; সাধারণ ব্যবসার লাভ-ক্ষতিতে যুক্ত হয় না", filters: ["range"], permission: DEPOT_ACCESS.profitLoss, run: depotProfitLoss },
+  { slug: "depot-cash-book", title: "ডিপো ক্যাশ বুক", description: "শুধু ডিপো হিসাবের নগদ — মার্কেট কালেকশন, নগদ বিক্রয়, কোম্পানি পেমেন্ট, কমিশন আদায় ও স্থানান্তর", filters: ["cashAccount", "range", "q"], permission: DEPOT_ACCESS.cashbook, run: depotCashBook },
+  { slug: "depot-company-ledger", title: "কোম্পানি লেজার (ডিপো হিসাব)", description: "কোম্পানির সাথে ডিপোর লেনদেন — স্টক ইন, ডিও রিলিজ, পেমেন্ট ও কমিশন সমন্বয়; চলমান দেনা", filters: ["supplier", "range"], permission: DEPOT_ACCESS.companyLedger, run: companyLedger },
   { slug: "depot-dealer-ledger", title: "ডিলার লেজার (ডিপো হিসাব)", description: "একজন ডিলারের ডিপো হিসাবের খতিয়ান ও চলমান বাকি", filters: ["account", "range", "q"], permission: DEPOT_ACCESS.dealersView, run: dealerLedger },
   { slug: "depot-commission", title: "কোম্পানি কমিশন রিপোর্ট", description: "কোম্পানিভিত্তিক অর্জিত কমিশন, আদায়/সমন্বয় ও বর্তমান প্রাপ্য", filters: ["range"], permission: DEPOT_ACCESS.reports, run: commissionReport },
 ];

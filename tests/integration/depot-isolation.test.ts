@@ -129,6 +129,22 @@ run("depot isolation (ডিপো হিসাব আলাদা)", () => {
     await expect(saveDepotDelivery(ctx, delivery({ mode: "DEPOT_COLLECTION", dealerAccountId: shopper.accountId, paidAmount: 0, lines: [{ productId: cement, quantity: 1, rate: 480 }] }))).rejects.toThrow(/ডিলার পাওয়া যায়নি/);
   });
 
+  it("returns follow their invoice's book: a stock-in return / market-sale return stays in the depot book", async () => {
+    const before = await profitAndLoss(ctx.businessId, {});
+    const ret = await saveTradeVoucher(ctx, "PURCHASE_RETURN", { ...trade, date: D("2026-10-12"), partyAccountId: company.accountId, warehouseId, returnOfId: v.stockIn.id, payments: [], items: items(cement, 10, 450) });
+    expect(ret.book).toBe("DEPOT");
+    expect(ret.voucherNo).toMatch(/^SIR-/);
+    expect((await balancesBefore(ctx.businessId, undefined, [acc.INVENTORY])).get(acc.INVENTORY)).toBe(8_000 - 800); // general inventory untouched (100 − 10 rice @ 80)
+    const sr = await saveTradeVoucher(ctx, "SALES_RETURN", { ...trade, date: D("2026-10-12"), partyAccountId: dealer.accountId, warehouseId, returnOfId: v.marketSale.id, payments: [], items: items(cement, 5, 480) });
+    expect(sr.book).toBe("DEPOT");
+    expect((await profitAndLoss(ctx.businessId, {})).netSales).toBe(before.netSales);
+    // a depot-book return cannot be forced into the general book
+    await expect(saveTradeVoucher(ctx, "PURCHASE_RETURN", { ...trade, date: D("2026-10-12"), partyAccountId: company.accountId, warehouseId, returnOfId: v.stockIn.id, payments: [], items: items(cement, 1, 450) }, undefined, "GENERAL")).rejects.toThrow(/মূল ইনভয়েসের হিসাবেই/);
+    for (const b of ["GENERAL", "DEPOT"] as const) expect((await trialBalance(ctx.businessId, {}, b)).balanced, b).toBe(true);
+    await deleteVoucher(ctx, sr.id);
+    await deleteVoucher(ctx, ret.id);
+  });
+
   it("commission → general income: only the earned commission, both books stay balanced, deleting removes both halves", async () => {
     expect(await transferableCommission(ctx.businessId)).toEqual({ earned: 3_000, transferred: 0, available: 3_000 });
     await expect(transferCommission(ctx, { date: D("2026-10-12"), amount: 3_500, depotCashAccountId: acc.CASH, generalCashAccountId: acc.CASH, reference: null })).rejects.toThrow(/স্থানান্তরযোগ্য/);

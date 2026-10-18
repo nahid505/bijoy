@@ -15,6 +15,7 @@ import { voucherAccess, voucherPermission } from "@/server/voucher-permissions";
 import { deleteVoucherAction } from "@/server/actions/vouchers";
 import { redirect } from "next/navigation";
 import { isPayrollVoucher } from "@/server/services/voucher";
+import { DEPOT_ACCESS } from "@/lib/depot";
 import { canSeeVoucher } from "@/server/party-scope";
 
 export const metadata: Metadata = { title: "ভাউচার" };
@@ -31,7 +32,7 @@ export default async function VoucherDetailPage({ params }: { params: Promise<{ 
   const depotOnly = !full;
   // a depot-book voucher (src/lib/book.ts) lives under the depot menu, never in the general lists
   const depotBook = v.book === "DEPOT" || depotOnly;
-  const depotList = v.depotDelivery ? "/depot/deliveries" : ({ PURCHASE: "/depot/stock-in", PURCHASE_RETURN: "/depot/stock-in", RECEIPT: "/depot/collections", PAYMENT: "/depot/payments", JOURNAL: "/depot/commission" } as Record<string, string>)[v.type];
+  const depotList = v.depotDelivery ? "/depot/deliveries" : ({ PURCHASE: "/depot/stock-in", PURCHASE_RETURN: "/depot/stock-in", RECEIPT: "/depot/collections", PAYMENT: "/depot/payments", JOURNAL: "/depot/commission", STOCK_JOURNAL: "/depot/stock-adjust" } as Record<string, string>)[v.type];
   const cur = ctx.business.currencySymbol;
   const meta = VOUCHER_TYPES[v.type];
   const trade = TRADE_TYPES.includes(v.type);
@@ -66,7 +67,7 @@ export default async function VoucherDetailPage({ params }: { params: Promise<{ 
             )}
             {v.type === "SALES" && can(ctx, "sales:create") && <Link prefetch={false} href={`/vouchers/sales-return/new?from=${v.id}`} className="btn-secondary">↩ ফেরত নিন</Link>}
             {v.type === "PURCHASE" && can(ctx, "purchases:create") && <Link prefetch={false} href={`/vouchers/purchase-return/new?from=${v.id}`} className="btn-secondary">↩ ফেরত দিন</Link>}
-            {v.type === "SALES" && v.partyAccountId && amount - paid > 0 && can(ctx, "vouchers:create") && <Link prefetch={false} href={`/vouchers/receipt/new?party=${v.partyAccountId}`} className="btn-secondary">বাকি আদায়</Link>}
+            {v.type === "SALES" && v.partyAccountId && amount - paid > 0 && can(ctx, v.book === "DEPOT" ? DEPOT_ACCESS.collection : "vouchers:create") && <Link prefetch={false} href={v.book === "DEPOT" ? `/depot/collections/new?party=${v.partyAccountId}` : `/vouchers/receipt/new?party=${v.partyAccountId}`} className="btn-secondary">বাকি আদায়</Link>}
             {payrollHref && can(ctx, "payroll:view") && <Link prefetch={false} href={payrollHref} className="btn-secondary">বেতন মডিউলে দেখুন</Link>}
             {editable && can(ctx, voucherAccess(v.type, "edit", ctx.business.businessType, v.book)) && <Link prefetch={false} href={v.type === "PRODUCTION" ? `/production/${v.id}/edit` : v.paddyPurchase ? `/purchases/paddy/${v.id}/edit` : v.depotDelivery ? `/depot/deliveries/${v.id}/edit` : `/vouchers/v/${v.id}/edit`} className="btn-secondary">সম্পাদনা</Link>}
             {editable && can(ctx, voucherAccess(v.type, "delete", ctx.business.businessType, v.book)) && (

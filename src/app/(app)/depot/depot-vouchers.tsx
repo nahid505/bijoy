@@ -6,10 +6,10 @@ import { redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
 import { prisma, num } from "@/lib/db";
 import { VOUCHER_TYPES } from "@/lib/accounting";
-import { isDepot } from "@/lib/depot";
+import { DEPOT_ACCESS, isDepot } from "@/lib/depot";
 import { formatDate, formatMoney, toBnDigits } from "@/lib/format";
 import { EmptyState, FilterBar, FilterField, PageHeader, Pagination, StatCard, TableWrap } from "@/components/ui";
-import { can, requireContext } from "@/server/auth";
+import { can, requireContext, type AppContext } from "@/server/auth";
 import { pageOf, readParams, totalPages, type SearchParams } from "@/server/params";
 import { reportPeriod } from "@/server/period";
 import { voucherScopeWhere } from "@/server/party-scope";
@@ -17,19 +17,23 @@ import { VoucherEditor } from "@/server/voucher-editor";
 import { voucherAccess } from "@/server/voucher-permissions";
 import { DepotOnlyNotice } from "./depot-ui";
 
-export type DepotVoucherKind = "stock-in" | "collections" | "payments";
+export type DepotVoucherKind = "stock-in" | "collections" | "payments" | "stock-adjust";
 
-export const DEPOT_VOUCHERS: Record<DepotVoucherKind, { type: "PURCHASE" | "RECEIPT" | "PAYMENT"; title: string; newTitle: string; description: string; party: string }> = {
+export const DEPOT_VOUCHERS: Record<DepotVoucherKind, { type: "PURCHASE" | "RECEIPT" | "PAYMENT" | "STOCK_JOURNAL"; title: string; newTitle: string; description: string; party: string }> = {
   "stock-in": { type: "PURCHASE", title: "স্টক ইন (কোম্পানি থেকে প্রাপ্তি)", newTitle: "নতুন স্টক ইন", description: "কোম্পানি থেকে পণ্য গ্রহণ — ফ্রি পরিমাণ সহ; ডিপোর স্টক ও কোম্পানির দেনা (ডিপো হিসাবে)", party: "কোম্পানি" },
   collections: { type: "RECEIPT", title: "মার্কেট কালেকশন", newTitle: "নতুন মার্কেট কালেকশন", description: "ডিলারদের কাছ থেকে মার্কেট বাকি আদায় — ডিপোর ক্যাশে (ডিপো হিসাবে)", party: "ডিলার" },
+  "stock-adjust": { type: "STOCK_JOURNAL", title: "স্টক সমন্বয় (ডিপো)", newTitle: "নতুন ডিপো স্টক সমন্বয়", description: "ডিপোর পণ্যের ঘাটতি / উদ্বৃত্ত / ক্ষতি সমন্বয় — মূল্য ডিপোর ইনভেন্টরি ও ডিপোর লাভ-ক্ষতিতে, সাধারণ ইনভেন্টরিতে নয়", party: "—" },
   payments: { type: "PAYMENT", title: "কোম্পানিকে পেমেন্ট", newTitle: "নতুন কোম্পানি পেমেন্ট", description: "স্টকের দাম বাবদ কোম্পানিকে পরিশোধ — ডিপোর ক্যাশ থেকে (ডিপো হিসাবে)", party: "কোম্পানি" },
 };
+
+/** The depot stock adjustment has its own key: no depot:stock_adjust → no page (also not via a general key). */
+const kindAllowed = (ctx: AppContext, kind: DepotVoucherKind) => kind !== "stock-adjust" || can(ctx, DEPOT_ACCESS.stockAdjust);
 
 export async function DepotVoucherNewPage({ kind, searchParams }: { kind: DepotVoucherKind; searchParams: SearchParams }) {
   const cfg = DEPOT_VOUCHERS[kind];
   const ctx = await requireContext();
   if (!isDepot(ctx.business.businessType)) return <DepotOnlyNotice canManage={can(ctx, "business:manage")} />;
-  if (!can(ctx, voucherAccess(cfg.type, "create", ctx.business.businessType, "DEPOT"))) redirect("/forbidden");
+  if (!can(ctx, voucherAccess(cfg.type, "create", ctx.business.businessType, "DEPOT")) || !kindAllowed(ctx, kind)) redirect("/forbidden");
   const p = await readParams(searchParams);
   return (
     <>
@@ -43,7 +47,7 @@ export async function DepotVoucherListPage({ kind, searchParams }: { kind: Depot
   const cfg = DEPOT_VOUCHERS[kind];
   const ctx = await requireContext();
   if (!isDepot(ctx.business.businessType)) return <DepotOnlyNotice canManage={can(ctx, "business:manage")} />;
-  if (!can(ctx, voucherAccess(cfg.type, "view", ctx.business.businessType, "DEPOT"))) redirect("/forbidden");
+  if (!can(ctx, voucherAccess(cfg.type, "view", ctx.business.businessType, "DEPOT")) || !kindAllowed(ctx, kind)) redirect("/forbidden");
   const p = await readParams(searchParams);
   const { page, skip, take } = pageOf(p);
   const { from, to, range } = reportPeriod(p, ctx.business.fiscalYearStartMonth);
@@ -55,7 +59,7 @@ export async function DepotVoucherListPage({ kind, searchParams }: { kind: Depot
     prisma.voucher.count({ where }),
     prisma.voucher.aggregate({ where, _sum: { amount: true } }),
   ]);
-  const canNew = can(ctx, voucherAccess(cfg.type, "create", ctx.business.businessType, "DEPOT"));
+  const canNew = can(ctx, voucherAccess(cfg.type, "create", ctx.business.businessType, "DEPOT")) && kindAllowed(ctx, kind);
   return (
     <>
       <PageHeader

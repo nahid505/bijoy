@@ -2,11 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { assertPermission, setBusinessCookie } from "../auth";
+import { assertPermission, ForbiddenError, setBusinessCookie } from "../auth";
 import { audit } from "../audit";
 import { flash } from "../flash";
 import { guard, UserError } from "../action-utils";
 import { restoreBackup, validateBackup, type ValidationReport } from "../services/backup";
+import { isRestricted } from "../party-scope";
 
 const MAX_BYTES = 50 * 1024 * 1024;
 
@@ -26,7 +27,8 @@ async function readUpload(fd: FormData): Promise<unknown> {
 /** Validates a backup file without writing anything. */
 export async function validateBackupAction(_prev: BackupActionState, fd: FormData): Promise<BackupActionState> {
   const result = await guard(async () => {
-    await assertPermission("backup:manage");
+    const c = await assertPermission("backup:manage");
+    if (isRestricted(c)) throw new ForbiddenError();
     return validateBackup(await readUpload(fd));
   });
   if (!result.ok) return { ok: false, message: result.message };
@@ -37,6 +39,7 @@ export async function validateBackupAction(_prev: BackupActionState, fd: FormDat
 export async function restoreBackupAction(_prev: BackupActionState, fd: FormData): Promise<BackupActionState> {
   const result = await guard(async () => {
     const ctx = await assertPermission("backup:manage");
+    if (isRestricted(ctx)) throw new ForbiddenError();
     const restored = await restoreBackup(await readUpload(fd), ctx.user.id);
     await audit({ businessId: restored.businessId, userId: ctx.user.id, action: "CREATE", entity: "Backup", entityId: restored.businessId, details: { restoredFrom: ctx.business.id, name: restored.name } });
     return restored;

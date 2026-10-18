@@ -35,25 +35,48 @@ export const DEPOT_ACCESS = {
   /** market dues by route, commission report */
   reports: ["depot:reports_view", "reports:view"],
   /** delivery register (the list's print / Excel) */
-  register: ["depot:view", "depot:reports_view", "reports:view"],
+  register: ["depot:register_view", "reports:view"],
   /** free scheme report */
   scheme: ["depot:scheme_manage", "reports:view"],
-  /** dealer list / create / edit */
-  dealers: ["depot:delivery_manage", "customers:manage"],
-  dealersView: ["depot:view", "depot:delivery_manage", "depot:reports_view", "customers:view"],
+  /** company ledger (depot book), depot P&L, depot cash book */
+  companyLedger: ["depot:company_ledger", "reports:view"],
+  profitLoss: ["depot:profit_loss", "reports:view"],
+  cashbook: ["depot:cashbook", "reports:view"],
+  /** dealer list / profile, and create / edit / delete */
+  dealersView: ["depot:dealers_manage", "customers:view"],
+  dealers: ["depot:dealers_manage", "customers:manage"],
+  /** "+ নতুন ডিলার তৈরি করুন" inside a challan */
+  dealerQuickCreate: ["depot:dealers_manage", "depot:delivery_manage", "customers:manage"],
   /** depot payment to the company */
-  payment: ["depot:stock_in", "vouchers:create"],
+  payment: ["depot:company_payment", "vouchers:create"],
   /** depot voucher lists (stock in / collections / company payments) */
   stockInView: ["depot:stock_in", "purchases:view"],
   collectionView: ["depot:collection_create", "vouchers:view"],
-  paymentView: ["depot:stock_in", "vouchers:view"],
+  paymentView: ["depot:company_payment", "vouchers:view"],
+  /** depot stock adjustment: its own key only — without it the page and the menu are closed */
+  stockAdjust: ["depot:stock_adjust"],
 } as const satisfies Record<string, readonly Permission[]>;
 
 /** The default depot-only role (created for depot businesses). */
 export const DEPOT_ROLE = {
   name: "ডিপো হিসাবরক্ষক (Depot Accountant)",
   description: "শুধু ডিপো ব্যবস্থাপনা — চালান, স্টক ইন, মার্কেট কালেকশন ও ডিপো রিপোর্ট; সাধারণ হিসাব, লেজার ও সেটিং নয়",
-  permissions: ["depot:view", "depot:delivery_manage", "depot:stock_in", "depot:collection_create", "depot:reports_view", "depot:scheme_manage"] as Permission[],
+  permissions: [
+    "depot:view", "depot:delivery_manage", "depot:dealers_manage", "depot:stock_in", "depot:stock_adjust", "depot:collection_create", "depot:company_payment",
+    "depot:reports_view", "depot:register_view", "depot:scheme_manage", "depot:company_ledger", "depot:profit_loss", "depot:cashbook",
+  ] as Permission[],
+};
+
+/**
+ * One-time upgrade of roles made with the first, smaller depot set (6 keys) to the full set: each old key brings
+ * the new keys that used to be part of it, so no role loses a screen it could open. (Run once per business —
+ * see upgradeDepotPermissions in src/server/services/bootstrap.ts; a key removed afterwards stays removed.)
+ */
+export const DEPOT_PERMISSION_UPGRADE: Record<string, Permission[]> = {
+  "depot:view": ["depot:register_view"],
+  "depot:delivery_manage": ["depot:dealers_manage"],
+  "depot:stock_in": ["depot:stock_adjust", "depot:company_payment", "depot:company_ledger"],
+  "depot:reports_view": ["depot:register_view", "depot:profit_loss", "depot:cashbook"],
 };
 export const DEPOT_MODES = ["COMPANY_PAID", "DEPOT_COLLECTION"] as const;
 export type DepotMode = (typeof DEPOT_MODES)[number];
