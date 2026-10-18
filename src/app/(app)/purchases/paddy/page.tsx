@@ -6,6 +6,7 @@ import { EmptyState, FilterBar, FilterField, PageHeader, Pagination, StatCard, T
 import { can, requirePermission } from "@/server/auth";
 import { pageOf, readParams, totalPages, type SearchParams } from "@/server/params";
 import { listPaddyPurchases } from "@/server/services/paddy";
+import { voucherScopeWhere } from "@/server/party-scope";
 
 export const metadata: Metadata = { title: "ধান ক্রয়" };
 const day = (s?: string) => (s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(`${s}T00:00:00.000Z`) : undefined);
@@ -15,7 +16,7 @@ export default async function PaddyPurchasesPage({ searchParams }: { searchParam
   const cur = ctx.business.currencySymbol;
   const p = await readParams(searchParams);
   const page = pageOf(p);
-  const { rows, total, sums } = await listPaddyPurchases(ctx.business.id, { from: day(p.from), to: day(p.to), skip: page.skip, take: page.take });
+  const { rows, total, sums } = await listPaddyPurchases(ctx.business.id, { from: day(p.from), to: day(p.to), skip: page.skip, take: page.take, scope: voucherScopeWhere(ctx) });
   return (
     <>
       <PageHeader

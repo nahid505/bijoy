@@ -36,6 +36,8 @@ export interface ProductOption {
   avgCost: number;
   stock: number;
   trackBatch: boolean;
+  /** depot: commission per base unit for a DO release */
+  depotCommissionRate?: number;
 }
 export interface WarehouseOption {
   id: string;
@@ -88,6 +90,7 @@ export function PaymentRows({
   total,
   currency,
   label,
+  book,
 }: {
   rows: PaymentRow[];
   setRows: (r: PaymentRow[]) => void;
@@ -95,6 +98,7 @@ export function PaymentRows({
   total: number;
   currency: string;
   label: string;
+  book?: "depot";
 }) {
   const paid = round2(rows.reduce((s, r) => s + (Number(r.amount) || 0), 0));
   const update = (key: number, patch: Partial<PaymentRow>) => setRows(rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -111,7 +115,7 @@ export function PaymentRows({
       </div>
       {rows.map((r) => (
         <div key={r.key} className="grid grid-cols-12 gap-1.5">
-          <div className="col-span-5"><SearchableAccountSelect scope="cash" known={cashAccounts} value={r.accountId} onChange={(v) => update(r.key, { accountId: v })} placeholder="মাধ্যম" ariaLabel="পরিশোধের মাধ্যম" currency={currency} /></div>
+          <div className="col-span-5"><SearchableAccountSelect scope="cash" book={book} known={cashAccounts} value={r.accountId} onChange={(v) => update(r.key, { accountId: v })} placeholder="মাধ্যম" ariaLabel="পরিশোধের মাধ্যম" currency={currency} /></div>
           <input className="input-num col-span-3" type="number" min="0" step="0.01" value={r.amount} placeholder="টাকা" onChange={(e) => update(r.key, { amount: e.target.value })} aria-label="টাকা" />
           <input className="input col-span-3" value={r.reference} placeholder="রেফ/TrxID" onChange={(e) => update(r.key, { reference: e.target.value })} aria-label="রেফারেন্স" />
           <button type="button" className="btn-ghost btn-sm col-span-1 text-credit" aria-label="মাধ্যম মুছুন" onClick={() => setRows(rows.filter((x) => x.key !== r.key))}>✕</button>

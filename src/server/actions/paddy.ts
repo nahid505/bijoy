@@ -12,11 +12,14 @@ import { guard, parseJsonPayload, toResult, type ActionState } from "../action-u
 import { assertEntryDate, originalEntryDate } from "../entry-date";
 import { savePaddyPurchase } from "../services/paddy";
 import { voucherSnapshot } from "../services/voucher";
+import { assertPartiesAllowed, assertVoucherAllowed } from "../party-scope";
 
 export async function savePaddyPurchaseAction(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const r = await guard(async () => {
     const ctx = await assertPermission(id ? "purchases:edit" : "purchases:create");
     const input = parseJsonPayload(paddyPurchaseSchema, fd);
+    await assertVoucherAllowed(ctx, id);
+    await assertPartiesAllowed(ctx, [input.partyAccountId]);
     assertEntryDate(ctx, input.date, await originalEntryDate(ctx.business.id, id));
     if (!id && !ctx.features.includes("MULTI_WAREHOUSE")) input.warehouseId = null; // → main warehouse
     const before = id ? await voucherSnapshot(ctx.business.id, id) : null;

@@ -5,13 +5,17 @@ import { num } from "@/lib/db";
 import { formatDate, formatMoney, formatQty, MONTH_NAMES, toBnDigits } from "@/lib/format";
 import { GroupedBars } from "@/components/month-bars";
 import { Badge, EmptyState } from "@/components/ui";
-import { can, requirePermission } from "@/server/auth";
+import { can, requireContext, type AppContext } from "@/server/auth";
+import { isRestricted } from "@/server/party-scope";
+import { AssignedDashboard } from "./assigned-panel";
 import { getT } from "@/server/i18n";
 import { dashboardData } from "@/server/services/dashboard";
 import { ensureDailyChecks } from "@/server/services/notifications";
 import { ExpiryBadge } from "@/components/expiry-badge";
 import { AccountSummary, LatestNotifications, RecentPurchases } from "./account-panels";
 import { FEATURES, type FeatureDef } from "@/lib/features";
+import { isDepot } from "@/lib/depot";
+import { DepotPanel } from "./depot-panel";
 
 export const metadata: Metadata = { title: "ড্যাশবোর্ড" };
 
@@ -41,19 +45,8 @@ function Panel({ title, href, linkLabel, children }: { title: string; href?: str
   );
 }
 
-export default async function DashboardPage() {
-  const ctx = await requirePermission("dashboard:view");
-  // trial / subscription over: whoever handles billing chooses first — renew, or continue on the free plan
-  if (ctx.subscription?.status === "EXPIRED" && can(ctx, "billing:manage")) redirect("/billing?expired=1");
-  const t = await getT();
-  const cur = ctx.business.currencySymbol;
-  await ensureDailyChecks(ctx.business.id).catch(() => null); // daily alerts, if the scheduler has not run yet today
-  const d = await dashboardData(ctx.business.id, ctx.business.fiscalYearStartMonth);
-  const modules = (FEATURES as readonly FeatureDef[]).filter((m) => m.home && ctx.features.includes(m.key) && can(ctx, m.home.permission));
-  const showExpiry = can(ctx, "inventory:view") && ctx.features.includes("PRODUCT_EXPIRY") && (d.expiry.cards.some((c) => c.batches > 0) || d.expiry.attention.length > 0);
-  const f = d.figures;
-
-  const quick = [
+function quickActions(ctx: AppContext) {
+  return [
     { href: "/pos", label: "নতুন বিক্রয়", icon: "🧾", ok: can(ctx, "sales:create"), primary: true },
     { href: "/vouchers/purchase/new", label: "নতুন ক্রয়", icon: "📦", ok: can(ctx, "purchases:create") },
     { href: "/vouchers/receipt/new", label: "টাকা আদায়", icon: "💵", ok: can(ctx, "vouchers:create") },
@@ -62,6 +55,68 @@ export default async function DashboardPage() {
     { href: "/products/new", label: "পণ্য যোগ", icon: "🏷", ok: can(ctx, "inventory:manage") },
     { href: "/vouchers/payment/new?mode=expense", label: "খরচ", icon: "🧮", ok: can(ctx, "vouchers:create") },
   ].filter((q) => q.ok);
+}
+
+function QuickActions({ quick, label }: { quick: ReturnType<typeof quickActions>; label: string }) {
+  if (quick.length === 0) return null;
+  return (
+    <section className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7" aria-label={label}>
+      {quick.map((q) => (
+        <Link prefetch={false}
+          key={q.href}
+          href={q.href}
+          className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-semibold transition ${q.primary ? "border-brand-600 bg-brand-600 text-white hover:bg-brand-700" : "border-rule bg-white text-ink-800 hover:border-brand-500 hover:bg-brand-50"}`}
+        >
+          <span aria-hidden className="text-lg">{q.icon}</span>
+          {q.label}
+        </Link>
+      ))}
+    </section>
+  );
+}
+
+export default async function DashboardPage() {
+  const ctx = await requireContext();
+  if (!can(ctx, "dashboard:view")) {
+    // depot-only role: the depot dashboard alone — no sales, profit, ledger or cash figures
+    if (isDepot(ctx.business.businessType) && can(ctx, "depot:view")) {
+      return (
+        <>
+          <div className="mb-4">
+            <h1 className="text-xl font-bold text-ink-900">ডিপো ড্যাশবোর্ড</h1>
+            <p className="text-sm text-slate-500">ডিপো ব্যবস্থাপনার সারসংক্ষেপ — {formatDate(new Date())}</p>
+          </div>
+          <DepotPanel ctx={ctx} />
+        </>
+      );
+    }
+    redirect("/forbidden");
+  }
+  // trial / subscription over: whoever handles billing chooses first — renew, or continue on the free plan
+  if (ctx.subscription?.status === "EXPIRED" && can(ctx, "billing:manage")) redirect("/billing?expired=1");
+  const t = await getT();
+  // assigned-only role: no business-wide figures — their own customers / suppliers only
+  if (isRestricted(ctx)) {
+    return (
+      <>
+        <div className="mb-4">
+          <h1 className="text-xl font-bold text-ink-900">{t("ড্যাশবোর্ড")}</h1>
+          <p className="text-sm text-slate-500">আমার কাস্টমার ও সরবরাহকারী — {formatDate(new Date())}</p>
+        </div>
+        <QuickActions quick={quickActions(ctx).map((q) => ({ ...q, label: t(q.label) }))} label={t("দ্রুত কাজ")} />
+        <AssignedDashboard ctx={ctx} />
+      </>
+    );
+  }
+  const cur = ctx.business.currencySymbol;
+  await ensureDailyChecks(ctx.business.id).catch(() => null); // daily alerts, if the scheduler has not run yet today
+  const d = await dashboardData(ctx.business.id, ctx.business.fiscalYearStartMonth);
+  const modules = (FEATURES as readonly FeatureDef[]).filter((m) => m.home && ctx.features.includes(m.key) && can(ctx, m.home.permission));
+  const showExpiry = can(ctx, "inventory:view") && ctx.features.includes("PRODUCT_EXPIRY") && (d.expiry.cards.some((c) => c.batches > 0) || d.expiry.attention.length > 0);
+  const f = d.figures;
+  const depot = isDepot(ctx.business.businessType);
+
+  const quick = quickActions(ctx);
 
   return (
     <>
@@ -72,7 +127,10 @@ export default async function DashboardPage() {
 
       <AccountSummary ctx={ctx} />
 
-      {quick.length > 0 && (
+      {/* depot business: depot quick actions and figures replace the general quick actions */}
+      {depot && <DepotPanel ctx={ctx} />}
+
+      {!depot && quick.length > 0 && (
         <section className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7" aria-label={t("দ্রুত কাজ")}>
           {quick.map((q) => (
             <Link prefetch={false}

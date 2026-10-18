@@ -9,10 +9,13 @@ import { assertPermission, ForbiddenError, getContext } from "../auth";
 import { audit } from "../audit";
 import { flash } from "../flash";
 import { guard, parseJsonPayload, toResult, UserError, type ActionState } from "../action-utils";
-import { voucherPermission } from "../voucher-permissions";
+import { voucherAccess } from "../voucher-permissions";
+import type { BookKey } from "@/lib/book";
+import { isDepot } from "@/lib/depot";
 import { assertEntryDate, originalEntryDate } from "../entry-date";
 import { smsForCancelledInvoice, smsForVoucher } from "../sms/events";
 import { deleteVoucher, saveCashVoucher, saveJournalVoucher, saveStockJournal, saveTradeVoucher, voucherSnapshot } from "../services/voucher";
+import { assertPartiesAllowed, assertVoucherAllowed } from "../party-scope";
 
 type EditableType = Exclude<VoucherTypeKey, "OPENING">;
 
@@ -21,8 +24,25 @@ type EditableType = Exclude<VoucherTypeKey, "OPENING">;
  * Optional "then": "print" → open the printable invoice/receipt, "pos" → back to a fresh POS screen.
  */
 export async function saveVoucherAction(type: EditableType, id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  return saveVoucher(type, id, fd);
+}
+
+/** A NEW depot-book voucher (depot stock in / market collection / company payment — src/lib/book.ts). */
+export async function saveDepotVoucherAction(type: EditableType, id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  return saveVoucher(type, id, fd, "DEPOT");
+}
+
+async function saveVoucher(type: EditableType, id: string | null, fd: FormData, newBook?: BookKey): Promise<ActionState> {
   const result = await guard(async () => {
-    const ctx = await assertPermission(voucherPermission(type, id ? "edit" : "create"));
+    const base = await getContext();
+    if (!base) throw new ForbiddenError();
+    if (newBook === "DEPOT" && !isDepot(base.business.businessType)) throw new UserError("ডিপো হিসাব শুধু ডিপো ব্যবসায়");
+    // an edit keeps the voucher's own book; the depot permissions open depot-book vouchers only
+    const book: BookKey = id
+      ? ((await prisma.voucher.findFirst({ where: { id, businessId: base.business.id }, select: { book: true } }))?.book ?? "GENERAL")
+      : newBook ?? "GENERAL";
+    const ctx = await assertPermission(voucherAccess(type, id ? "edit" : "create", base.business.businessType, book));
+    await assertVoucherAllowed(ctx, id); // assigned-only roles: only their parties' vouchers
     const before = id ? await voucherSnapshot(ctx.business.id, id) : null;
     const editId = id ?? undefined;
     // date lock (transaction:change_date): new entries today, edits keep their date
@@ -36,8 +56,9 @@ export async function saveVoucherAction(type: EditableType, id: string | null, _
         {
           const input = parseJsonPayload(tradeVoucherSchema, fd);
           assertEntryDate(ctx, input.date, original);
+          await assertPartiesAllowed(ctx, [input.partyAccountId]);
           if (!id && !ctx.features.includes("MULTI_WAREHOUSE")) input.warehouseId = null; // → main warehouse
-          voucher = await saveTradeVoucher(ctx.svc, type, input, editId);
+          voucher = await saveTradeVoucher(ctx.svc, type, input, editId, book);
         }
         break;
       case "RECEIPT":
@@ -45,14 +66,16 @@ export async function saveVoucherAction(type: EditableType, id: string | null, _
         {
           const input = parseJsonPayload(cashVoucherSchema, fd);
           assertEntryDate(ctx, input.date, original);
-          voucher = await saveCashVoucher(ctx.svc, type, input, editId);
+          await assertPartiesAllowed(ctx, input.lines.map((l) => l.accountId));
+          voucher = await saveCashVoucher(ctx.svc, type, input, editId, book);
         }
         break;
       case "JOURNAL":
         {
           const input = parseJsonPayload(journalVoucherSchema, fd);
           assertEntryDate(ctx, input.date, original);
-          voucher = await saveJournalVoucher(ctx.svc, input, editId);
+          await assertPartiesAllowed(ctx, input.lines.map((l) => l.accountId));
+          voucher = await saveJournalVoucher(ctx.svc, input, editId, book);
         }
         break;
       case "STOCK_JOURNAL":
@@ -97,9 +120,10 @@ export async function deleteVoucherAction(id: string, _prev: ActionState, _fd: F
   const result = await guard(async () => {
     const base = await getContext();
     if (!base) throw new ForbiddenError();
-    const v = await prisma.voucher.findFirst({ where: { id, businessId: base.business.id }, select: { type: true } });
+    const v = await prisma.voucher.findFirst({ where: { id, businessId: base.business.id }, select: { type: true, book: true } });
     if (!v || v.type === "OPENING") throw new UserError("ভাউচার পাওয়া যায়নি");
-    const ctx = await assertPermission(voucherPermission(v.type, "delete"));
+    const ctx = await assertPermission(voucherAccess(v.type, "delete", base.business.businessType, v.book));
+    await assertVoucherAllowed(ctx, id);
     const before = await voucherSnapshot(ctx.business.id, id); // full posting snapshot kept in the audit log
     const party = await prisma.voucher.findFirst({ where: { id, businessId: ctx.business.id }, select: { partyAccountId: true, date: true } });
     const deleted = await deleteVoucher(ctx.svc, id);

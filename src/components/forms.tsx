@@ -260,3 +260,12 @@ export function PrintButton({ label = "প্রিন্ট" }: { label?: strin
     </button>
   );
 }
+
+/** Opens the browser print dialog once the page has rendered (print views reached from a "প্রিন্ট" link). */
+export function AutoPrint() {
+  useEffect(() => {
+    const t = window.setTimeout(() => window.print(), 300);
+    return () => window.clearTimeout(t);
+  }, []);
+  return null;
+}

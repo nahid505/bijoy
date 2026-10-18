@@ -13,6 +13,7 @@ export interface ProductDefaults {
   purchasePrice?: number;
   salePrice?: number;
   wholesalePrice?: number;
+  depotCommissionRate?: number;
   minStock?: number;
   openingStock?: number;
   openingRate?: number;
@@ -27,6 +28,7 @@ export function ProductForm({
   units,
   cancelHref,
   hasTransactions,
+  showDepotCommission = false,
 }: {
   action: FormAction;
   defaults?: ProductDefaults;
@@ -35,6 +37,8 @@ export function ProductForm({
   units: { id: string; name: string }[];
   cancelHref: string;
   hasTransactions?: boolean;
+  /** depot businesses: commission per unit for DO releases */
+  showDepotCommission?: boolean;
 }) {
   return (
     <ActionForm action={action}>
@@ -69,6 +73,11 @@ export function ProductForm({
         <Field label="ক্রয়মূল্য" name="purchasePrice"><input id="purchasePrice" name="purchasePrice" type="number" step="0.01" min="0" defaultValue={defaults.purchasePrice ?? 0} className="input-num" /></Field>
         <Field label="বিক্রয়মূল্য (খুচরা)" name="salePrice"><input id="salePrice" name="salePrice" type="number" step="0.01" min="0" defaultValue={defaults.salePrice ?? 0} className="input-num" /></Field>
         <Field label="পাইকারি মূল্য" name="wholesalePrice"><input id="wholesalePrice" name="wholesalePrice" type="number" step="0.01" min="0" defaultValue={defaults.wholesalePrice ?? 0} className="input-num" /></Field>
+        {showDepotCommission && (
+          <Field label="ডিপো কমিশন (প্রতি একক)" name="depotCommissionRate" hint="ডিও রিলিজ চালানে কোম্পানির কাছ থেকে প্রাপ্য কমিশন — চালানে বদলানো যায়">
+            <input id="depotCommissionRate" name="depotCommissionRate" type="number" step="0.0001" min="0" defaultValue={defaults.depotCommissionRate ?? 0} className="input-num" />
+          </Field>
+        )}
         <Field label="ন্যূনতম মজুদ" name="minStock" hint="এর নিচে নামলে সতর্কতা"><input id="minStock" name="minStock" type="number" step="0.001" min="0" defaultValue={defaults.minStock ?? 0} className="input-num" /></Field>
       </fieldset>
 

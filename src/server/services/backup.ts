@@ -2,6 +2,7 @@
 // Restore always creates a NEW business (ids remapped) inside one transaction —
 // it can never overwrite or corrupt existing books.
 import { createHash, randomUUID } from "node:crypto";
+import { COMMISSION_RECEIVABLE_PREFIX } from "@/lib/depot";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { round2 } from "@/lib/calc";
@@ -11,6 +12,7 @@ import { revalueProducts } from "./posting";
 import { trialBalance } from "./report";
 import { isMySql, rawExec, sql } from "@/lib/dialect";
 import { assertVouchersBalanced } from "./accounting";
+import { TRANSFER_SOURCE } from "@/lib/depot";
 
 export const BACKUP_FORMAT = "bijoy-lenden-backup";
 export const BACKUP_VERSION = 5;
@@ -29,8 +31,14 @@ type PayrollData = { settings: Row | null } & Record<(typeof PAYROLL_TABLES)[num
 /** v5: production (recipes / BOM and production entries; their vouchers are in "vouchers"). */
 type ProductionData = { recipes: Row[]; recipeLines: Row[]; runs: Row[] };
 /** features: the business's module choices (Feature Management); absent in older files = defaults */
-/** paddyPurchases: weighbridge slips of paddy purchases (their vouchers are in "vouchers"); optional. */
-export type BackupData = { business: Row; smsTemplates?: Row[]; smsSettings?: Row | null; payroll?: PayrollData; features?: Row[]; production?: ProductionData; paddyPurchases?: Row[] } & Record<Table, Row[]>;
+/** paddyPurchases: weighbridge slips of paddy purchases; depotDeliveries: depot challans (their vouchers are in "vouchers"); both optional. */
+/** System keys that embed another record's id (depot commission receivable per company) follow the id remap. */
+function remapSystemKey(key: string | null, must: (old: unknown) => string): string | null {
+  if (key?.startsWith(COMMISSION_RECEIVABLE_PREFIX)) return COMMISSION_RECEIVABLE_PREFIX + must(key.slice(COMMISSION_RECEIVABLE_PREFIX.length));
+  return key;
+}
+
+export type BackupData = { business: Row; smsTemplates?: Row[]; smsSettings?: Row | null; payroll?: PayrollData; features?: Row[]; production?: ProductionData; paddyPurchases?: Row[]; depotDeliveries?: Row[] } & Record<Table, Row[]>;
 
 async function exportPayroll(businessId: string): Promise<PayrollData> {
   const where = { businessId };
@@ -76,7 +84,7 @@ export async function exportBusiness(businessId: string) {
       prisma.productBatch.findMany({ where }),
       prisma.notification.findMany({ where, orderBy: { createdAt: "asc" } }),
     ]);
-  const [smsTemplates, smsSettingsRow, payroll, features, recipes, recipeLines, runs, paddyPurchases] = await Promise.all([
+  const [smsTemplates, smsSettingsRow, payroll, features, recipes, recipeLines, runs, paddyPurchases, depotDeliveries] = await Promise.all([
     prisma.smsTemplate.findMany({ where }),
     // the encrypted API key, balance and on/off state are NOT exported (secrets stay on the server)
     prisma.smsSettings.findUnique({ where: { businessId }, select: { provider: true, senderId: true, lowBalanceThreshold: true, events: true, alertMobiles: true, expiryAlertDays: true, dueReminderEveryDays: true } }),
@@ -86,9 +94,10 @@ export async function exportBusiness(businessId: string) {
     prisma.recipeLine.findMany({ where: { recipe: { businessId } } }),
     prisma.productionRun.findMany({ where }),
     prisma.paddyPurchase.findMany({ where }),
+    prisma.depotDelivery.findMany({ where }),
   ]);
   const data = JSON.parse(
-    JSON.stringify({ business, accountGroups, accounts, units, categories, brands, warehouses, products, customers, suppliers, vouchers, journalEntries, voucherItems, voucherPayments, stockMovements, counters, productBatches, notifications, smsTemplates, smsSettings: smsSettingsRow, payroll, features, production: { recipes, recipeLines, runs }, paddyPurchases }),
+    JSON.stringify({ business, accountGroups, accounts, units, categories, brands, warehouses, products, customers, suppliers, vouchers, journalEntries, voucherItems, voucherPayments, stockMovements, counters, productBatches, notifications, smsTemplates, smsSettings: smsSettingsRow, payroll, features, production: { recipes, recipeLines, runs }, paddyPurchases, depotDeliveries }),
   ) as BackupData;
   return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: new Date().toISOString(), checksum: checksumOf(data), data };
 }
@@ -151,6 +160,13 @@ export function validateBackup(raw: unknown): ValidationReport {
     if (m.batchId) ref(batchIds.has(m.batchId as string), "স্টক মুভমেন্টের ব্যাচ পাওয়া যায়নি");
   }
   for (const v of data.vouchers) if (v.adjustmentAccountId) ref(accountIds.has(v.adjustmentAccountId as string), "স্টক জার্নালের সমন্বয় হিসাব পাওয়া যায়নি");
+  if (Array.isArray(data.depotDeliveries)) {
+    stats.depotDeliveries = data.depotDeliveries.length;
+    for (const x of data.depotDeliveries) {
+      ref(voucherIds.has(x.voucherId as string), "ডেলিভারি চালানের ভাউচার পাওয়া যায়নি");
+      for (const k of ["companyAccountId", "dealerAccountId"]) if (x[k]) ref(accountIds.has(x[k] as string), "ডেলিভারি চালানের কোম্পানি/ডিলারের হিসাব পাওয়া যায়নি");
+    }
+  }
   if (Array.isArray(data.paddyPurchases)) {
     stats.paddyPurchases = data.paddyPurchases.length;
     for (const x of data.paddyPurchases) ref(voucherIds.has(x.voucherId as string), "ধান ক্রয়ের ভাউচার পাওয়া যায়নি");
@@ -264,6 +280,7 @@ export async function restoreBackup(raw: unknown, userId: string): Promise<{ bus
           invoiceFooter: (b.invoiceFooter as string) ?? null, invoiceTerms: (b.invoiceTerms as string) ?? null, lockDate: date(b.lockDate),
           ...(Array.isArray(b.expiryWarningDays) ? { expiryWarningDays: (b.expiryWarningDays as unknown[]).map(Number) } : {}),
           allowExpiredSale: Boolean(b.allowExpiredSale),
+          businessType: (b.businessType as string) ?? null,
         },
       });
       const businessId = business.id;
@@ -273,7 +290,7 @@ export async function restoreBackup(raw: unknown, userId: string): Promise<{ bus
       await tx.account.createMany({
         data: data.accounts.map((a) => ({
           id: must(a.id), businessId, groupId: must(a.groupId), name: String(a.name), code: (a.code as string) ?? null, nature: a.nature as never, kind: a.kind as never,
-          systemKey: (a.systemKey as string) ?? null, isSystem: Boolean(a.isSystem), isActive: Boolean(a.isActive), description: (a.description as string) ?? null,
+          systemKey: remapSystemKey((a.systemKey as string) ?? null, must), isSystem: Boolean(a.isSystem), isActive: Boolean(a.isActive), description: (a.description as string) ?? null,
           bankName: (a.bankName as string) ?? null, accountNumber: (a.accountNumber as string) ?? null,
         })),
       });
@@ -286,19 +303,20 @@ export async function restoreBackup(raw: unknown, userId: string): Promise<{ bus
       await tx.product.createMany({
         data: data.products.map((p) => ({
           id: must(p.id), businessId, name: String(p.name), code: (p.code as string) ?? null, barcode: (p.barcode as string) ?? null, categoryId: id(p.categoryId), brandId: id(p.brandId), unitId: must(p.unitId),
-          purchasePrice: Number(p.purchasePrice), salePrice: Number(p.salePrice), wholesalePrice: Number(p.wholesalePrice ?? 0), minStock: Number(p.minStock ?? 0),
+          purchasePrice: Number(p.purchasePrice), salePrice: Number(p.salePrice), wholesalePrice: Number(p.wholesalePrice ?? 0), depotCommissionRate: Number(p.depotCommissionRate ?? 0), minStock: Number(p.minStock ?? 0),
           openingStock: Number(p.openingStock ?? 0), openingRate: Number(p.openingRate ?? 0), stock: 0, avgCost: 0, trackBatch: Boolean(p.trackBatch), isActive: Boolean(p.isActive),
         })),
       });
       const party = (x: Row) => ({ id: must(x.id), businessId, accountId: must(x.accountId), name: String(x.name), mobile: (x.mobile as string) ?? null, email: (x.email as string) ?? null, address: (x.address as string) ?? null, notes: (x.notes as string) ?? null, creditDays: Number(x.creditDays ?? 0), isActive: Boolean(x.isActive) });
-      await tx.customer.createMany({ data: data.customers.map((x) => ({ ...party(x), creditLimit: Number(x.creditLimit ?? 0), groupName: (x.groupName as string) ?? null })) });
+      await tx.customer.createMany({ data: data.customers.map((x) => ({ ...party(x), creditLimit: Number(x.creditLimit ?? 0), groupName: (x.groupName as string) ?? null, route: (x.route as string) ?? null, isDepotDealer: x.isDepotDealer === true })) });
       await tx.supplier.createMany({ data: data.suppliers.map(party) });
       await tx.voucher.createMany({
         data: data.vouchers.map((v) => ({
-          id: must(v.id), businessId, type: v.type as never, voucherNo: String(v.voucherNo), date: date(v.date)!, reference: (v.reference as string) ?? null, narration: (v.narration as string) ?? null,
+          id: must(v.id), businessId, type: v.type as never, book: v.book === "DEPOT" ? "DEPOT" : "GENERAL", voucherNo: String(v.voucherNo), date: date(v.date)!, reference: (v.reference as string) ?? null, narration: (v.narration as string) ?? null,
           partyAccountId: id(v.partyAccountId), cashAccountId: id(v.cashAccountId), warehouseId: id(v.warehouseId), subtotal: Number(v.subtotal), discount: Number(v.discount),
           vatPercent: Number(v.vatPercent), vatAmount: Number(v.vatAmount), amount: Number(v.amount), paidAmount: Number(v.paidAmount),
-          sourceKey: v.sourceKey ? String(v.sourceKey).replace(/:([^:]+)$/, (_m, old) => `:${must(old)}`) : null,
+          // depot commission transfers are linked by a random key, not by a record id
+          sourceKey: v.sourceKey ? (String(v.sourceKey).startsWith(TRANSFER_SOURCE) ? String(v.sourceKey) : String(v.sourceKey).replace(/:([^:]+)$/, (_m, old) => `:${must(old)}`)) : null,
           dueDate: date(v.dueDate), adjustmentAccountId: id(v.adjustmentAccountId), createdById: userId,
         })),
       });
@@ -312,14 +330,16 @@ export async function restoreBackup(raw: unknown, userId: string): Promise<{ bus
       await tx.voucherItem.createMany({
         data: data.voucherItems.map((i) => ({
           id: must(i.id), voucherId: must(i.voucherId), productId: must(i.productId), warehouseId: id(i.warehouseId), unitId: id(i.unitId), unitFactor: Number(i.unitFactor ?? 1),
-          quantity: Number(i.quantity), baseQuantity: Number(i.baseQuantity), rate: Number(i.rate), discount: Number(i.discount ?? 0), amount: Number(i.amount),
+          quantity: Number(i.quantity), baseQuantity: Number(i.baseQuantity), freeQuantity: Number(i.freeQuantity ?? 0), challanRate: i.challanRate === null || i.challanRate === undefined ? null : Number(i.challanRate), rate: Number(i.rate), discount: Number(i.discount ?? 0), amount: Number(i.amount),
           costRate: Number(i.costRate ?? 0), costAmount: Number(i.costAmount ?? 0), direction: Number(i.direction ?? 0), batchId: id(i.batchId), batchNo: (i.batchNo as string) ?? null, expiryDate: date(i.expiryDate), lineNo: Number(i.lineNo ?? 0),
           costShare: i.costShare === null || i.costShare === undefined ? null : Number(i.costShare),
         })),
       });
       await tx.voucherPayment.createMany({ data: data.voucherPayments.map((p) => ({ id: must(p.id), voucherId: must(p.voucherId), accountId: must(p.accountId), amount: Number(p.amount), reference: (p.reference as string) ?? null, lineNo: Number(p.lineNo ?? 0) })) });
+      // entries follow their voucher's book (older backups: everything GENERAL)
+      const bookOf = new Map(data.vouchers.map((v) => [String(v.id), v.book === "DEPOT" ? ("DEPOT" as const) : ("GENERAL" as const)]));
       await tx.journalEntry.createMany({
-        data: data.journalEntries.map((e) => ({ id: must(e.id), businessId, voucherId: must(e.voucherId), accountId: must(e.accountId), date: date(e.date)!, debit: Number(e.debit), credit: Number(e.credit), narration: (e.narration as string) ?? null, lineNo: Number(e.lineNo ?? 0) })),
+        data: data.journalEntries.map((e) => ({ id: must(e.id), businessId, voucherId: must(e.voucherId), accountId: must(e.accountId), date: date(e.date)!, debit: Number(e.debit), credit: Number(e.credit), narration: (e.narration as string) ?? null, lineNo: Number(e.lineNo ?? 0), book: bookOf.get(String(e.voucherId)) ?? "GENERAL" })),
       });
       await assertVouchersBalanced(tx, [...new Set(data.journalEntries.map((e) => must(e.voucherId)))]);
       await tx.stockMovement.createMany({
@@ -343,6 +363,15 @@ export async function restoreBackup(raw: unknown, userId: string): Promise<{ bus
       });
       await tx.counter.createMany({ data: data.counters.map((c) => ({ businessId, key: String(c.key), value: Number(c.value) })) });
       if (data.payroll) await restorePayroll(tx, businessId, data.payroll, { id, must, date, userId });
+      if (Array.isArray(data.depotDeliveries) && data.depotDeliveries.length) {
+        await tx.depotDelivery.createMany({
+          data: data.depotDeliveries.map((x) => ({
+            id: must(x.id), businessId, voucherId: must(x.voucherId), mode: (x.mode === "DEPOT_COLLECTION" ? "DEPOT_COLLECTION" : "COMPANY_PAID") as "COMPANY_PAID" | "DEPOT_COLLECTION",
+            companyAccountId: id(x.companyAccountId), dealerAccountId: id(x.dealerAccountId), doNumber: (x.doNumber as string) ?? null, vehicleNo: (x.vehicleNo as string) ?? null,
+            driverName: (x.driverName as string) ?? null, notes: (x.notes as string) ?? null, commissionTotal: Number(x.commissionTotal ?? 0), createdAt: date(x.createdAt) ?? undefined,
+          })),
+        });
+      }
       if (Array.isArray(data.paddyPurchases) && data.paddyPurchases.length) {
         await tx.paddyPurchase.createMany({
           data: data.paddyPurchases.map((x) => ({
@@ -400,7 +429,7 @@ export async function restoreBackup(raw: unknown, userId: string): Promise<{ bus
     },
     { timeout: 300_000, maxWait: 20_000 },
   ).then(async (r) => {
-    const tb = await trialBalance(r.businessId, {});
+    const tb = await trialBalance(r.businessId, {}, "ALL"); // both books together must balance
     if (!tb.balanced) throw new UserError("রিস্টোরের পর ট্রায়াল ব্যালেন্স মেলেনি");
     return r;
   });

@@ -9,6 +9,7 @@ import { FilterField, PageHeader, PrintHeader } from "@/components/ui";
 import { requirePermission } from "@/server/auth";
 import { readParams, type SearchParams } from "@/server/params";
 import { dailyPurchase } from "@/server/reports/daily-purchase";
+import { voucherScopeWhere } from "@/server/party-scope";
 
 export const metadata: Metadata = { title: "ডেইলি ক্রয় রিপোর্ট" };
 
@@ -22,7 +23,7 @@ export default async function DailyPurchasePage({ searchParams }: { searchParams
   const gate = featureForPath("/reports/daily-purchase");
   if (gate && !ctx.features.includes(gate)) redirect(`/forbidden?feature=${gate}`);
   const p = await readParams(searchParams);
-  const d = await dailyPurchase(ctx.business.id, { date: p.date });
+  const d = await dailyPurchase(ctx.business.id, { date: p.date, scope: voucherScopeWhere(ctx) });
   const cur = ctx.business.currencySymbol;
   const money = (n: number) => formatMoney(n, cur);
   const exportHref = `/api/reports/daily-purchase?date=${d.date}`;
@@ -69,7 +70,7 @@ export default async function DailyPurchasePage({ searchParams }: { searchParams
                 <thead className="bg-ink-50 print:bg-white">
                   <tr>
                     <th scope="col" className={`${th} w-12 text-center`}>নম্বর</th>
-                    <th scope="col" className={`${th} text-left`}>বিবরণ</th>
+                    <th scope="col" className={`${th} text-left`}>পার্টির নাম</th>
                     <th scope="col" className={`${th} text-left`}>পণ্যের নাম</th>
                     <th scope="col" className={`${th} text-right`}>পরিমাণ</th>
                     <th scope="col" className={`${th} text-right`}>দর</th>

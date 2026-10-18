@@ -245,9 +245,9 @@ export function visibleKinds(can: (p: string) => boolean, features?: readonly st
   return kinds;
 }
 
-export async function unreadCount(businessId: string, userId: string, kinds: NotificationKind[]) {
+export async function unreadCount(businessId: string, userId: string, kinds: NotificationKind[], scope: Prisma.NotificationWhereInput = {}) {
   if (kinds.length === 0) return 0;
-  return prisma.notification.count({ where: { businessId, kind: { in: kinds }, resolvedAt: null, reads: { none: { userId } } } });
+  return prisma.notification.count({ where: { businessId, ...scope, kind: { in: kinds }, resolvedAt: null, reads: { none: { userId } } } });
 }
 
 export async function markRead(businessId: string, userId: string, kinds: NotificationKind[], ids?: string[]) {

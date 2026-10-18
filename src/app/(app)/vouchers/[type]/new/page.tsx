@@ -1,13 +1,16 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { VOUCHER_TYPES, voucherTypeFromSlug } from "@/lib/accounting";
 import { PageHeader } from "@/components/ui";
-import { requirePermission } from "@/server/auth";
+import { can, requireContext } from "@/server/auth";
 import { readParams, type SearchParams } from "@/server/params";
 import { VoucherEditor } from "@/server/voucher-editor";
-import { voucherPermission } from "@/server/voucher-permissions";
+import { voucherAccess, voucherPermission } from "@/server/voucher-permissions";
+import { isDepot } from "@/lib/depot";
 
 export const metadata: Metadata = { title: "নতুন ভাউচার" };
+
+const DEPOT_NEW: Partial<Record<string, string>> = { PURCHASE: "/depot/stock-in/new", RECEIPT: "/depot/collections/new", PAYMENT: "/depot/payments/new" };
 
 const HELP: Record<string, string> = {
   RECEIPT: "নগদ/ব্যাংকে টাকা আসা — কাস্টমার থেকে আদায়, আয়, মূলধন বা ঋণ গ্রহণ",
@@ -24,7 +27,13 @@ export default async function NewVoucherPage({ params, searchParams }: { params:
   const { type: slug } = await params;
   const type = voucherTypeFromSlug(slug);
   if (!type) notFound();
-  const ctx = await requirePermission(voucherPermission(type, "create"));
+  const ctx = await requireContext();
+  // general vouchers only — depot stock in / collection / company payment have their own depot pages (depot book)
+  if (!can(ctx, voucherPermission(type, "create"))) {
+    const depotPage = DEPOT_NEW[type];
+    if (depotPage && isDepot(ctx.business.businessType) && can(ctx, voucherAccess(type, "create", ctx.business.businessType, "DEPOT"))) redirect(depotPage);
+    redirect("/forbidden");
+  }
   const p = await readParams(searchParams);
   const meta = VOUCHER_TYPES[type];
   return (

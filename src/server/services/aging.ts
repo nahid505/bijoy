@@ -3,6 +3,7 @@
 // so the result reconciles exactly with the party ledger balance.
 import { prisma } from "@/lib/db";
 import { round2 } from "@/lib/calc";
+import { bookWhere, type BookFilter } from "@/lib/book";
 
 export type AgingBucket = "0-30" | "31-60" | "61-90" | "90+";
 export const AGING_BUCKETS: AgingBucket[] = ["0-30", "31-60", "61-90", "90+"];
@@ -41,15 +42,20 @@ function bucketOf(days: number): AgingBucket {
 }
 
 /** `asOf` is a business date (UTC midnight); entries dated on or before it are included. */
-export async function partyAging(businessId: string, kind: "CUSTOMER" | "SUPPLIER", asOf: Date, accountIds?: string[]): Promise<AgingRow[]> {
+/**
+ * book GENERAL (default): general customers only (depot dealers live in the depot book); DEPOT: dealers only;
+ * ALL: everyone, every entry (integrity checks).
+ */
+export async function partyAging(businessId: string, kind: "CUSTOMER" | "SUPPLIER", asOf: Date, accountIds?: string[], book: BookFilter = "GENERAL"): Promise<AgingRow[]> {
+  const dealer = book === "ALL" ? {} : { isDepotDealer: book === "DEPOT" };
   const parties =
     kind === "CUSTOMER"
-      ? (await prisma.customer.findMany({ where: { businessId, ...(accountIds ? { accountId: { in: accountIds } } : {}) }, orderBy: { name: "asc" } })).map((c) => ({ ...c, creditLimit: Number(c.creditLimit) }))
+      ? (await prisma.customer.findMany({ where: { businessId, ...dealer, ...(accountIds ? { accountId: { in: accountIds } } : {}) }, orderBy: { name: "asc" } })).map((c) => ({ ...c, creditLimit: Number(c.creditLimit) }))
       : (await prisma.supplier.findMany({ where: { businessId, ...(accountIds ? { accountId: { in: accountIds } } : {}) }, orderBy: { name: "asc" } })).map((s) => ({ ...s, creditLimit: 0 }));
   if (parties.length === 0) return [];
   const until = new Date(asOf.getTime() + DAY);
   const entries = await prisma.journalEntry.findMany({
-    where: { businessId, accountId: { in: parties.map((p) => p.accountId) }, date: { lt: until } },
+    where: { businessId, ...bookWhere(book), accountId: { in: parties.map((p) => p.accountId) }, date: { lt: until } },
     orderBy: [{ date: "asc" }, { voucher: { createdAt: "asc" } }, { lineNo: "asc" }],
     select: { accountId: true, date: true, debit: true, credit: true, voucher: { select: { id: true, voucherNo: true, dueDate: true } } },
   });

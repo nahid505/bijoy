@@ -5,6 +5,7 @@
 //   voucher line: unit মণ (40 kg), quantity = mon (2 dp), rate = rate per mon → amount = mon × rate exactly
 //   stock:        the exact net kg (gross − dhalta)
 import { prisma, num } from "@/lib/db";
+import type { Prisma } from "@prisma/client";
 import { UserError } from "@/lib/errors";
 import { KG_PER_MON, paddyFigures } from "@/lib/paddy";
 import type { PaddyPurchaseInput } from "@/lib/validation";
@@ -69,9 +70,10 @@ export async function loadPaddyPurchase(businessId: string, voucherId: string) {
   });
 }
 
-export async function listPaddyPurchases(businessId: string, opts: { from?: Date; to?: Date; skip: number; take: number }) {
-  const where = {
+export async function listPaddyPurchases(businessId: string, opts: { from?: Date; to?: Date; skip: number; take: number; scope?: Prisma.VoucherWhereInput }) {
+  const where: Prisma.PaddyPurchaseWhereInput = {
     businessId,
+    ...(opts.scope && Object.keys(opts.scope).length ? { AND: [{ voucher: opts.scope }] } : {}),
     ...(opts.from || opts.to ? { voucher: { date: { ...(opts.from ? { gte: opts.from } : {}), ...(opts.to ? { lte: opts.to } : {}) } } } : {}),
   };
   const [rows, total, sums] = await Promise.all([

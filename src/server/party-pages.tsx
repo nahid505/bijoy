@@ -1,7 +1,7 @@
 import "server-only";
 import { SmsSelectionBar } from "@/components/sms-selection";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { prisma, num } from "@/lib/db";
 import { round2 } from "@/lib/calc";
 import { formatDate, formatDrCr, formatMoney, toDateInput } from "@/lib/format";
@@ -10,6 +10,8 @@ import { PartyForm } from "@/components/party-form";
 import { ReportPage } from "@/components/report-page";
 import { Badge, EmptyState, FilterBar, FilterField, PageHeader, Pagination, SortHeader, TableWrap } from "@/components/ui";
 import { can, requirePermission } from "./auth";
+import { DEPOT_ACCESS, isDepot } from "@/lib/depot";
+import type { BookKey } from "@/lib/book";
 import { pageOf, readParams, totalPages, type SearchParams } from "./params";
 import { balancesBefore, statement } from "./services/ledger";
 import { reportPeriod } from "./period";
@@ -17,10 +19,18 @@ import { amountInBanglaWords } from "@/lib/words";
 import { AGING_BUCKETS, partyAging } from "./services/aging";
 import { VOUCHER_TYPES } from "@/lib/accounting";
 import { partyOpening } from "./services/master";
-import { deletePartyAction, savePartyAction, togglePartyAction } from "./actions/masters";
+import { deletePartyAction, saveDealerAction, savePartyAction, togglePartyAction } from "./actions/masters";
 import { ci, rawRows, sql } from "@/lib/dialect";
+import { canSeeParty, partyListWhere } from "./party-scope";
+import type { AppContext } from "./auth";
 
 export type PartyKind = "CUSTOMER" | "SUPPLIER";
+/** DEALER = a depot dealer (Customer.isDepotDealer): own list / profile under the depot menu, DEPOT book */
+export type PartyPageKind = PartyKind | "DEALER";
+const modelOf = (k: PartyPageKind): PartyKind => (k === "DEALER" ? "CUSTOMER" : k);
+const bookOf = (k: PartyPageKind): BookKey => (k === "DEALER" ? "DEPOT" : "GENERAL");
+/** customers: general customers and dealers are kept apart */
+const dealerWhere = (k: PartyPageKind) => (k === "SUPPLIER" ? {} : { isDepotDealer: k === "DEALER" });
 
 const CFG = {
   CUSTOMER: {
@@ -39,36 +49,59 @@ const CFG = {
     newTrade: { href: "/vouchers/purchase/new", label: "+ ক্রয়", perm: "purchases:create" },
     settle: { href: "/vouchers/payment/new", label: "টাকা পরিশোধ (পেমেন্ট)" },
   },
+  DEALER: {
+    title: "ডিলার", base: "/depot/dealers", view: DEPOT_ACCESS.dealersView, manage: DEPOT_ACCESS.dealers,
+    balanceLabel: "মার্কেট বাকি", tradeLabel: "মোট বিক্রয় (মার্কেট সেলস)", settledLabel: "মোট আদায়", sign: 1,
+    tradeTypes: ["SALES", "SALES_RETURN"] as const, settleType: "RECEIPT",
+    openingHint: "হিসাব শুরুর আগে ডিলারের কাছে মার্কেট বাকি (ডিপো হিসাবে)",
+    newTrade: { href: "/depot/deliveries/new", label: "+ ডেলিভারি চালান", perm: DEPOT_ACCESS.deliveryCreate },
+    settle: { href: "/depot/collections/new", label: "মার্কেট কালেকশন" },
+  },
 } as const;
 
-async function findParty(kind: PartyKind, businessId: string, id: string) {
-  return kind === "CUSTOMER"
-    ? prisma.customer.findFirst({ where: { id, businessId } })
-    : prisma.supplier.findFirst({ where: { id, businessId } });
+/** The customer / supplier / dealer — only if this user may see it (assigned-only roles: their own list). */
+async function findParty(kind: PartyPageKind, ctx: AppContext, id: string) {
+  const businessId = ctx.business.id;
+  const party = modelOf(kind) === "CUSTOMER"
+    ? await prisma.customer.findFirst({ where: { id, businessId, ...dealerWhere(kind) } })
+    : await prisma.supplier.findFirst({ where: { id, businessId } });
+  return party && canSeeParty(ctx, modelOf(kind), party.accountId) ? party : null;
+}
+
+/** /customers/<id> of a depot dealer → the dealer's own profile under the depot menu. */
+async function redirectDealer(kind: PartyPageKind, ctx: AppContext, id: string, suffix = "") {
+  if (kind !== "CUSTOMER") return;
+  if (await prisma.customer.count({ where: { id, businessId: ctx.business.id, isDepotDealer: true } })) redirect(`/depot/dealers/${id}${suffix}`);
 }
 
 // ───────────────────────── list ─────────────────────────
 
 const groupOf = (r: object) => (r as { groupName?: string | null }).groupName ?? null;
 
-export async function PartyListPage({ kind, searchParams }: { kind: PartyKind; searchParams: SearchParams }) {
-  const cfg = CFG[kind];
+export async function PartyListPage({ kind: pageKind, searchParams }: { kind: PartyPageKind; searchParams: SearchParams }) {
+  const cfg = CFG[pageKind];
+  const kind = modelOf(pageKind);
+  const book = bookOf(pageKind);
+  const dealer = pageKind === "DEALER";
   const ctx = await requirePermission(cfg.view);
+  if (dealer && !isDepot(ctx.business.businessType)) notFound();
   const p = await readParams(searchParams);
   const { page, skip, take } = pageOf(p);
   const cur = ctx.business.currencySymbol;
   const q = p.q?.trim();
   const where = {
     businessId: ctx.business.id,
+    ...partyListWhere(ctx, kind),
+    ...dealerWhere(pageKind), // general customers and depot dealers are separate lists
     ...(q ? { OR: [{ name: ci(q) }, { mobile: { contains: q } }, { address: ci(q) }] } : {}),
     ...(p.status === "inactive" ? { isActive: false } : p.status === "all" ? {} : { isActive: true }),
     ...(kind === "CUSTOMER" && p.group ? { groupName: p.group } : {}),
   };
-  const isCustomer = kind === "CUSTOMER";
+  const isCustomer = kind === "CUSTOMER" && !dealer;
   const smsSingle = isCustomer && can(ctx, "sms:send");
   const smsBulk = isCustomer && can(ctx, "sms:bulk");
   const groups = isCustomer
-    ? (await prisma.customer.groupBy({ by: ["groupName"], where: { businessId: ctx.business.id, groupName: { not: null } }, orderBy: { groupName: "asc" } })).map((g) => g.groupName!)
+    ? (await prisma.customer.groupBy({ by: ["groupName"], where: { businessId: ctx.business.id, ...partyListWhere(ctx, kind), ...dealerWhere(pageKind), groupName: { not: null } }, orderBy: { groupName: "asc" } })).map((g) => g.groupName!)
     : [];
   const [rows, total] = await Promise.all([
     kind === "CUSTOMER"
@@ -78,8 +111,8 @@ export async function PartyListPage({ kind, searchParams }: { kind: PartyKind; s
   ]);
   const accountIds = rows.map((r) => r.accountId);
   const [bal, trade] = await Promise.all([
-    balancesBefore(ctx.business.id, undefined, accountIds),
-    prisma.voucher.groupBy({ by: ["partyAccountId", "type"], where: { businessId: ctx.business.id, partyAccountId: { in: accountIds }, type: { in: [...cfg.tradeTypes] } }, _sum: { amount: true } }),
+    balancesBefore(ctx.business.id, undefined, accountIds, book),
+    prisma.voucher.groupBy({ by: ["partyAccountId", "type"], where: { businessId: ctx.business.id, book, partyAccountId: { in: accountIds }, type: { in: [...cfg.tradeTypes] } }, _sum: { amount: true } }),
   ]);
   const tradeOf = (accId: string) =>
     round2(trade.filter((t) => t.partyAccountId === accId).reduce((s, t) => s + (t.type === cfg.tradeTypes[0] ? 1 : -1) * num(t._sum.amount), 0));
@@ -88,7 +121,8 @@ export async function PartyListPage({ kind, searchParams }: { kind: PartyKind; s
     <>
       <PageHeader
         title={cfg.title}
-        description={`প্রতিটি ${cfg.title} এর নিজস্ব লেজার — ব্যালেন্স সরাসরি হিসাব থেকে`}
+        description={dealer ? "ডিপোর ডিলার — সাধারণ কাস্টমার তালিকা থেকে আলাদা; বাকি ও লেনদেন শুধু ডিপো হিসাবে" : `প্রতিটি ${cfg.title} এর নিজস্ব লেজার — ব্যালেন্স সরাসরি হিসাব থেকে`}
+        crumbs={dealer ? [{ label: "ডিপো ব্যবস্থাপনা" }, { label: "ডিলার" }] : undefined}
         actions={can(ctx, cfg.manage) && <Link prefetch={false} href={`${cfg.base}/new`} className="btn-primary">+ নতুন {cfg.title}</Link>}
       />
       <section className="panel">
@@ -113,7 +147,7 @@ export async function PartyListPage({ kind, searchParams }: { kind: PartyKind; s
         {rows.length === 0 ? <EmptyState /> : (
           <TableWrap>
             <table className="table">
-              <thead><tr>{smsBulk && <th className="w-8"><span className="sr-only">নির্বাচন</span></th>}<SortHeader basePath={cfg.base} params={p} field="name" label="নাম" /><th>মোবাইল</th>{isCustomer && <th>গ্রুপ</th>}<th>ঠিকানা</th><th className="num">{cfg.tradeLabel}</th><th className="num">বর্তমান ব্যালেন্স</th><th /></tr></thead>
+              <thead><tr>{smsBulk && <th className="w-8"><span className="sr-only">নির্বাচন</span></th>}<SortHeader basePath={cfg.base} params={p} field="name" label="নাম" /><th>মোবাইল</th>{isCustomer && <th>গ্রুপ</th>}{dealer && <th>রুট / এরিয়া</th>}<th>ঠিকানা</th><th className="num">{cfg.tradeLabel}</th><th className="num">বর্তমান ব্যালেন্স</th><th /></tr></thead>
               <tbody>
                 {rows.map((r) => {
                   const b = bal.get(r.accountId) ?? 0;
@@ -123,12 +157,13 @@ export async function PartyListPage({ kind, searchParams }: { kind: PartyKind; s
                       <td><Link prefetch={false} href={`${cfg.base}/${r.id}`} className="font-semibold text-brand-700 hover:underline">{r.name}</Link>{!r.isActive && <> <Badge>নিষ্ক্রিয়</Badge></>}</td>
                       <td>{r.mobile ?? "—"}</td>
                       {isCustomer && <td className="text-xs">{groupOf(r) ? <Link prefetch={false} href={`${cfg.base}?group=${encodeURIComponent(groupOf(r)!)}`} className="hover:underline">{groupOf(r)}</Link> : "—"}</td>}
+                      {dealer && <td className="text-xs">{(r as { route?: string | null }).route ?? "—"}</td>}
                       <td className="max-w-xs truncate">{r.address ?? "—"}</td>
                       <td className="num">{formatMoney(tradeOf(r.accountId), cur)}</td>
                       <td className={`num font-semibold ${b > 0 ? "dr" : b < 0 ? "cr" : ""}`}>{formatDrCr(b, cur)}</td>
                       <td className="whitespace-nowrap text-right">
                         {smsSingle && r.mobile && <Link prefetch={false} href={`/sms/compose?customers=${r.id}`} className="btn-ghost btn-sm" title="এসএমএস পাঠান">✉ এসএমএস</Link>}
-                        <Link prefetch={false} href={`/accounts/${r.accountId}`} className="btn-secondary btn-sm">লেজার</Link>
+                        {!dealer && <Link prefetch={false} href={`/accounts/${r.accountId}`} className="btn-secondary btn-sm">লেজার</Link>}
                       </td>
                     </tr>
                   );
@@ -152,10 +187,14 @@ const TABS = [
   { key: "dues", label: "বকেয়া ও বয়স" },
 ] as const;
 
-export async function PartyDetailPage({ kind, id, searchParams }: { kind: PartyKind; id: string; searchParams: SearchParams }) {
-  const cfg = CFG[kind];
+export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { kind: PartyPageKind; id: string; searchParams: SearchParams }) {
+  const cfg = CFG[pageKind];
+  const kind = modelOf(pageKind);
+  const book = bookOf(pageKind);
+  const dealer = pageKind === "DEALER";
   const ctx = await requirePermission(cfg.view);
-  const party = await findParty(kind, ctx.business.id, id);
+  await redirectDealer(pageKind, ctx, id);
+  const party = await findParty(pageKind, ctx, id);
   if (!party) notFound();
   const cur = ctx.business.currencySymbol;
   const params = await readParams(searchParams);
@@ -167,10 +206,10 @@ export async function PartyDetailPage({ kind, id, searchParams }: { kind: PartyK
     rawRows<{ type: string; debit: string; credit: string }>(prisma, sql`
       SELECT v."type"::text AS type, SUM(je."debit")::text AS debit, SUM(je."credit")::text AS credit
       FROM "JournalEntry" je JOIN "Voucher" v ON v."id" = je."voucherId"
-      WHERE je."businessId" = ${ctx.business.id} AND je."accountId" = ${party.accountId}
+      WHERE je."businessId" = ${ctx.business.id} AND je."accountId" = ${party.accountId} AND je."book"::text = ${book}
       GROUP BY v."type"`),
-    balancesBefore(ctx.business.id, undefined, [party.accountId]),
-    partyAging(ctx.business.id, kind, today, [party.accountId]),
+    balancesBefore(ctx.business.id, undefined, [party.accountId], book),
+    partyAging(ctx.business.id, kind, today, [party.accountId], book),
   ]);
   const aging = agingRows[0];
   const t = (type: string) => byType.find((x) => x.type === type);
@@ -234,26 +273,26 @@ export async function PartyDetailPage({ kind, id, searchParams }: { kind: PartyK
 
   const actions = (
     <>
-      {party.isActive && can(ctx, cfg.newTrade.perm) && <Link prefetch={false} href={kind === "CUSTOMER" ? "/pos" : `${cfg.newTrade.href}?party=${party.accountId}`} className="btn-primary">{cfg.newTrade.label}</Link>}
-      {can(ctx, "vouchers:create") && <Link prefetch={false} href={`${cfg.settle.href}?party=${party.accountId}`} className="btn-secondary">{cfg.settle.label}</Link>}
+      {party.isActive && can(ctx, cfg.newTrade.perm) && <Link prefetch={false} href={pageKind === "CUSTOMER" ? "/pos" : dealer ? cfg.newTrade.href : `${cfg.newTrade.href}?party=${party.accountId}`} className="btn-primary">{cfg.newTrade.label}</Link>}
+      {can(ctx, dealer ? DEPOT_ACCESS.collection : "vouchers:create") && <Link prefetch={false} href={`${cfg.settle.href}?party=${party.accountId}`} className="btn-secondary">{cfg.settle.label}</Link>}
       <Link prefetch={false} href={`${cfg.base}/${party.id}/statement`} className="btn-secondary">🖨 স্টেটমেন্ট</Link>
       <a href={waHref} target="_blank" rel="noopener noreferrer" className="btn-secondary">WhatsApp</a>
       {manage && <Link prefetch={false} href={`${cfg.base}/${party.id}/edit`} className="btn-secondary">সম্পাদনা</Link>}
-      {manage && <ActionButton action={togglePartyAction.bind(null, kind, party.id, !party.isActive)} label={party.isActive ? "নিষ্ক্রিয়" : "সক্রিয়"} className="btn-secondary" />}
-      {manage && <ActionButton action={deletePartyAction.bind(null, kind, party.id)} label="মুছুন" className="btn-danger" confirmText={`${cfg.title} মুছে ফেলতে চান?`} />}
+      {manage && <ActionButton action={togglePartyAction.bind(null, pageKind, party.id, !party.isActive)} label={party.isActive ? "নিষ্ক্রিয়" : "সক্রিয়"} className="btn-secondary" />}
+      {manage && <ActionButton action={deletePartyAction.bind(null, pageKind, party.id)} label="মুছুন" className="btn-danger" confirmText={`${cfg.title} মুছে ফেলতে চান?`} />}
     </>
   );
 
   if (tab === "statement") {
     return (
       <ReportPage
-        slug="ledger"
+        slug={dealer ? "depot-dealer-ledger" : "ledger"}
         params={{ ...params, accountId: party.accountId }}
         basePath={`${cfg.base}/${party.id}`}
         omitFilters={["account"]}
         title={party.name}
         description={`${cfg.title} প্রোফাইল ও হিসাব বিবরণী (স্টেটমেন্ট)`}
-        crumbs={[{ label: cfg.title, href: cfg.base }, { label: party.name }]}
+        crumbs={[...(dealer ? [{ label: "ডিপো ব্যবস্থাপনা" }] : []), { label: cfg.title, href: cfg.base }, { label: party.name }]}
         before={profile}
         extraActions={actions}
       />
@@ -263,7 +302,7 @@ export async function PartyDetailPage({ kind, id, searchParams }: { kind: PartyK
   let body: React.ReactNode;
   if (tab === "invoices") {
     const invoices = await prisma.voucher.findMany({
-      where: { businessId: ctx.business.id, partyAccountId: party.accountId, type: { in: [...cfg.tradeTypes] } },
+      where: { businessId: ctx.business.id, book, partyAccountId: party.accountId, type: { in: [...cfg.tradeTypes] } },
       orderBy: [{ date: "desc" }, { createdAt: "desc" }],
       take: 200,
     });
@@ -298,7 +337,7 @@ export async function PartyDetailPage({ kind, id, searchParams }: { kind: PartyK
   } else if (tab === "payments") {
     // every entry that REDUCES what is owed: receipts / payments, payment at invoice time, returns, journals
     const rows = await prisma.journalEntry.findMany({
-      where: { businessId: ctx.business.id, accountId: party.accountId, ...(kind === "CUSTOMER" ? { credit: { gt: 0 } } : { debit: { gt: 0 } }), voucher: { type: { not: "OPENING" } } },
+      where: { businessId: ctx.business.id, book, accountId: party.accountId, ...(kind === "CUSTOMER" ? { credit: { gt: 0 } } : { debit: { gt: 0 } }), voucher: { type: { not: "OPENING" } } },
       orderBy: [{ date: "desc" }],
       take: 300,
       include: { voucher: { select: { id: true, voucherNo: true, type: true, reference: true, payments: { include: { account: { select: { name: true } } } }, cashAccount: { select: { name: true } } } } },
@@ -352,7 +391,7 @@ export async function PartyDetailPage({ kind, id, searchParams }: { kind: PartyK
 
   return (
     <>
-      <PageHeader title={party.name} description={`${cfg.title} প্রোফাইল`} crumbs={[{ label: cfg.title, href: cfg.base }, { label: party.name }]} actions={actions} />
+      <PageHeader title={party.name} description={`${cfg.title} প্রোফাইল`} crumbs={[...(dealer ? [{ label: "ডিপো ব্যবস্থাপনা" }] : []), { label: cfg.title, href: cfg.base }, { label: party.name }]} actions={actions} />
       {profile}
       <section className="panel">{body}</section>
     </>
@@ -370,22 +409,27 @@ function Fig({ label, value, tone = "", big }: { label: string; value: string; t
 
 // ───────────────────────── create / edit ─────────────────────────
 
-export async function PartyEditPage({ kind, id }: { kind: PartyKind; id: string | null }) {
-  const cfg = CFG[kind];
+export async function PartyEditPage({ kind: pageKind, id }: { kind: PartyPageKind; id: string | null }) {
+  const cfg = CFG[pageKind];
+  const kind = modelOf(pageKind);
+  const dealer = pageKind === "DEALER";
   const ctx = await requirePermission(cfg.manage);
-  const party = id ? await findParty(kind, ctx.business.id, id) : null;
+  if (dealer && !isDepot(ctx.business.businessType)) notFound();
+  if (id) await redirectDealer(pageKind, ctx, id, "/edit");
+  const party = id ? await findParty(pageKind, ctx, id) : null;
   if (id && !party) notFound();
   const opening = party ? await partyOpening(ctx.business.id, kind, party.accountId) : 0;
   return (
     <>
-      <PageHeader title={party ? `সম্পাদনা: ${party.name}` : `নতুন ${cfg.title}`} crumbs={[{ label: cfg.title, href: cfg.base }, { label: party?.name ?? "নতুন" }]} />
+      <PageHeader title={party ? `সম্পাদনা: ${party.name}` : `নতুন ${cfg.title}`} crumbs={[...(dealer ? [{ label: "ডিপো ব্যবস্থাপনা" }] : []), { label: cfg.title, href: cfg.base }, { label: party?.name ?? "নতুন" }]} />
       <section className="panel max-w-3xl p-5">
         <PartyForm
-          action={savePartyAction.bind(null, kind, id)}
+          action={dealer ? saveDealerAction.bind(null, id) : savePartyAction.bind(null, kind, id)}
           kind={kind}
           defaults={party ? { ...party, openingBalance: opening, creditLimit: "creditLimit" in party ? num(party.creditLimit) : 0 } : {}}
           cancelHref={party ? `${cfg.base}/${party.id}` : cfg.base}
           openingHint={cfg.openingHint}
+          showRoute={dealer || isDepot(ctx.business.businessType)}
         />
       </section>
     </>
@@ -395,18 +439,21 @@ export async function PartyEditPage({ kind, id }: { kind: PartyKind; id: string 
 
 // ───────────────────────── printable / shareable statement ─────────────────────────
 
-export async function PartyStatementPrint({ kind, id, searchParams }: { kind: PartyKind; id: string; searchParams: SearchParams }) {
-  const cfg = CFG[kind];
+export async function PartyStatementPrint({ kind: pageKind, id, searchParams }: { kind: PartyPageKind; id: string; searchParams: SearchParams }) {
+  const cfg = CFG[pageKind];
+  const kind = modelOf(pageKind);
+  const book = bookOf(pageKind);
   const ctx = await requirePermission(cfg.view);
-  const party = await findParty(kind, ctx.business.id, id);
+  await redirectDealer(pageKind, ctx, id, "/statement");
+  const party = await findParty(pageKind, ctx, id);
   if (!party) notFound();
   const params = await readParams(searchParams);
   const { from, to, range } = reportPeriod(params, ctx.business.fiscalYearStartMonth);
   const cur = ctx.business.currencySymbol;
   const b = ctx.business;
   const [st, agingRows] = await Promise.all([
-    statement(b.id, [party.accountId], range),
-    partyAging(b.id, kind, new Date(`${to}T00:00:00.000Z`), [party.accountId]),
+    statement(b.id, [party.accountId], range, { book }),
+    partyAging(b.id, kind, new Date(`${to}T00:00:00.000Z`), [party.accountId], book),
   ]);
   const aging = agingRows[0];
   const closingDue = round2(cfg.sign * st.closing);

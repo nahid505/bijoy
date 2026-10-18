@@ -5,6 +5,8 @@ import { prisma, num } from "@/lib/db";
 import { round3 } from "@/lib/calc";
 import { toDateInput } from "@/lib/format";
 import { VOUCHER_TYPES, type VoucherTypeKey } from "@/lib/accounting";
+import { accountScopeWhere, voucherScopeWhere } from "./party-scope";
+import { bookAccountWhere } from "./services/accounting";
 import {
   CashVoucherForm,
   JournalVoucherForm,
@@ -15,21 +17,23 @@ import {
 } from "@/components/voucher-forms";
 import type { AppContext } from "./auth";
 import { canChangeEntryDate } from "./entry-date";
+import { isDepot } from "@/lib/depot";
 import { balancesBefore } from "./services/ledger";
 import { availableBatches } from "./services/inventory";
-import { saveVoucherAction } from "./actions/vouchers";
+import { saveDepotVoucherAction, saveVoucherAction } from "./actions/vouchers";
+import type { BookKey } from "@/lib/book";
 import { searchParties } from "./lookup";
 
 type EditableType = Exclude<VoucherTypeKey, "OPENING">;
 
 /** Ledger options; `includeInactive` for accounts already used on a voucher being edited. */
-export async function accountOptions(businessId: string, where: Prisma.AccountWhereInput, withBalance = true, includeInactive = false): Promise<AccountOption[]> {
+export async function accountOptions(businessId: string, where: Prisma.AccountWhereInput, withBalance = true, includeInactive = false, book: BookKey = "GENERAL"): Promise<AccountOption[]> {
   const rows = await prisma.account.findMany({
     where: { businessId, ...(includeInactive ? {} : { isActive: true }), ...where },
     include: { group: { select: { name: true, sortOrder: true } } },
     orderBy: [{ group: { sortOrder: "asc" } }, { name: "asc" }],
   });
-  const bal = withBalance ? await balancesBefore(businessId, undefined, rows.map((r) => r.id)) : new Map<string, number>();
+  const bal = withBalance ? await balancesBefore(businessId, undefined, rows.map((r) => r.id), book) : new Map<string, number>();
   return rows.map((r) => ({ id: r.id, name: r.name, group: r.group.name, ...(withBalance ? { balance: bal.get(r.id) ?? 0 } : {}) }));
 }
 
@@ -70,6 +74,8 @@ export async function VoucherEditor({
   partyAccountId,
   fromInvoiceId,
   mode,
+  cancelTo,
+  book: newBook,
 }: {
   ctx: AppContext;
   type: EditableType;
@@ -77,20 +83,27 @@ export async function VoucherEditor({
   partyAccountId?: string;
   fromInvoiceId?: string;
   mode?: string;
+  /** where "বাতিল" goes on a new voucher (default: the voucher list) */
+  cancelTo?: string;
+  /** book of a NEW voucher (depot pages: DEPOT); an existing voucher keeps its own */
+  book?: BookKey;
 }) {
   const businessId = ctx.business.id;
   const currency = ctx.business.currencySymbol;
-  const action = saveVoucherAction.bind(null, type, voucherId ?? null);
   const existing = voucherId
     ? await prisma.voucher.findFirst({
         where: { id: voucherId, businessId },
         include: { items: { orderBy: { lineNo: "asc" }, include: { batch: { select: { mfgDate: true } } } }, entries: { orderBy: { lineNo: "asc" } }, payments: { orderBy: { lineNo: "asc" } }, returnOf: { select: { voucherNo: true } } },
       })
     : null;
+  const book: BookKey = existing?.book ?? newBook ?? "GENERAL";
+  const depot = book === "DEPOT";
+  const pickerBook = depot ? ("depot" as const) : undefined;
+  const action = !existing && depot ? saveDepotVoucherAction.bind(null, type, null) : saveVoucherAction.bind(null, type, voucherId ?? null);
   const date = existing ? toDateInput(existing.date) : toDateInput();
   // no transaction:change_date permission: new entries are dated today, edits keep their date
   const dateLocked = !canChangeEntryDate(ctx);
-  const cancelHref = existing ? `/vouchers/v/${existing.id}` : `/vouchers/${slugOf(type)}`;
+  const cancelHref = existing ? `/vouchers/v/${existing.id}` : cancelTo ?? `/vouchers/${slugOf(type)}`;
 
   if (type === "SALES" || type === "PURCHASE" || type === "SALES_RETURN" || type === "PURCHASE_RETURN") {
     const partyKind = type === "SALES" || type === "SALES_RETURN" ? "CUSTOMER" : "SUPPLIER";
@@ -101,12 +114,12 @@ export async function VoucherEditor({
         discount: num(existing.discount), vatPercent: num(existing.vatPercent), dueDate: existing.dueDate ? toDateInput(existing.dueDate) : "",
         returnOfId: existing.returnOfId ?? "", returnOfNo: existing.returnOf?.voucherNo ?? "",
         payments: existing.payments.map((p) => ({ accountId: p.accountId, amount: num(p.amount), reference: p.reference ?? "" })),
-        items: existing.items.map((i) => ({ productId: i.productId, unitId: i.unitId ?? "", quantity: num(i.quantity), rate: num(i.rate), discount: num(i.discount), batchNo: i.batchNo ?? "", expiryDate: i.expiryDate ? toDateInput(i.expiryDate) : "", mfgDate: i.batch?.mfgDate ? toDateInput(i.batch.mfgDate) : "" })),
+        items: existing.items.map((i) => ({ productId: i.productId, unitId: i.unitId ?? "", quantity: num(i.quantity), freeQuantity: num(i.freeQuantity), rate: num(i.rate), discount: num(i.discount), batchNo: i.batchNo ?? "", expiryDate: i.expiryDate ? toDateInput(i.expiryDate) : "", mfgDate: i.batch?.mfgDate ? toDateInput(i.batch.mfgDate) : "" })),
       };
     } else if (fromInvoiceId && (type === "SALES_RETURN" || type === "PURCHASE_RETURN")) {
       // Return against an invoice: prefill remaining returnable quantities at the invoiced rates.
       const original = await prisma.voucher.findFirst({
-        where: { id: fromInvoiceId, businessId, type: type === "SALES_RETURN" ? "SALES" : "PURCHASE" },
+        where: { id: fromInvoiceId, businessId, type: type === "SALES_RETURN" ? "SALES" : "PURCHASE", ...voucherScopeWhere(ctx) },
         include: {
           items: { orderBy: { lineNo: "asc" }, include: { stockMovements: { include: { batch: { select: { batchNo: true, expiryDate: true } } }, orderBy: { createdAt: "asc" } } } },
           returns: { include: { items: true } },
@@ -142,12 +155,12 @@ export async function VoucherEditor({
     }
     // only the party and products already on the voucher are sent; the pickers search the rest
     const [parties, cashAccounts, inv] = await Promise.all([
-      defaults.partyAccountId ? searchParties(businessId, partyKind, "", { accountIds: [defaults.partyAccountId] }) : Promise.resolve([]),
-      accountOptions(businessId, { kind: { in: ["CASH", "BANK"] } }),
+      defaults.partyAccountId ? searchParties(businessId, partyKind, "", { accountIds: [defaults.partyAccountId], allowed: partyKind === "CUSTOMER" ? ctx.partyScope.customers : ctx.partyScope.suppliers, dealer: depot && partyKind === "CUSTOMER", book }) : Promise.resolve([]),
+      accountOptions(businessId, { kind: { in: ["CASH", "BANK"] } }, true, false, book),
       inventoryOptions(businessId, { productIds: defaults.items.map((i) => i.productId) }),
     ]);
     if (defaults.partyAccountId && parties.length === 0) defaults = { ...defaults, partyAccountId: "" }; // ?party= of another business / kind
-    return <TradeVoucherForm kind={type} action={action} parties={parties} cashAccounts={cashAccounts} {...warehousesFor(ctx, inv, [defaults.warehouseId])} defaults={defaults} currency={currency} cancelHref={cancelHref} allowExpiredSale={ctx.business.allowExpiredSale} />;
+    return <TradeVoucherForm kind={type} action={action} parties={parties} cashAccounts={cashAccounts} {...warehousesFor(ctx, inv, [defaults.warehouseId])} defaults={defaults} currency={currency} cancelHref={cancelHref} allowExpiredSale={ctx.business.allowExpiredSale} showFree={isDepot(ctx.business.businessType) && (type === "PURCHASE" || type === "SALES")} book={pickerBook} />;
   }
 
   if (type === "RECEIPT" || type === "PAYMENT") {
@@ -157,8 +170,8 @@ export async function VoucherEditor({
     // cash / bank ledgers are few (they are the default and the quick choices); of the other ledgers only
     // those already on the voucher are sent — the line pickers search the rest on the server
     const [cashAccounts, accounts] = await Promise.all([
-      accountOptions(businessId, { kind: { in: ["CASH", "BANK"] } }),
-      lineIds.length ? accountOptions(businessId, { id: { in: lineIds } }, true, true) : Promise.resolve([]),
+      accountOptions(businessId, { kind: { in: ["CASH", "BANK"] } }, true, false, book),
+      lineIds.length ? accountOptions(businessId, { id: { in: lineIds }, AND: [accountScopeWhere(ctx), bookAccountWhere(book)] }, true, true, book) : Promise.resolve([]),
     ]);
     const lines = existing
       ? existing.entries.filter((e) => e.accountId !== cashId).map((e) => ({ accountId: e.accountId, amount: num(type === "RECEIPT" ? e.credit : e.debit), narration: e.narration ?? "" }))
@@ -172,6 +185,7 @@ export async function VoucherEditor({
         currency={currency}
         cancelHref={expenseMode ? "/expenses" : cancelHref}
         expenseMode={expenseMode}
+        book={pickerBook}
         defaults={{ date, dateLocked, reference: existing?.reference ?? "", narration: existing?.narration ?? "", cashAccountId: cashId, lines }}
       />
     );

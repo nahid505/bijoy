@@ -75,11 +75,13 @@ export interface SearchSelectProps<T extends Item> {
   priceOf?: (p: ProductOption) => number;
   ariaLabel?: string;
   className?: string;
+  /** "depot": a depot form — customers are depot DEALERS ("ডিলার"), balances from the depot book */
+  book?: "depot";
 }
 
 export function SearchSelect<T extends Item>({
   kind, value, onChange, id, name, placeholder, noneLabel, disabled = false, create = false, batchOnly = false,
-  currency = "৳", unitName, priceOf, ariaLabel, className = "",
+  currency = "৳", unitName, priceOf, ariaLabel, className = "", book,
 }: SearchSelectProps<T>) {
   const uid = useId();
   const inputId = id ?? `ss-${uid}`;
@@ -114,7 +116,7 @@ export function SearchSelect<T extends Item>({
     setLoading(true);
     setError(null);
     const q = typed ? debounced : "";
-    fetch(`/api/lookup/${kind}?q=${encodeURIComponent(q)}${batchOnly ? "&batchOnly=1" : ""}`, { signal: ctrl.signal, headers: { accept: "application/json" } })
+    fetch(`/api/lookup/${kind}?q=${encodeURIComponent(q)}${batchOnly ? "&batchOnly=1" : ""}${book ? `&book=${book}` : ""}`, { signal: ctrl.signal, headers: { accept: "application/json" } })
       .then(async (r) => {
         if (!r.ok) throw new Error(r.status === 403 ? "খোঁজার অনুমতি নেই" : "খোঁজা যায়নি");
         const body = (await r.json()) as { items: T[]; canCreate?: boolean };
@@ -191,7 +193,8 @@ export function SearchSelect<T extends Item>({
 
   const shown = open && typed ? query : value?.name ?? "";
   const activeId = open && entries[active] ? `${listId}-${active}` : undefined;
-  const noun = NOUN[kind];
+  const dealer = book === "depot" && kind === "customers";
+  const noun = dealer ? "ডিলার" : NOUN[kind];
 
   return (
     <div className={`relative ${className}`}>
@@ -280,6 +283,7 @@ export function SearchSelect<T extends Item>({
         // rendered in <body>: the dialog has its own <form> and must not sit inside the voucher form
         <QuickCreateDialog
           kind={kind}
+          dealer={dealer}
           initialName={creating}
           units={create ? create.units ?? [] : []}
           onCancel={() => {
@@ -298,7 +302,7 @@ export function SearchSelect<T extends Item>({
   );
 }
 
-function QuickCreateDialog({ kind, initialName, units, onCancel, onCreated }: { kind: LookupKind; initialName: string; units: UnitOption[]; onCancel: () => void; onCreated: (item: Item) => void }) {
+function QuickCreateDialog({ kind, dealer = false, initialName, units, onCancel, onCreated }: { kind: LookupKind; dealer?: boolean; initialName: string; units: UnitOption[]; onCancel: () => void; onCreated: (item: Item) => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -318,7 +322,7 @@ function QuickCreateDialog({ kind, initialName, units, onCancel, onCreated }: { 
       const r =
         kind === "products"
           ? await quickCreateProductAction({ name: get("qcName"), code: get("qcCode"), barcode: get("qcBarcode"), unitId: get("qcUnit"), purchasePrice: get("qcPurchase"), salePrice: get("qcSale") })
-          : await quickCreatePartyAction(kind === "customers" ? "CUSTOMER" : "SUPPLIER", { name: get("qcName"), mobile: get("qcMobile") });
+          : await quickCreatePartyAction(kind === "customers" ? "CUSTOMER" : "SUPPLIER", { name: get("qcName"), mobile: get("qcMobile"), dealer });
       if (r.ok) onCreated(r.item);
       else {
         setMessage(r.message);
@@ -339,7 +343,7 @@ function QuickCreateDialog({ kind, initialName, units, onCancel, onCreated }: { 
       className="m-auto w-[min(28rem,calc(100vw-2rem))] rounded-lg border border-rule p-0 shadow-2xl backdrop:bg-ink-950/50"
     >
       <form onSubmit={submit} className="space-y-3 p-5" noValidate>
-        <h2 className="text-base font-bold text-ink-900">নতুন {NOUN[kind]} তৈরি করুন</h2>
+        <h2 className="text-base font-bold text-ink-900">নতুন {dealer ? "ডিলার" : NOUN[kind]} তৈরি করুন</h2>
         {message && <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{message}</p>}
         <div>
           <label className="label" htmlFor="qcName">নাম *</label>

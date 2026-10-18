@@ -6,15 +6,17 @@ import { PageHeader } from "@/components/ui";
 import { requirePermission } from "@/server/auth";
 import { removeMemberAction, saveMemberAction } from "@/server/actions/business";
 import { UserForm } from "../../user-form";
+import { assignedPartiesOf, isRestricted, roleChoices } from "@/server/party-scope";
 
 export const metadata: Metadata = { title: "ব্যবহারকারী সম্পাদনা" };
 
 export default async function EditUserPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requirePermission("users:manage");
   const { id } = await params;
-  const [membership, roles] = await Promise.all([
+  const [membership, roles, assigned] = await Promise.all([
     prisma.membership.findUnique({ where: { userId_businessId: { userId: id, businessId: ctx.business.id } }, include: { user: true } }),
-    prisma.role.findMany({ where: { businessId: ctx.business.id }, orderBy: { createdAt: "asc" }, select: { id: true, name: true } }),
+    roleChoices(ctx.business.id),
+    assignedPartiesOf(ctx.business.id, id),
   ]);
   if (!membership) notFound();
   return (
@@ -29,6 +31,7 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
           action={saveMemberAction.bind(null, id)}
           roles={roles}
           isEdit
+          assigned={isRestricted(ctx) ? null : assigned} // an assigned-only admin cannot hand out parties
           defaults={{ name: membership.user.name, email: membership.user.email ?? "", roleId: membership.roleId, isActive: membership.isActive }}
         />
       </section>

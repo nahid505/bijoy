@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { addDays, formatDate, formatMoney, toBnDigits } from "@/lib/format";
 import { amountInBanglaWords } from "@/lib/words";
@@ -7,11 +8,13 @@ import { FilterField, PageHeader, PrintHeader } from "@/components/ui";
 import { requirePermission } from "@/server/auth";
 import { readParams, type SearchParams } from "@/server/params";
 import { cashScopeAccounts, dailyCash, type CashLine } from "@/server/reports/daily-cash";
+import { reportOpenFor } from "@/server/reports/registry";
 
 export const metadata: Metadata = { title: "ডেইলী জমা-খরচ হিসাব" };
 
 export default async function DailyCashPage({ searchParams }: { searchParams: SearchParams }) {
   const ctx = await requirePermission("accounts:view");
+  if (!reportOpenFor(ctx, "daily-cash")) redirect("/forbidden"); // lists every party's cash
   const p = await readParams(searchParams);
   const [d, { all }] = await Promise.all([dailyCash(ctx.business.id, { date: p.date, scope: p.scope }), cashScopeAccounts(ctx.business.id)]);
   const cur = ctx.business.currencySymbol;

@@ -17,10 +17,11 @@ import { businessToday } from "./services/notifications";
 import { expiryStatus } from "@/lib/expiry";
 import { ExpiryBadge } from "@/components/expiry-badge";
 import { ci, rawRows, sql } from "@/lib/dialect";
+import { isDepot } from "@/lib/depot";
 
 const MOVE_LABELS: Record<string, string> = {
   OPENING: "প্রারম্ভিক", PURCHASE: "ক্রয়", SALE: "বিক্রয়", SALES_RETURN: "বিক্রয় ফেরত", PURCHASE_RETURN: "ক্রয় ফেরত", ADJUSTMENT_IN: "সমন্বয় (আগমন)", ADJUSTMENT_OUT: "সমন্বয় (বাহির)",
-  PRODUCTION_IN: "উৎপাদন", PRODUCTION_OUT: "উৎপাদনে ব্যবহার",
+  PRODUCTION_IN: "উৎপাদন", PRODUCTION_OUT: "উৎপাদনে ব্যবহার", DEPOT_OUT: "ডিও ডেলিভারি",
 };
 
 export async function ProductListPage({ searchParams }: { searchParams: SearchParams }) {
@@ -256,12 +257,13 @@ export async function ProductEditPage({ id }: { id: string | null }) {
           brands={brands}
           units={units}
           hasTransactions={hasTransactions}
+          showDepotCommission={isDepot(ctx.business.businessType)}
           cancelHref={pr ? `/products/${pr.id}` : "/products"}
           defaults={
             pr
               ? {
                   name: pr.name, code: pr.code, barcode: pr.barcode, categoryId: pr.categoryId, brandId: pr.brandId, unitId: pr.unitId,
-                  purchasePrice: num(pr.purchasePrice), salePrice: num(pr.salePrice), wholesalePrice: num(pr.wholesalePrice),
+                  purchasePrice: num(pr.purchasePrice), salePrice: num(pr.salePrice), wholesalePrice: num(pr.wholesalePrice), depotCommissionRate: num(pr.depotCommissionRate),
                   minStock: num(pr.minStock), openingStock: num(pr.openingStock), openingRate: num(pr.openingRate), trackBatch: pr.trackBatch,
                 }
               : {}

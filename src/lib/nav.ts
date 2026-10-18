@@ -1,9 +1,11 @@
 import type { Permission } from "./permissions";
+import { DEPOT_ACCESS } from "./depot";
 
 export interface NavLink {
   href: string;
   label: string;
-  permission: Permission;
+  /** a list means "any of these" */
+  permission: Permission | readonly Permission[];
 }
 
 export interface NavEntry {
@@ -11,8 +13,12 @@ export interface NavEntry {
   label: string;
   icon: string; // inline SVG path data (24×24, stroke)
   href?: string;
-  permission?: Permission;
+  permission?: Permission | readonly Permission[];
   children?: NavLink[];
+  /** shown only for these business types (e.g. ["DEPOT"]) */
+  businessTypes?: string[];
+  /** emphasised and open by default */
+  highlight?: boolean;
 }
 
 // Simple stroke icons (original artwork) — rendered by the sidebar.
@@ -37,7 +43,29 @@ const I = {
 };
 
 export const NAV: NavEntry[] = [
-  { key: "dashboard", label: "ড্যাশবোর্ড", icon: I.home, href: "/dashboard", permission: "dashboard:view" },
+  { key: "dashboard", label: "ড্যাশবোর্ড", icon: I.home, href: "/dashboard", permission: ["dashboard:view", "depot:view"] },
+  {
+    key: "depot",
+    label: "ডিপো ব্যবস্থাপনা",
+    icon: I.truck,
+    businessTypes: ["DEPOT"],
+    highlight: true,
+    children: [
+      { href: "/depot/deliveries", label: "ডেলিভারি চালান", permission: DEPOT_ACCESS.view },
+      { href: "/depot/deliveries/new", label: "ডেলিভারি চালান তৈরি", permission: DEPOT_ACCESS.deliveryCreate },
+      { href: "/depot/dealers", label: "ডিলার তালিকা", permission: DEPOT_ACCESS.dealersView },
+      { href: "/depot/stock-in", label: "স্টক ইন (কোম্পানি থেকে প্রাপ্তি)", permission: DEPOT_ACCESS.stockInView },
+      { href: "/depot/collections", label: "মার্কেট কালেকশন", permission: DEPOT_ACCESS.collectionView },
+      { href: "/depot/payments", label: "কোম্পানিকে পেমেন্ট", permission: DEPOT_ACCESS.paymentView },
+      { href: "/depot/commission", label: "কোম্পানি কমিশন হিসাব", permission: DEPOT_ACCESS.commission },
+      { href: "/reports/depot-market-dues", label: "রুটভিত্তিক মার্কেট বাকি", permission: DEPOT_ACCESS.reports },
+      { href: "/reports/depot-commission", label: "কোম্পানি কমিশন রিপোর্ট", permission: DEPOT_ACCESS.reports },
+      { href: "/reports/depot-deliveries", label: "ডেলিভারি রেজিস্টার", permission: DEPOT_ACCESS.register },
+      { href: "/reports/depot-free", label: "ফ্রি স্কিম রিপোর্ট", permission: DEPOT_ACCESS.scheme },
+      { href: "/reports/depot-profit-loss", label: "ডিপো লাভ-ক্ষতি", permission: DEPOT_ACCESS.reports },
+      { href: "/reports/depot-cash-book", label: "ডিপো ক্যাশ বুক", permission: DEPOT_ACCESS.reports },
+    ],
+  },
   { key: "pos", label: "পস বিক্রয়", icon: I.receipt, href: "/pos", permission: "sales:create" },
   {
     key: "transactions",
@@ -178,7 +206,7 @@ export const NAV: NavEntry[] = [
 
 /** Mobile bottom bar — the most frequent destinations. */
 export const MOBILE_TABS = [
-  { href: "/dashboard", label: "হোম", icon: I.home, permission: "dashboard:view" as Permission },
+  { href: "/dashboard", label: "হোম", icon: I.home, permission: ["dashboard:view", "depot:view"] as Permission | readonly Permission[] },
   { href: "/pos", label: "বিক্রয়", icon: I.receipt, permission: "sales:create" as Permission },
   { href: "/vouchers/receipt/new", label: "রিসিপ্ট", icon: I.book, permission: "vouchers:create" as Permission },
   { href: "/reports/day-book", label: "রিপোর্ট", icon: I.chart, permission: "reports:view" as Permission },

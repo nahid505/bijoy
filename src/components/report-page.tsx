@@ -4,9 +4,9 @@ import { featureForPath } from "@/lib/features";
 import { prisma } from "@/lib/db";
 import { toDateInput } from "@/lib/format";
 import { VOUCHER_TYPES, type VoucherTypeKey } from "@/lib/accounting";
-import { requirePermission } from "@/server/auth";
+import { can, requirePermission } from "@/server/auth";
 import { reportPeriod } from "@/server/period";
-import { findReport } from "@/server/reports/registry";
+import { findReport, reportOpenFor } from "@/server/reports/registry";
 import type { ReportParams } from "@/server/reports/types";
 import { searchAccounts, searchEmployees, searchParties } from "@/server/lookup";
 import { SearchableAccountField } from "./account-select";
@@ -14,6 +14,7 @@ import { PrintButton } from "./forms";
 import { SearchSelectField } from "./search-select";
 import { ReportNotes, ReportSummary, ReportTable } from "./report-view";
 import { buildQuery, FilterField, PageHeader, PrintHeader } from "./ui";
+import { accountScopeWhere } from "@/server/party-scope";
 
 /** Renders any registered report: filters (GET), summary, ruled table, print & CSV export. */
 export async function ReportPage({
@@ -40,6 +41,7 @@ export async function ReportPage({
   const def = findReport(slug);
   if (!def) notFound();
   const ctx = await requirePermission(def.permission);
+  if (!reportOpenFor(ctx, slug)) redirect("/forbidden"); // assigned-only roles: business-wide books list every party
   const report = await def.run(ctx, params);
   const path = basePath ?? `/reports/${slug}`;
   const { from, to } = reportPeriod(params, ctx.business.fiscalYearStartMonth);
@@ -52,11 +54,11 @@ export async function ReportPage({
   // account filters load only the selected ledger; the picker searches the rest
   const accountFilter = f.has("account") || f.has("cashAccount") || f.has("bankAccount");
   const [picked, warehouses, parties, departments, employee] = await Promise.all([
-    accountFilter && params.accountId ? searchAccounts(ctx.business.id, "", { ids: [params.accountId] }).then((r) => r.items) : [],
+    accountFilter && params.accountId ? searchAccounts(ctx.business.id, "", { ids: [params.accountId], where: accountScopeWhere(ctx) }).then((r) => r.items) : [],
     f.has("warehouse") ? prisma.warehouse.findMany({ where: { businessId: ctx.business.id }, select: { id: true, name: true } }) : [],
     // only the selected party is loaded; the picker searches the rest
     (f.has("customer") || f.has("supplier")) && params.accountId
-      ? searchParties(ctx.business.id, f.has("customer") ? "CUSTOMER" : "SUPPLIER", "", { accountIds: [params.accountId] })
+      ? searchParties(ctx.business.id, f.has("customer") ? "CUSTOMER" : "SUPPLIER", "", { accountIds: [params.accountId], allowed: f.has("customer") ? ctx.partyScope.customers : ctx.partyScope.suppliers })
       : [],
     f.has("department") ? prisma.department.findMany({ where: { businessId: ctx.business.id }, orderBy: { name: "asc" }, select: { id: true, name: true } }) : [],
     f.has("employee") && params.employeeId ? searchEmployees(ctx.business.id, "", { ids: [params.employeeId] }).then((r) => r[0] ?? null) : null,
@@ -68,7 +70,7 @@ export async function ReportPage({
       <PageHeader
         title={title ?? def.title}
         description={description ?? def.description}
-        crumbs={crumbs ?? [{ label: "রিপোর্ট", href: "/reports" }, { label: def.title }]}
+        crumbs={crumbs ?? [{ label: "রিপোর্ট", href: can(ctx, "reports:view") ? "/reports" : undefined }, { label: def.title }]}
         actions={
           <>
             {extraActions}

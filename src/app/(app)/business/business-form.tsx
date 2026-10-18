@@ -3,6 +3,7 @@
 import { MONTH_NAMES } from "@/lib/format";
 import { ActionForm, Field, SubmitButton } from "@/components/forms";
 import { saveBusinessAction } from "@/server/actions/business";
+import { BUSINESS_TYPE_LABELS } from "@/lib/business-types";
 
 export interface BusinessDefaults {
   name: string;
@@ -24,6 +25,7 @@ export interface BusinessDefaults {
   lockDate: string;
   expiryWarningDays: number[];
   allowExpiredSale: boolean;
+  businessType: string | null;
 }
 
 const WARNING_LABELS = ["প্রথম সতর্কতা", "দ্বিতীয় সতর্কতা", "তৃতীয় সতর্কতা", "চূড়ান্ত সতর্কতা"];
@@ -34,6 +36,12 @@ export function BusinessForm({ d }: { d: BusinessDefaults }) {
       <fieldset className="grid gap-4 sm:grid-cols-3">
         <legend className="mb-2 text-sm font-semibold text-ink-800">ব্যবসার প্রোফাইল</legend>
         <Field label="ব্যবসার নাম *" name="name" className="sm:col-span-2"><input id="name" name="name" defaultValue={d.name} className="input" required /></Field>
+        <Field label="ব্যবসার ধরন" name="businessType" hint="&ldquo;ডিপো ব্যবসা&rdquo; বেছে নিলে ডিপো ড্যাশবোর্ড, ডেলিভারি চালান, কোম্পানি কমিশন ও রুটভিত্তিক মার্কেট বাকি চালু হবে">
+          <select id="businessType" name="businessType" defaultValue={d.businessType ?? ""} className="input">
+            <option value="">— নির্ধারিত নয় —</option>
+            {Object.entries(BUSINESS_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </Field>
         <Field label="লোগো" name="logo" hint="PNG/JPG/WEBP/SVG, সর্বোচ্চ ২০০ KB">
           <div className="flex items-center gap-3">
             {d.logo && (

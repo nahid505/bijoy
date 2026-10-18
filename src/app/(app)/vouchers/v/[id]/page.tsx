@@ -7,13 +7,15 @@ import { paymentStatus, PAYMENT_STATUS_LABELS, round2 } from "@/lib/calc";
 import { formatDate, formatDateTime, formatMoney, formatQty } from "@/lib/format";
 import { ActionButton } from "@/components/forms";
 import { PaddySlip } from "@/components/paddy-slip";
+import { DepotChallan } from "@/components/depot-challan";
 import { Badge, DetailRow, PageHeader, TableWrap } from "@/components/ui";
 import { can, requireContext } from "@/server/auth";
 import { batchesOfItem, loadVoucher } from "@/server/voucher-detail";
-import { voucherPermission } from "@/server/voucher-permissions";
+import { voucherAccess, voucherPermission } from "@/server/voucher-permissions";
 import { deleteVoucherAction } from "@/server/actions/vouchers";
 import { redirect } from "next/navigation";
 import { isPayrollVoucher } from "@/server/services/voucher";
+import { canSeeVoucher } from "@/server/party-scope";
 
 export const metadata: Metadata = { title: "ভাউচার" };
 
@@ -22,7 +24,14 @@ export default async function VoucherDetailPage({ params }: { params: Promise<{ 
   const ctx = await requireContext();
   const v = await loadVoucher(ctx.business.id, id);
   if (!v) notFound();
-  if (!can(ctx, voucherPermission(v.type, "view")) && !(v.type === "OPENING" && can(ctx, "accounts:view"))) redirect("/forbidden");
+  if (!can(ctx, voucherAccess(v.type, "view", ctx.business.businessType, v.book)) && !(v.type === "OPENING" && can(ctx, "accounts:view"))) redirect("/forbidden");
+  if (!(await canSeeVoucher(ctx, v.id))) redirect("/forbidden"); // assigned-only roles: another party's voucher
+  // opened through a depot permission only (depot-only role): the voucher, without the ledger postings
+  const full = can(ctx, voucherPermission(v.type, "view")) || v.type === "OPENING";
+  const depotOnly = !full;
+  // a depot-book voucher (src/lib/book.ts) lives under the depot menu, never in the general lists
+  const depotBook = v.book === "DEPOT" || depotOnly;
+  const depotList = v.depotDelivery ? "/depot/deliveries" : ({ PURCHASE: "/depot/stock-in", PURCHASE_RETURN: "/depot/stock-in", RECEIPT: "/depot/collections", PAYMENT: "/depot/payments", JOURNAL: "/depot/commission" } as Record<string, string>)[v.type];
   const cur = ctx.business.currencySymbol;
   const meta = VOUCHER_TYPES[v.type];
   const trade = TRADE_TYPES.includes(v.type);
@@ -37,23 +46,30 @@ export default async function VoucherDetailPage({ params }: { params: Promise<{ 
   const payrollHref = !payroll ? null : v.sourceKey!.startsWith("payroll:run:") ? `/payroll/runs/${v.sourceKey!.slice("payroll:run:".length)}` : v.sourceKey!.startsWith("payroll:advance:") ? "/payroll/advances" : "/payroll/payments";
   const hasBatches = v.items.some((i) => i.batchNo || i.stockMovements.length > 0);
   const party = v.partyAccount?.customer ?? v.partyAccount?.supplier;
-  const partyHref = v.partyAccount?.customer ? `/customers/${v.partyAccount.customer.id}` : v.partyAccount?.supplier ? `/suppliers/${v.partyAccount.supplier.id}` : v.partyAccount ? `/accounts/${v.partyAccountId}` : null;
+  const partyHref = depotOnly ? null : v.partyAccount?.customer ? `/customers/${v.partyAccount.customer.id}` : v.partyAccount?.supplier ? `/suppliers/${v.partyAccount.supplier.id}` : v.partyAccount ? `/accounts/${v.partyAccountId}` : null;
 
   return (
     <>
       <PageHeader
-        title={`${meta.long} · ${v.voucherNo}`}
+        title={`${meta.long} · ${v.voucherNo}${depotBook ? " (ডিপো হিসাব)" : ""}`}
         description={`${formatDate(v.date)}${v.partyAccount ? ` · ${v.partyAccount.name}` : ""}`}
-        crumbs={[{ label: "লেনদেন" }, { label: meta.label, href: v.type === "PRODUCTION" ? "/production" : editable ? `/vouchers/${meta.slug}` : undefined }, { label: v.voucherNo }]}
+        crumbs={depotBook ? [{ label: "ডিপো ব্যবস্থাপনা" }, { label: v.depotDelivery ? "ডেলিভারি চালান" : meta.label, href: depotList }, { label: v.voucherNo }] : [{ label: "লেনদেন" }, { label: meta.label, href: v.type === "PRODUCTION" ? "/production" : v.depotDelivery ? "/depot/deliveries" : editable ? `/vouchers/${meta.slug}` : undefined }, { label: v.voucherNo }]}
         actions={
           <>
-            <Link prefetch={false} href={`/vouchers/v/${v.id}/print`} className="btn-primary">{v.type === "SALES" ? "🧾 ইনভয়েস / প্রিন্ট" : "🖨 প্রিন্ট / PDF"}</Link>
+            {v.depotDelivery ? (
+              <>
+                <Link prefetch={false} href={`/depot/deliveries/${v.id}/print`} className="btn-primary">🖨 প্রিন্ট চালান (ডিলার কপি)</Link>
+                <Link prefetch={false} href={`/vouchers/v/${v.id}/print`} className="btn-secondary" title="কমিশন সহ — শুধু অফিসের জন্য">অফিস কপি</Link>
+              </>
+            ) : (
+              <Link prefetch={false} href={`/vouchers/v/${v.id}/print`} className="btn-primary">{v.type === "SALES" ? "🧾 ইনভয়েস / প্রিন্ট" : "🖨 প্রিন্ট / PDF"}</Link>
+            )}
             {v.type === "SALES" && can(ctx, "sales:create") && <Link prefetch={false} href={`/vouchers/sales-return/new?from=${v.id}`} className="btn-secondary">↩ ফেরত নিন</Link>}
             {v.type === "PURCHASE" && can(ctx, "purchases:create") && <Link prefetch={false} href={`/vouchers/purchase-return/new?from=${v.id}`} className="btn-secondary">↩ ফেরত দিন</Link>}
             {v.type === "SALES" && v.partyAccountId && amount - paid > 0 && can(ctx, "vouchers:create") && <Link prefetch={false} href={`/vouchers/receipt/new?party=${v.partyAccountId}`} className="btn-secondary">বাকি আদায়</Link>}
             {payrollHref && can(ctx, "payroll:view") && <Link prefetch={false} href={payrollHref} className="btn-secondary">বেতন মডিউলে দেখুন</Link>}
-            {editable && can(ctx, voucherPermission(v.type, "edit")) && <Link prefetch={false} href={v.type === "PRODUCTION" ? `/production/${v.id}/edit` : v.paddyPurchase ? `/purchases/paddy/${v.id}/edit` : `/vouchers/v/${v.id}/edit`} className="btn-secondary">সম্পাদনা</Link>}
-            {editable && can(ctx, voucherPermission(v.type, "delete")) && (
+            {editable && can(ctx, voucherAccess(v.type, "edit", ctx.business.businessType, v.book)) && <Link prefetch={false} href={v.type === "PRODUCTION" ? `/production/${v.id}/edit` : v.paddyPurchase ? `/purchases/paddy/${v.id}/edit` : v.depotDelivery ? `/depot/deliveries/${v.id}/edit` : `/vouchers/v/${v.id}/edit`} className="btn-secondary">সম্পাদনা</Link>}
+            {editable && can(ctx, voucherAccess(v.type, "delete", ctx.business.businessType, v.book)) && (
               <ActionButton action={deleteVoucherAction.bind(null, v.id)} label="মুছুন" className="btn-danger" confirmText="ভাউচারটি মুছে ফেললে সংশ্লিষ্ট সব জার্নাল এন্ট্রি ও স্টক মুভমেন্ট বাতিল হবে। নিশ্চিত?" />
             )}
           </>
@@ -61,6 +77,7 @@ export default async function VoucherDetailPage({ params }: { params: Promise<{ 
       />
 
       <div className="grid gap-4 lg:grid-cols-3">
+        {full && (
         <section className="panel lg:col-span-2">
           <div className="panel-head">
             <h2 className="panel-title">জার্নাল এন্ট্রি</h2>
@@ -86,8 +103,9 @@ export default async function VoucherDetailPage({ params }: { params: Promise<{ 
             </table>
           </TableWrap>
         </section>
+        )}
 
-        <section className="panel">
+        <section className={depotOnly ? "panel lg:col-span-3" : "panel"}>
           <div className="panel-head"><h2 className="panel-title">ভাউচার তথ্য</h2>{trade && <Badge tone={st === "PAID" ? "green" : st === "PARTIAL" ? "amber" : "red"}>{PAYMENT_STATUS_LABELS[st]}</Badge>}</div>
           <dl className="divide-y divide-rule px-4 py-1">
             <DetailRow label="ভাউচার নং">{v.voucherNo}</DetailRow>
@@ -114,6 +132,7 @@ export default async function VoucherDetailPage({ params }: { params: Promise<{ 
         </section>
       </div>
 
+      {v.depotDelivery && <div className="panel mt-4 px-4"><DepotChallan currency={cur} d={{ mode: v.depotDelivery.mode, doNumber: v.depotDelivery.doNumber, company: v.depotDelivery.companyAccount?.name ?? null, dealer: v.depotDelivery.dealerAccount?.name ?? null, route: v.depotDelivery.dealerAccount?.customer?.route ?? null, dealerMobile: v.depotDelivery.dealerAccount?.customer?.mobile ?? null, vehicleNo: v.depotDelivery.vehicleNo, driverName: v.depotDelivery.driverName, commission: num(v.depotDelivery.commissionTotal), notes: v.depotDelivery.notes }} /></div>}
       {v.paddyPurchase && <div className="panel mt-4 px-4">{v.paddyPurchase && <PaddySlip currency={cur} d={{ bagCount: v.paddyPurchase.bagCount, grossKg: num(v.paddyPurchase.grossKg), dhaltaKg: num(v.paddyPurchase.dhaltaKg), netKg: num(v.paddyPurchase.netKg), mon: num(v.paddyPurchase.mon), ratePerMon: num(v.paddyPurchase.ratePerMon), totalPrice: num(v.paddyPurchase.totalPrice), notes: v.paddyPurchase.notes }} />}</div>}
       {v.items.length > 0 && (
         <section className="panel mt-4">
@@ -126,10 +145,10 @@ export default async function VoucherDetailPage({ params }: { params: Promise<{ 
                   {v.type === "STOCK_JOURNAL" && <th>গুদাম</th>}
                   {v.type === "STOCK_JOURNAL" && <th>দিক</th>}
                   <th className="num">পরিমাণ</th>
-                  <th className="num">দর</th>
+                  <th className="num">{v.type === "DEPOT_DELIVERY" ? "কমিশন হার" : "দর"}</th>
                   {trade && <th className="num">ছাড়</th>}
                   {hasBatches && <th>ব্যাচ / মেয়াদ</th>}
-                  <th className="num">টাকা</th>
+                  <th className="num">{v.type === "DEPOT_DELIVERY" ? "কমিশন" : "টাকা"}</th>
                   <th className="num">ক্রয়মূল্য (গড়)</th>
                 </tr>
               </thead>
@@ -139,7 +158,7 @@ export default async function VoucherDetailPage({ params }: { params: Promise<{ 
                     <td>{i.product.name}{i.product.code && <span className="block text-xs text-slate-400">{i.product.code}</span>}</td>
                     {v.type === "STOCK_JOURNAL" && <td>{i.warehouse?.name}</td>}
                     {v.type === "STOCK_JOURNAL" && <td>{i.direction === 1 ? <Badge tone="green">আগমন</Badge> : <Badge tone="red">বাহির</Badge>}</td>}
-                    <td className="num">{formatQty(num(i.quantity))} {i.unit?.name}</td>
+                    <td className="num">{formatQty(num(i.quantity))} {i.unit?.name}{num(i.freeQuantity) > 0 && <span className="block text-[11px] font-semibold text-amber-800">+ ফ্রি {formatQty(num(i.freeQuantity))}</span>}</td>
                     <td className="num">{formatMoney(num(i.rate), cur)}</td>
                     {trade && <td className="num">{num(i.discount) ? formatMoney(num(i.discount), cur) : ""}</td>}
                     {hasBatches && <td className="text-xs">{batchesOfItem(i, formatDate, formatQty)}</td>}

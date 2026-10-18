@@ -39,12 +39,15 @@ export interface SearchableAccountSelectProps {
   currency?: string;
   ariaLabel?: string;
   className?: string;
+  /** "depot": ledgers of the depot book (dealers instead of general customers), depot-book balances */
+  book?: "depot";
 }
 
 export function SearchableAccountSelect({
   value, onChange, scope = "all", known, id, name, placeholder = "— হিসাব নির্বাচন —", noneLabel, disabled = false,
-  allowCreate = true, currency = "৳", ariaLabel, className = "",
+  allowCreate = true, currency = "৳", ariaLabel, className = "", book,
 }: SearchableAccountSelectProps) {
+  const bookParam = book ? `&book=${book}` : "";
   const uid = useId();
   const triggerId = id ?? `acc-${uid}`;
   const listId = `${triggerId}-list`;
@@ -86,12 +89,12 @@ export function SearchableAccountSelect({
   useEffect(() => {
     if (!value || labels.has(value) || missing === value) return;
     const ctrl = new AbortController();
-    fetch(`/api/lookup/accounts?ids=${encodeURIComponent(value)}`, { signal: ctrl.signal })
+    fetch(`/api/lookup/accounts?ids=${encodeURIComponent(value)}${bookParam}`, { signal: ctrl.signal })
       .then((r) => (r.ok ? r.json() : { items: [] }))
       .then((b: { items: AccountItem[] }) => (b.items.length ? remember(b.items) : setMissing(value)))
       .catch(() => undefined);
     return () => ctrl.abort();
-  }, [value, labels, missing]);
+  }, [value, labels, missing, bookParam]);
 
   // entries: [none?] + results + [load more?] + [create?]
   const entries: Entry[] = [
@@ -106,7 +109,7 @@ export function SearchableAccountSelect({
   const load = (q: string, offset: number, signal?: AbortSignal) => {
     setLoading(true);
     setError(null);
-    return fetch(`/api/lookup/accounts?scope=${scope}&q=${encodeURIComponent(q)}&offset=${offset}`, { signal, headers: { accept: "application/json" } })
+    return fetch(`/api/lookup/accounts?scope=${scope}&q=${encodeURIComponent(q)}&offset=${offset}${bookParam}`, { signal, headers: { accept: "application/json" } })
       .then(async (r) => {
         if (!r.ok) throw new Error(r.status === 403 ? "হিসাব খোঁজার অনুমতি নেই" : "খোঁজা যায়নি — আবার চেষ্টা করুন");
         const body = (await r.json()) as { items: AccountItem[]; hasMore: boolean; canCreate?: boolean };

@@ -23,7 +23,7 @@ export default async function BusinessPage() {
               tradeLicense: b.tradeLicense, currency: b.currency, currencySymbol: b.currencySymbol, fiscalYearStartMonth: b.fiscalYearStartMonth,
               booksStartDate: toDateInput(b.booksStartDate), invoicePrefix: b.invoicePrefix, defaultVatPercent: num(b.defaultVatPercent),
               invoiceFooter: b.invoiceFooter, invoiceTerms: b.invoiceTerms, lockDate: b.lockDate ? toDateInput(b.lockDate) : "",
-              expiryWarningDays: normalizeThresholds(b.expiryWarningDays), allowExpiredSale: b.allowExpiredSale,
+              expiryWarningDays: normalizeThresholds(b.expiryWarningDays), allowExpiredSale: b.allowExpiredSale, businessType: b.businessType,
             }}
           />
         </section>

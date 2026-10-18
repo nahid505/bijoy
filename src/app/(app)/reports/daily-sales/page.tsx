@@ -9,6 +9,7 @@ import { FilterField, PageHeader, PrintHeader } from "@/components/ui";
 import { requirePermission } from "@/server/auth";
 import { readParams, type SearchParams } from "@/server/params";
 import { dailySales, quantityText } from "@/server/reports/daily-sales";
+import { voucherScopeWhere } from "@/server/party-scope";
 
 export const metadata: Metadata = { title: "ডেইলি বিক্রয় রিপোর্ট" };
 
@@ -22,7 +23,7 @@ export default async function DailySalesPage({ searchParams }: { searchParams: S
   const gate = featureForPath("/reports/daily-sales");
   if (gate && !ctx.features.includes(gate)) redirect(`/forbidden?feature=${gate}`);
   const p = await readParams(searchParams);
-  const d = await dailySales(ctx.business.id, { date: p.date });
+  const d = await dailySales(ctx.business.id, { date: p.date, scope: voucherScopeWhere(ctx) });
   const cur = ctx.business.currencySymbol;
   const money = (n: number) => formatMoney(n, cur);
   const exportHref = `/api/reports/daily-sales?date=${d.date}`;

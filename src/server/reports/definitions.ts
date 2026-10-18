@@ -10,6 +10,8 @@ import { balanceSheet, profitAndLoss, trialBalance } from "../services/report";
 import type { ReportDef, ReportParams, ReportResult, ReportRow } from "./types";
 import type { AppContext } from "../auth";
 import { ci } from "@/lib/dialect";
+import type { BookKey } from "@/lib/book";
+import { canOpenLedger, partyListWhere, voucherScopeWhere } from "../party-scope";
 
 const typeLabel = (t: VoucherType) => VOUCHER_TYPES[t as VoucherTypeKey].label;
 const periodText = (from: string, to: string) => `${formatDate(from)} — ${formatDate(to)}`;
@@ -22,10 +24,11 @@ function asOfRange(p: ReportParams) {
 
 // ───────────────────────── statements over ledgers ─────────────────────────
 
-async function ledgerReport(ctx: AppContext, p: ReportParams, accountIds: string[], title: string): Promise<ReportResult> {
+/** Ledger / cash book of one book (GENERAL by default; the depot reports pass DEPOT). */
+export async function ledgerReport(ctx: AppContext, p: ReportParams, accountIds: string[], title: string, book: BookKey = "GENERAL"): Promise<ReportResult> {
   const { from, to, range } = reportPeriod(p, ctx.business.fiscalYearStartMonth);
   const cur = ctx.business.currencySymbol;
-  const st = await statement(ctx.business.id, accountIds, range);
+  const st = await statement(ctx.business.id, accountIds, range, { book });
   const multi = accountIds.length > 1;
   const q = p.q?.trim().toLowerCase();
   const lines = q ? st.lines.filter((l) => `${l.voucherNo} ${l.narration ?? ""} ${l.against}`.toLowerCase().includes(q)) : st.lines;
@@ -75,11 +78,48 @@ async function kindAccounts(businessId: string, kind: "CASH" | "BANK", selected?
 
 // ───────────────────────── party reports ─────────────────────────
 
+/** Profit & loss of one book (GENERAL by default; the depot P&L passes DEPOT). */
+export async function plReport(ctx: AppContext, p: ReportParams, book: BookKey = "GENERAL", title = "লাভ-ক্ষতি হিসাব"): Promise<ReportResult> {
+  const { from, to, range } = reportPeriod(p, ctx.business.fiscalYearStartMonth);
+  const cur = ctx.business.currencySymbol;
+  const pl = await profitAndLoss(ctx.business.id, range, book);
+  const rows: ReportRow[] = [];
+  const section = (title: string, lines: { accountId: string; name: string; amount: number }[], subtotalLabel: string, subtotal: number) => {
+    rows.push({ kind: "group", cells: { particulars: title, amount: null } });
+    for (const l of lines) rows.push({ indent: 1, href: book === "GENERAL" ? `/accounts/${l.accountId}` : undefined, cells: { particulars: l.name, amount: l.amount } });
+    rows.push({ kind: "subtotal", cells: { particulars: subtotalLabel, amount: subtotal } });
+  };
+  section("বিক্রয় আয়", pl.salesLines, "নিট বিক্রয়", pl.netSales);
+  section("বিক্রিত পণ্যের ব্যয়", pl.directExpenseLines, "মোট প্রত্যক্ষ ব্যয়", pl.directExpenses);
+  rows.push({ kind: "total", cells: { particulars: "মোট লাভ (গ্রস প্রফিট)", amount: pl.grossProfit } });
+  section("অন্যান্য আয়", pl.otherIncomeLines, "মোট অন্যান্য আয়", pl.otherIncome);
+  section("পরিচালন ব্যয়", pl.expenseLines, "মোট পরিচালন ব্যয়", pl.expenses);
+  rows.push({ kind: "total", cells: { particulars: pl.netProfit >= 0 ? "নিট লাভ" : "নিট ক্ষতি", amount: pl.netProfit } });
+  return {
+    title,
+    subtitle: periodText(from, to),
+    columns: [{ key: "particulars", label: "বিবরণ" }, { key: "amount", label: "টাকা", format: "money" }],
+    rows,
+    summary: [
+      { label: "নিট বিক্রয়", value: formatMoney(pl.netSales, cur), tone: "blue" },
+      { label: "গ্রস প্রফিট", value: formatMoney(pl.grossProfit, cur), tone: pl.grossProfit >= 0 ? "green" : "red" },
+      { label: pl.netProfit >= 0 ? "নিট লাভ" : "নিট ক্ষতি", value: formatMoney(pl.netProfit, cur), tone: pl.netProfit >= 0 ? "green" : "red" },
+    ],
+  };
+}
+
+/** Cash book (all cash ledgers, or one) of one book. */
+export async function cashBookReport(ctx: AppContext, p: ReportParams, book: BookKey = "GENERAL", title = "ক্যাশ বুক"): Promise<ReportResult> {
+  const { ids, names } = await kindAccounts(ctx.business.id, "CASH", p.accountId);
+  if (!ids.length) return { title, columns: [], rows: [], emptyMessage: "কোনো নগদ হিসাব নেই" };
+  return ledgerReport(ctx, p, ids, `${title} — ${names.join(", ")}`, book);
+}
+
 async function partyReport(ctx: AppContext, p: ReportParams, kind: "CUSTOMER" | "SUPPLIER"): Promise<ReportResult> {
   const { from, to, range } = reportPeriod(p, ctx.business.fiscalYearStartMonth);
   const cur = ctx.business.currencySymbol;
   const q = p.q?.trim();
-  const where = { businessId: ctx.business.id, ...(q ? { OR: [{ name: ci(q) }, { mobile: { contains: q } }] } : {}) };
+  const where = { businessId: ctx.business.id, ...partyListWhere(ctx, kind), ...(kind === "CUSTOMER" ? { isDepotDealer: false } : {}), ...(q ? { OR: [{ name: ci(q) }, { mobile: { contains: q } }] } : {}) };
   const parties =
     kind === "CUSTOMER"
       ? await prisma.customer.findMany({ where, orderBy: { name: "asc" }, select: { id: true, name: true, mobile: true, accountId: true } })
@@ -120,6 +160,8 @@ async function tradeRegister(ctx: AppContext, p: ReportParams, types: ["SALES", 
   const q = p.q?.trim();
   const where: Prisma.VoucherWhereInput = {
     businessId: ctx.business.id,
+    book: "GENERAL", // depot stock in / market sales are in the depot book
+    ...voucherScopeWhere(ctx),
     type: { in: types },
     date: range,
     ...(q ? { OR: [{ voucherNo: ci(q) }, { partyAccount: { name: ci(q) } }, { reference: ci(q) }] } : {}),
@@ -188,6 +230,7 @@ export const REPORTS: ReportDef[] = [
       const vouchers = await prisma.voucher.findMany({
         where: {
           businessId: ctx.business.id,
+          book: "GENERAL", // the depot keeps its own day book
           date: range,
           ...(type ? { type } : {}),
           ...(q ? { OR: [{ voucherNo: ci(q) }, { narration: ci(q) }, { reference: ci(q) }, { partyAccount: { name: ci(q) } }] } : {}),
@@ -231,6 +274,7 @@ export const REPORTS: ReportDef[] = [
     async run(ctx, p) {
       const account = p.accountId ? await prisma.account.findFirst({ where: { id: p.accountId, businessId: ctx.business.id } }) : null;
       if (!account) return { title: "লেজার রিপোর্ট", columns: [], rows: [], emptyMessage: "রিপোর্ট দেখতে একটি হিসাব (লেজার) নির্বাচন করুন" };
+      if (!(await canOpenLedger(ctx, account.id))) return { title: "লেজার রিপোর্ট", columns: [], rows: [], emptyMessage: "এই লেজারটি আপনার জন্য নির্ধারিত নয় — শুধু নির্ধারিত কাস্টমার/সরবরাহকারীর লেজার দেখা যাবে" };
       return ledgerReport(ctx, p, [account.id], `লেজার: ${account.name}`);
     },
   },
@@ -240,11 +284,7 @@ export const REPORTS: ReportDef[] = [
     description: "নগদ হিসাবের প্রাপ্তি ও প্রদান",
     filters: ["cashAccount", "range", "q"],
     permission: "accounts:view",
-    async run(ctx, p) {
-      const { ids, names } = await kindAccounts(ctx.business.id, "CASH", p.accountId);
-      if (!ids.length) return { title: "ক্যাশ বুক", columns: [], rows: [], emptyMessage: "কোনো নগদ হিসাব নেই" };
-      return ledgerReport(ctx, p, ids, `ক্যাশ বুক — ${names.join(", ")}`);
-    },
+    run: (ctx, p) => cashBookReport(ctx, p),
   },
   {
     slug: "bank-book",
@@ -308,34 +348,7 @@ export const REPORTS: ReportDef[] = [
     description: "আয়, বিক্রিত পণ্যের ব্যয়, পরিচালন ব্যয় ও নিট লাভ",
     filters: ["range"],
     permission: "reports:view",
-    async run(ctx, p) {
-      const { from, to, range } = reportPeriod(p, ctx.business.fiscalYearStartMonth);
-      const cur = ctx.business.currencySymbol;
-      const pl = await profitAndLoss(ctx.business.id, range);
-      const rows: ReportRow[] = [];
-      const section = (title: string, lines: { accountId: string; name: string; amount: number }[], subtotalLabel: string, subtotal: number) => {
-        rows.push({ kind: "group", cells: { particulars: title, amount: null } });
-        for (const l of lines) rows.push({ indent: 1, href: `/accounts/${l.accountId}`, cells: { particulars: l.name, amount: l.amount } });
-        rows.push({ kind: "subtotal", cells: { particulars: subtotalLabel, amount: subtotal } });
-      };
-      section("বিক্রয় আয়", pl.salesLines, "নিট বিক্রয়", pl.netSales);
-      section("বিক্রিত পণ্যের ব্যয়", pl.directExpenseLines, "মোট প্রত্যক্ষ ব্যয়", pl.directExpenses);
-      rows.push({ kind: "total", cells: { particulars: "মোট লাভ (গ্রস প্রফিট)", amount: pl.grossProfit } });
-      section("অন্যান্য আয়", pl.otherIncomeLines, "মোট অন্যান্য আয়", pl.otherIncome);
-      section("পরিচালন ব্যয়", pl.expenseLines, "মোট পরিচালন ব্যয়", pl.expenses);
-      rows.push({ kind: "total", cells: { particulars: pl.netProfit >= 0 ? "নিট লাভ" : "নিট ক্ষতি", amount: pl.netProfit } });
-      return {
-        title: "লাভ-ক্ষতি হিসাব",
-        subtitle: periodText(from, to),
-        columns: [{ key: "particulars", label: "বিবরণ" }, { key: "amount", label: "টাকা", format: "money" }],
-        rows,
-        summary: [
-          { label: "নিট বিক্রয়", value: formatMoney(pl.netSales, cur), tone: "blue" },
-          { label: "গ্রস প্রফিট", value: formatMoney(pl.grossProfit, cur), tone: pl.grossProfit >= 0 ? "green" : "red" },
-          { label: pl.netProfit >= 0 ? "নিট লাভ" : "নিট ক্ষতি", value: formatMoney(pl.netProfit, cur), tone: pl.netProfit >= 0 ? "green" : "red" },
-        ],
-      };
-    },
+    run: (ctx, p) => plReport(ctx, p),
   },
   {
     slug: "balance-sheet",
@@ -443,7 +456,7 @@ export const REPORTS: ReportDef[] = [
       const { from, to, range } = reportPeriod(p, ctx.business.fiscalYearStartMonth);
       const cur = ctx.business.currencySymbol;
       const accounts = await listAccounts(ctx.business.id, { nature: { in: ["INCOME", "EXPENSE"] }, group: { isDirect: false } });
-      const moves = await prisma.journalEntry.groupBy({ by: ["accountId"], where: { businessId: ctx.business.id, date: range, accountId: { in: accounts.map((a) => a.id) } }, _sum: { debit: true, credit: true } });
+      const moves = await prisma.journalEntry.groupBy({ by: ["accountId"], where: { businessId: ctx.business.id, book: "GENERAL", date: range, accountId: { in: accounts.map((a) => a.id) } }, _sum: { debit: true, credit: true } });
       const m = new Map(moves.map((x) => [x.accountId, num(x._sum.debit) - num(x._sum.credit)]));
       const rows: ReportRow[] = [];
       const totals = { INCOME: 0, EXPENSE: 0 };

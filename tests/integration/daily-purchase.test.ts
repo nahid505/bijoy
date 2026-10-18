@@ -63,7 +63,7 @@ run("ডেইলি ক্রয় রিপোর্ট (daily purchase repor
     expect(d.other.some((l) => l.product.startsWith("ধান"))).toBe(false);
     expect(d.other[0].unit).toBe("কেজি");
     expect(d.other[1].discount).toBe(20);
-    // বিবরণ = supplier (or নগদ ক্রয়), পণ্যের নাম = product, নোট = batch / narration
+    // পার্টির নাম = supplier (or নগদ ক্রয়), পণ্যের নাম = product, নোট = batch / narration
     expect(d.other.map((l) => l.party)).toEqual(["মেসার্স করিম ট্রেডার্স", "মেসার্স করিম ট্রেডার্স", "নগদ ক্রয়"]);
     expect(d.other.map((l) => l.product)).toEqual(await Promise.all([p.rice, p.husk, p.rice].map(async (id) => (await prisma.product.findUniqueOrThrow({ where: { id } })).name)));
     expect(d.other[0].note).toBe("সাপ্তাহিক মাল");
@@ -104,10 +104,10 @@ run("ডেইলি ক্রয় রিপোর্ট (daily purchase repor
   });
 
   it("export (CSV) carries both sections and the totals; the report belongs to the purchase module", async () => {
-    const report = await DAILY_PURCHASE_REPORT.run({ business: { id: ctx.businessId, currencySymbol: "৳", fiscalYearStartMonth: 7 } } as never, { date: "2026-10-10" });
+    const report = await DAILY_PURCHASE_REPORT.run({ business: { id: ctx.businessId, currencySymbol: "৳", fiscalYearStartMonth: 7 }, partyScope: { customers: null, suppliers: null }, user: { id: ctx.userId } } as never, { date: "2026-10-10" });
     const csv = toCsv(report);
     for (const s of ["অন্যান্য ক্রয়", "ধান ক্রয় রিপোর্ট", "1240.00", "1210.00", "32412.50", "44412.50", "45622.50", "মেসার্স করিম ট্রেডার্স", "1437"]) expect(csv).toContain(s);
-    // the পণ্যের নাম column follows বিবরণ / পার্টির নাম, in both sections
+    // the পণ্যের নাম column follows পার্টির নাম, in both sections
     const keys = report.columns.map((c) => c.key);
     expect(keys.slice(0, 4)).toEqual(["no", "particulars", "product", "quantity"]);
     expect(report.columns[2].label).toBe("পণ্যের নাম");
@@ -121,7 +121,7 @@ run("ডেইলি ক্রয় রিপোর্ট (daily purchase repor
     const cells: string[] = [];
     wb.worksheets[0].eachRow((row) => row.eachCell((c) => cells.push(String(c.value))));
     const header = cells.indexOf("নম্বর");
-    expect(cells.slice(header, header + 4)).toEqual(["নম্বর", "বিবরণ / পার্টির নাম", "পণ্যের নাম", "পরিমাণ"]);
+    expect(cells.slice(header, header + 4)).toEqual(["নম্বর", "পার্টির নাম", "পণ্যের নাম", "পরিমাণ"]);
     expect(cells.filter((c) => c.startsWith("ধান")).length).toBeGreaterThanOrEqual(2);
     expect(featureForPath("/reports/daily-purchase")).toBe("PURCHASE");
     expect(featureForPath("/api/reports/daily-purchase")).toBe("PURCHASE");

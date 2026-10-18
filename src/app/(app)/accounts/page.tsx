@@ -6,6 +6,8 @@ import { Badge, FilterBar, FilterField, PageHeader } from "@/components/ui";
 import { can, requirePermission } from "@/server/auth";
 import { readParams, type SearchParams } from "@/server/params";
 import { balancesBefore, listAccounts } from "@/server/services/ledger";
+import { accountScopeWhere } from "@/server/party-scope";
+import { bookAccountWhere } from "@/server/services/accounting";
 
 export const metadata: Metadata = { title: "লেজার (চার্ট অব অ্যাকাউন্টস)" };
 
@@ -16,7 +18,9 @@ export default async function AccountsPage({ searchParams }: { searchParams: Sea
   const p = await readParams(searchParams);
   const q = p.q?.trim().toLowerCase();
   const nature = p.nature && p.nature in NATURE_LABELS ? (p.nature as Nature) : undefined;
-  const accounts = (await listAccounts(ctx.business.id, nature ? { nature } : {})).filter(
+  // assigned-only roles: other customers' / suppliers' ledgers are not listed
+  // the depot's dealers and depot ledgers live in the depot book (depot menu), not in the general chart
+  const accounts = (await listAccounts(ctx.business.id, { ...(nature ? { nature } : {}), AND: [accountScopeWhere(ctx), bookAccountWhere("GENERAL")] })).filter(
     (a) => !q || `${a.name} ${a.code ?? ""} ${a.groupName}`.toLowerCase().includes(q),
   );
   const bal = await balancesBefore(ctx.business.id, undefined, accounts.map((a) => a.id));

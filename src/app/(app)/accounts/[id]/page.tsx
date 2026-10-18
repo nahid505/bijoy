@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { canOpenLedger } from "@/server/party-scope";
 import { prisma } from "@/lib/db";
 import { NATURE_LABELS, type Nature } from "@/lib/accounting";
 import { ActionButton } from "@/components/forms";
@@ -16,6 +17,7 @@ export default async function AccountLedgerPage({ params, searchParams }: { para
   const { id } = await params;
   const a = await prisma.account.findFirst({ where: { id, businessId: ctx.business.id }, include: { group: true, customer: true, supplier: true } });
   if (!a) notFound();
+  if (!(await canOpenLedger(ctx, a.id))) redirect("/forbidden"); // assigned-only roles: their parties' ledgers only
   const p = { ...(await readParams(searchParams)), accountId: a.id };
   const manage = can(ctx, "accounts:manage") && !a.customer && !a.supplier;
   const partyLink = a.customer ? `/customers/${a.customer.id}` : a.supplier ? `/suppliers/${a.supplier.id}` : null;

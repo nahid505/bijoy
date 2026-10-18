@@ -8,6 +8,8 @@ import { toDateInput } from "@/lib/format";
 import type { PartyOption, ProductOption } from "@/components/trade-parts";
 import { balancesBefore } from "./services/ledger";
 import { partyAging } from "./services/aging";
+import { bookAccountWhere } from "./services/accounting";
+import type { BookKey } from "@/lib/book";
 import { ci, rawRows, sql } from "@/lib/dialect";
 
 export const LOOKUP_LIMIT = 20;
@@ -50,15 +52,26 @@ async function mobileMatches(businessId: string, kind: PartyKind, digits: string
 export type PartyHit = PartyOption & { partyId: string; code: string | null };
 
 /** Customers / suppliers matching name, mobile, ledger code or id (or exactly the given account ids). */
-export async function searchParties(businessId: string, kind: PartyKind, q: string, opts: { accountIds?: string[]; take?: number } = {}): Promise<PartyHit[]> {
+/**
+ * opts.allowed: the party accounts the user may see (ctx.partyScope; null / undefined = all).
+ * opts.dealer: customers = depot dealers only (depot forms); otherwise general customers only. Balances are
+ * read from the matching book (dealers: DEPOT; opts.book overrides, e.g. a company in a depot form).
+ */
+export async function searchParties(businessId: string, kind: PartyKind, q: string, opts: { accountIds?: string[]; take?: number; allowed?: string[] | null; dealer?: boolean; book?: BookKey } = {}): Promise<PartyHit[]> {
+  const book: BookKey = opts.book ?? (opts.dealer ? "DEPOT" : "GENERAL");
   const query = q.trim().slice(0, 100);
   const digits = mobileDigits(query);
   const take = opts.take ?? LOOKUP_LIMIT;
   // mobiles may be stored formatted ("01711-000001", "+880 1711…"): compare digits only
   const byMobile = digits && !opts.accountIds ? await mobileMatches(businessId, kind, digits.replace(/^0/, ""), take * 3) : [];
+  const scoped = {
+    ...(opts.allowed ? { AND: [{ accountId: { in: opts.allowed } }] } : {}),
+    ...(kind === "CUSTOMER" ? { isDepotDealer: !!opts.dealer } : {}),
+  };
   const where: Prisma.CustomerWhereInput & Prisma.SupplierWhereInput = opts.accountIds
-    ? { businessId, accountId: { in: opts.accountIds } }
+    ? { businessId, accountId: { in: opts.accountIds }, ...scoped }
     : {
+        ...scoped,
         businessId,
         isActive: true,
         ...(query
@@ -83,8 +96,8 @@ export async function searchParties(businessId: string, kind: PartyKind, q: stri
   if (top.length === 0) return [];
   const ids = top.map((r) => r.accountId);
   const [bal, aging] = await Promise.all([
-    balancesBefore(businessId, undefined, ids),
-    partyAging(businessId, kind, new Date(`${toDateInput()}T00:00:00.000Z`), ids),
+    balancesBefore(businessId, undefined, ids, book),
+    partyAging(businessId, kind, new Date(`${toDateInput()}T00:00:00.000Z`), ids, book),
   ]);
   const overdue = new Map(aging.map((a) => [a.accountId, a.overdue]));
   return top.map((r) => ({
@@ -101,10 +114,11 @@ export async function searchParties(businessId: string, kind: PartyKind, q: stri
   }));
 }
 
-export function toProductOption(p: { id: string; name: string; code: string | null; barcode: string | null; unitId: string; trackBatch: boolean; salePrice: unknown; wholesalePrice: unknown; purchasePrice: unknown; avgCost: unknown; stock: unknown }): ProductOption {
+export function toProductOption(p: { id: string; name: string; code: string | null; barcode: string | null; unitId: string; trackBatch: boolean; salePrice: unknown; wholesalePrice: unknown; purchasePrice: unknown; avgCost: unknown; stock: unknown; depotCommissionRate?: unknown }): ProductOption {
   return {
     id: p.id, name: p.name, code: p.code, barcode: p.barcode, unitId: p.unitId, trackBatch: p.trackBatch,
     salePrice: num(p.salePrice as never), wholesalePrice: num(p.wholesalePrice as never), purchasePrice: num(p.purchasePrice as never), avgCost: num(p.avgCost as never), stock: num(p.stock as never),
+    ...(p.depotCommissionRate !== undefined ? { depotCommissionRate: num(p.depotCommissionRate as never) } : {}),
   };
 }
 
@@ -190,8 +204,12 @@ function aliasTerms(q: string): string[] {
 export async function searchAccounts(
   businessId: string,
   q: string,
-  opts: { scope?: AccountScope; ids?: string[]; take?: number; offset?: number } = {},
+  /** where: extra account filter (accountScopeWhere — parties outside a restricted user's list) */
+  opts: { scope?: AccountScope; ids?: string[]; take?: number; offset?: number; where?: Prisma.AccountWhereInput; book?: BookKey } = {},
 ): Promise<{ items: AccountHit[]; hasMore: boolean }> {
+  const book: BookKey = opts.book ?? "GENERAL";
+  // each book offers its own ledgers (no depot dealer in a general voucher, no general customer in a depot one)
+  opts = { ...opts, where: { AND: [bookAccountWhere(book), ...(opts.where ? [opts.where] : [])] } };
   const query = q.trim().slice(0, 100);
   const take = Math.min(opts.take ?? 30, 50);
   const offset = Math.max(0, opts.offset ?? 0);
@@ -199,9 +217,9 @@ export async function searchAccounts(
   let rows: Prisma.AccountGetPayload<{ include: typeof include }>[];
   let hasMore = false;
   if (opts.ids) {
-    rows = await prisma.account.findMany({ where: { businessId, id: { in: opts.ids } }, include });
+    rows = await prisma.account.findMany({ where: { businessId, id: { in: opts.ids }, ...(opts.where ? { AND: [opts.where] } : {}) }, include });
   } else {
-    const base: Prisma.AccountWhereInput = { businessId, isActive: true, ...SCOPE_WHERE[opts.scope ?? "all"] };
+    const base: Prisma.AccountWhereInput = { businessId, isActive: true, ...SCOPE_WHERE[opts.scope ?? "all"], ...(opts.where ? { AND: [opts.where] } : {}) };
     if (!query) {
       rows = await prisma.account.findMany({ where: base, include, orderBy: [{ group: { sortOrder: "asc" } }, { name: "asc" }], skip: offset, take: take + 1 });
       hasMore = rows.length > take;
@@ -239,7 +257,7 @@ export async function searchAccounts(
     }
   }
   if (rows.length === 0) return { items: [], hasMore: false };
-  const bal = await balancesBefore(businessId, undefined, rows.map((r) => r.id));
+  const bal = await balancesBefore(businessId, undefined, rows.map((r) => r.id), book);
   return {
     hasMore,
     items: rows.map((r) => ({

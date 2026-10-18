@@ -1,4 +1,6 @@
 import "server-only";
+import type { Prisma } from "@prisma/client";
+import { voucherScopeWhere } from "../party-scope";
 // ডেইলি ক্রয় রিপোর্ট for one date, in two sections:
 //   ১. অন্যান্য ক্রয় — every line of the day's purchase vouchers that are not paddy weighbridge slips
 //      (মোট টাকা = পরিমাণ × দর − line discount, as posted; voucher-level discount / VAT shown below the total)
@@ -12,7 +14,7 @@ import type { ReportDef, ReportRow } from "./types";
 export interface OtherPurchaseLine {
   voucherId: string;
   voucherNo: string;
-  /** বিবরণ: the supplier, or "নগদ ক্রয়" */
+  /** পার্টির নাম: the supplier, or "নগদ ক্রয়" */
   party: string;
   product: string;
   unit: string;
@@ -55,7 +57,8 @@ export interface DailyPurchase {
 
 const CASH = "নগদ ক্রয়";
 
-export async function dailyPurchase(businessId: string, params: { date?: string }): Promise<DailyPurchase> {
+/** params.scope: voucherScopeWhere(ctx) (assigned-only roles). */
+export async function dailyPurchase(businessId: string, params: { date?: string; scope?: Prisma.VoucherWhereInput }): Promise<DailyPurchase> {
   const date = dayOrToday(params.date);
   const day = new Date(`${date}T00:00:00.000Z`);
   const next = new Date(day);
@@ -64,7 +67,7 @@ export async function dailyPurchase(businessId: string, params: { date?: string 
 
   const [vouchers, slips] = await Promise.all([
     prisma.voucher.findMany({
-      where: { businessId, type: "PURCHASE", date: range, paddyPurchase: { is: null } },
+      where: { businessId, book: "GENERAL", type: "PURCHASE", date: range, paddyPurchase: { is: null }, ...params.scope },
       orderBy: [{ createdAt: "asc" }],
       select: {
         id: true, voucherNo: true, narration: true, discount: true, vatAmount: true,
@@ -73,7 +76,7 @@ export async function dailyPurchase(businessId: string, params: { date?: string 
       },
     }),
     prisma.paddyPurchase.findMany({
-      where: { businessId, voucher: { date: range } },
+      where: { businessId, voucher: { book: "GENERAL", date: range, ...params.scope } },
       orderBy: [{ voucher: { createdAt: "asc" } }],
       include: { voucher: { select: { id: true, voucherNo: true, partyAccount: { select: { name: true } }, items: { orderBy: { lineNo: "asc" }, take: 1, select: { product: { select: { name: true } } } } } } },
     }),
@@ -132,7 +135,7 @@ export const DAILY_PURCHASE_REPORT: ReportDef = {
   filters: [],
   permission: "purchases:view",
   async run(ctx, p) {
-    const d = await dailyPurchase(ctx.business.id, { date: p.date });
+    const d = await dailyPurchase(ctx.business.id, { date: p.date, scope: voucherScopeWhere(ctx) });
     const cur = ctx.business.currencySymbol;
     const blank = { product: "", bags: null, gross: null, dhalta: null, net: null, mon: null };
     const rows: ReportRow[] = [
@@ -153,7 +156,7 @@ export const DAILY_PURCHASE_REPORT: ReportDef = {
       subtitle: formatDate(d.date),
       columns: [
         { key: "no", label: "নম্বর" },
-        { key: "particulars", label: "বিবরণ / পার্টির নাম" },
+        { key: "particulars", label: "পার্টির নাম" },
         { key: "product", label: "পণ্যের নাম" },
         { key: "quantity", label: "পরিমাণ" },
         { key: "bags", label: "বস্তা", format: "qty" },

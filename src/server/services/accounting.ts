@@ -6,6 +6,7 @@ import { openingEntries, prepareEntries, UnbalancedVoucherError, VOUCHER_TYPES, 
 import { isMySql } from "@/lib/dialect";
 import { UserError } from "@/lib/errors";
 import { formatDate } from "@/lib/format";
+import { DEPOT_PREFIX, type BookKey } from "@/lib/book";
 
 export type Tx = Prisma.TransactionClient;
 
@@ -26,11 +27,14 @@ export async function systemAccounts(tx: Tx, businessId: string): Promise<System
 }
 
 /** Atomic, gap-free document number per business: "RV-000001". */
-export async function nextVoucherNo(tx: Tx, businessId: string, type: VoucherType, invoicePrefix?: string): Promise<string> {
-  const prefix = type === "SALES" && invoicePrefix ? invoicePrefix : VOUCHER_TYPES[type].prefix;
+export async function nextVoucherNo(tx: Tx, businessId: string, type: VoucherType, invoicePrefix?: string, book: BookKey = "GENERAL"): Promise<string> {
+  // depot book: its own series (SI-, MS-, MC-, DP- …); DEPOT_DELIVERY keeps DO-
+  const depot = book === "DEPOT" && DEPOT_PREFIX[type];
+  const prefix = depot ? depot : type === "SALES" && invoicePrefix ? invoicePrefix : VOUCHER_TYPES[type].prefix;
+  const key = depot ? `DEPOT:${type}` : type;
   const counter = await tx.counter.upsert({
-    where: { businessId_key: { businessId, key: type } },
-    create: { businessId, key: type, value: 1 },
+    where: { businessId_key: { businessId, key } },
+    create: { businessId, key, value: 1 },
     update: { value: { increment: 1 } },
   });
   return `${prefix}-${String(counter.value).padStart(6, "0")}`;
@@ -80,9 +84,11 @@ export async function assertVouchersBalanced(tx: Tx, voucherIds: string[]) {
 }
 
 /** Writes balanced journal entries for a voucher (replacing any existing ones). */
-export async function writeEntries(tx: Tx, voucher: { id: string; businessId: string; date: Date }, lines: EntryLine[], opts: { allowEmpty?: boolean } = {}) {
+export async function writeEntries(tx: Tx, voucher: { id: string; businessId: string; date: Date; book?: BookKey }, lines: EntryLine[], opts: { allowEmpty?: boolean } = {}) {
   const prepared = prepareEntries(lines, opts); // throws if unbalanced
   await tx.journalEntry.deleteMany({ where: { voucherId: voucher.id } });
+  // entries carry their voucher's book (GENERAL / DEPOT) — general reports filter on it
+  const book = voucher.book ?? (await tx.voucher.findUniqueOrThrow({ where: { id: voucher.id }, select: { book: true } })).book;
   if (prepared.length) {
     await tx.journalEntry.createMany({
       data: prepared.map((l, i) => ({
@@ -94,6 +100,7 @@ export async function writeEntries(tx: Tx, voucher: { id: string; businessId: st
         credit: l.credit,
         narration: l.narration ?? null,
         lineNo: i,
+        book,
       })),
     });
   }
@@ -119,13 +126,15 @@ export async function setAccountOpening(tx: Tx, ctx: Ctx, accountId: string, sig
     return;
   }
   const amount = Math.abs(signedAmount);
+  const book = await accountBook(tx, accountId); // a depot dealer's opening due is in the depot book
   const voucher = existing
-    ? await tx.voucher.update({ where: { id: existing.id }, data: { amount, date: business.booksStartDate, updatedById: ctx.userId } })
+    ? await tx.voucher.update({ where: { id: existing.id }, data: { amount, book, date: business.booksStartDate, updatedById: ctx.userId } })
     : await tx.voucher.create({
         data: {
           businessId: ctx.businessId,
           type: "OPENING",
-          voucherNo: await nextVoucherNo(tx, ctx.businessId, "OPENING"),
+          book,
+          voucherNo: await nextVoucherNo(tx, ctx.businessId, "OPENING", undefined, book),
           date: business.booksStartDate,
           narration: "প্রারম্ভিক ব্যালেন্স",
           amount,
@@ -136,6 +145,12 @@ export async function setAccountOpening(tx: Tx, ctx: Ctx, accountId: string, sig
   await writeEntries(tx, voucher, lines);
 }
 
+/** The book a ledger belongs to by itself: depot dealers and depot system accounts → DEPOT. */
+export async function accountBook(tx: Tx, accountId: string): Promise<BookKey> {
+  const a = await tx.account.findUnique({ where: { id: accountId }, select: { systemKey: true, customer: { select: { isDepotDealer: true } } } });
+  return a?.customer?.isDepotDealer || a?.systemKey?.startsWith("DEPOT_") ? "DEPOT" : "GENERAL";
+}
+
 /** Signed opening balance of a ledger (+ debit / − credit). */
 export async function getAccountOpening(tx: Tx, businessId: string, accountId: string): Promise<number> {
   const v = await tx.voucher.findUnique({
@@ -144,4 +159,37 @@ export async function getAccountOpening(tx: Tx, businessId: string, accountId: s
   });
   if (!v) return 0;
   return v.entries.reduce((s, e) => s + Number(e.debit) - Number(e.credit), 0);
+}
+
+/**
+ * Keeps the books apart. A GENERAL voucher may not touch a depot dealer or a depot system account
+ * (commission receivable / income …); a DEPOT voucher may not touch a general (non-dealer) customer.
+ * Suppliers, cash / bank and other ledgers are shared — their balance is kept per book.
+ */
+export async function assertBookAccounts(tx: Tx, businessId: string, book: BookKey, accountIds: (string | null | undefined)[]) {
+  const ids = [...new Set(accountIds.filter((x): x is string => !!x))];
+  if (ids.length === 0) return;
+  const bad = await tx.account.findFirst({
+    where: {
+      businessId,
+      id: { in: ids },
+      OR: book === "GENERAL" ? [{ customer: { is: { isDepotDealer: true } } }, { systemKey: { startsWith: "DEPOT_" } }] : [{ customer: { is: { isDepotDealer: false } } }],
+    },
+    select: { name: true },
+  });
+  if (bad) {
+    throw new UserError(
+      book === "GENERAL"
+        ? `"${bad.name}" ডিপোর হিসাব — সাধারণ লেনদেনে ব্যবহার করা যাবে না (ডিপো ব্যবস্থাপনা মেনু থেকে এন্ট্রি দিন)`
+        : `"${bad.name}" সাধারণ কাস্টমার — ডিপোর লেনদেনে শুধু ডিপো ডিলার নির্বাচন করা যাবে`,
+    );
+  }
+}
+
+/** Ledgers usable in a book: GENERAL hides depot dealers and depot system accounts; DEPOT hides general customers. */
+export function bookAccountWhere(book: BookKey): Prisma.AccountWhereInput {
+  return book === "GENERAL"
+    ? // (systemKey is nullable: NOT startsWith on NULL is NULL in SQL, so null keys are allowed explicitly)
+      { AND: [{ NOT: { customer: { is: { isDepotDealer: true } } } }, { OR: [{ systemKey: null }, { NOT: { systemKey: { startsWith: "DEPOT_" } } }] }] }
+    : { NOT: { customer: { is: { isDepotDealer: false } } } };
 }

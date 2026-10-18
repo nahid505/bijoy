@@ -1,4 +1,6 @@
 import "server-only";
+import type { Prisma } from "@prisma/client";
+import { voucherScopeWhere } from "../party-scope";
 // ডেইলি বিক্রয় রিপোর্ট for one date: every line of the day's SALES vouchers (sales form and POS).
 //
 //   টাকা       = the line amount as posted (পরিমাণ × দর − line discount)
@@ -40,14 +42,15 @@ export interface DailySales {
 
 const CASH = "নগদ বিক্রয়";
 
-export async function dailySales(businessId: string, params: { date?: string }): Promise<DailySales> {
+/** params.scope: voucherScopeWhere(ctx) (assigned-only roles). */
+export async function dailySales(businessId: string, params: { date?: string; scope?: Prisma.VoucherWhereInput }): Promise<DailySales> {
   const date = dayOrToday(params.date);
   const day = new Date(`${date}T00:00:00.000Z`);
   const next = new Date(day);
   next.setUTCDate(next.getUTCDate() + 1);
 
   const vouchers = await prisma.voucher.findMany({
-    where: { businessId, type: "SALES", date: { gte: day, lt: next } },
+    where: { businessId, book: "GENERAL", type: "SALES", date: { gte: day, lt: next }, ...params.scope },
     orderBy: [{ createdAt: "asc" }],
     select: {
       id: true, voucherNo: true, reference: true, narration: true, discount: true, vatAmount: true, amount: true, paidAmount: true,
@@ -104,7 +107,7 @@ export const DAILY_SALES_REPORT: ReportDef = {
   filters: [],
   permission: "sales:view",
   async run(ctx, p) {
-    const d = await dailySales(ctx.business.id, { date: p.date });
+    const d = await dailySales(ctx.business.id, { date: p.date, scope: voucherScopeWhere(ctx) });
     const cur = ctx.business.currencySymbol;
     const rows: ReportRow[] = [
       ...d.lines.map((l, i): ReportRow => ({

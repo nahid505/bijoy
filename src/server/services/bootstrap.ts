@@ -3,6 +3,7 @@
 import type { Prisma } from "@prisma/client";
 import defaults from "../../lib/business-defaults.json";
 import { startSubscription } from "./subscriptions";
+import { DEPOT_ROLE, isDepot } from "../../lib/depot";
 
 type Tx = Prisma.TransactionClient;
 
@@ -38,7 +39,16 @@ export async function ensureDefaultRoles(tx: Tx, businessId: string) {
     await tx.role.create({ data: { businessId, name: r.name, description: r.description, permissions: r.permissions, isSystem: "system" in r ? Boolean(r.system) : false } });
     added++;
   }
+  const business = await tx.business.findUnique({ where: { id: businessId }, select: { businessType: true } });
+  if (isDepot(business?.businessType) && (await ensureDepotRole(tx, businessId))) added++;
   return added;
+}
+
+/** Depot business: the depot-only role "ডিপো হিসাবরক্ষক" (depot permissions only), unless a role of that name exists. */
+export async function ensureDepotRole(tx: Pick<Tx, "role">, businessId: string) {
+  if (await tx.role.findFirst({ where: { businessId, name: DEPOT_ROLE.name }, select: { id: true } })) return false;
+  await tx.role.create({ data: { businessId, name: DEPOT_ROLE.name, description: DEPOT_ROLE.description, permissions: DEPOT_ROLE.permissions } });
+  return true;
 }
 
 export async function createBusiness(
@@ -115,6 +125,7 @@ export async function createBusiness(
     });
     if (role.isSystem) ownerRoleId = role.id;
   }
+  if (isDepot(input.businessType)) await ensureDepotRole(tx, businessId);
   await tx.membership.create({ data: { businessId, userId: input.ownerUserId, roleId: ownerRoleId } });
 
   // SaaS: trial (or free plan) subscription

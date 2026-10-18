@@ -1,6 +1,9 @@
 // LedgerService — every balance in the application is computed here from journal entries.
+// Every function reads ONE book (default GENERAL): the depot keeps its own book (src/lib/book.ts) and
+// depot code passes "DEPOT"; "ALL" is only for physical / integrity checks.
 import type { AccountKind, AccountNature, Prisma, VoucherType } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { bookWhere, type BookFilter } from "@/lib/book";
 import { round2 } from "@/lib/calc";
 
 export interface DateRange {
@@ -14,11 +17,12 @@ export interface Movement {
 }
 
 /** Σ debit / Σ credit per account within an optional date range. */
-export async function accountMovements(businessId: string, range: DateRange = {}, accountIds?: string[]): Promise<Map<string, Movement>> {
+export async function accountMovements(businessId: string, range: DateRange = {}, accountIds?: string[], book: BookFilter = "GENERAL"): Promise<Map<string, Movement>> {
   const rows = await prisma.journalEntry.groupBy({
     by: ["accountId"],
     where: {
       businessId,
+      ...bookWhere(book),
       ...(range.gte || range.lt ? { date: range } : {}),
       ...(accountIds ? { accountId: { in: accountIds } } : {}),
     },
@@ -28,8 +32,8 @@ export async function accountMovements(businessId: string, range: DateRange = {}
 }
 
 /** Net balance (debit − credit) per account up to (excluding) `before`. */
-export async function balancesBefore(businessId: string, before?: Date, accountIds?: string[]) {
-  const m = await accountMovements(businessId, before ? { lt: before } : {}, accountIds);
+export async function balancesBefore(businessId: string, before?: Date, accountIds?: string[], book: BookFilter = "GENERAL") {
+  const m = await accountMovements(businessId, before ? { lt: before } : {}, accountIds, book);
   return new Map([...m].map(([id, v]) => [id, round2(v.debit - v.credit)]));
 }
 
@@ -71,9 +75,9 @@ export async function listAccounts(businessId: string, where: Prisma.AccountWher
 }
 
 /** Current balance (debit − credit) of accounts filtered by kind, e.g. all CASH ledgers. */
-export async function balancesByKind(businessId: string, kinds: AccountKind[], before?: Date) {
+export async function balancesByKind(businessId: string, kinds: AccountKind[], before?: Date, book: BookFilter = "GENERAL") {
   const accounts = await listAccounts(businessId, { kind: { in: kinds } });
-  const bal = await balancesBefore(businessId, before, accounts.map((a) => a.id));
+  const bal = await balancesBefore(businessId, before, accounts.map((a) => a.id), book);
   return accounts.map((a) => ({ ...a, balance: bal.get(a.id) ?? 0 }));
 }
 
@@ -99,12 +103,13 @@ export interface StatementLine {
  * Statement for one or more ledgers (multiple = combined cash book / bank book).
  * Opening = balance before `range.gte`; lines are in date order with a running balance.
  */
-export async function statement(businessId: string, accountIds: string[], range: DateRange, opts: { take?: number } = {}) {
+export async function statement(businessId: string, accountIds: string[], range: DateRange, opts: { take?: number; book?: BookFilter } = {}) {
+  const book = opts.book ?? "GENERAL";
   const opening = range.gte
-    ? round2([...(await balancesBefore(businessId, range.gte, accountIds)).values()].reduce((s, v) => s + v, 0))
+    ? round2([...(await balancesBefore(businessId, range.gte, accountIds, book)).values()].reduce((s, v) => s + v, 0))
     : 0;
   const entries = await prisma.journalEntry.findMany({
-    where: { businessId, accountId: { in: accountIds }, ...(range.gte || range.lt ? { date: range } : {}) },
+    where: { businessId, ...bookWhere(book), accountId: { in: accountIds }, ...(range.gte || range.lt ? { date: range } : {}) },
     orderBy: [{ date: "asc" }, { voucher: { createdAt: "asc" } }, { lineNo: "asc" }],
     take: opts.take ?? 5000,
     include: { voucher: { select: { id: true, voucherNo: true, type: true, narration: true } }, account: { select: { name: true } } },
@@ -146,15 +151,15 @@ export async function statement(businessId: string, accountIds: string[], range:
 }
 
 /** Party (customer / supplier) summary: opening, debit, credit, closing in a period. */
-export async function partySummaries(businessId: string, kind: "CUSTOMER" | "SUPPLIER", range: DateRange, accountIds?: string[]) {
+export async function partySummaries(businessId: string, kind: "CUSTOMER" | "SUPPLIER", range: DateRange, accountIds?: string[], book: BookFilter = "GENERAL") {
   const accounts = await prisma.account.findMany({
     where: { businessId, kind, ...(accountIds ? { id: { in: accountIds } } : {}) },
     select: { id: true },
   });
   const ids = accounts.map((a) => a.id);
   const [openings, period] = await Promise.all([
-    range.gte ? balancesBefore(businessId, range.gte, ids) : Promise.resolve(new Map<string, number>()),
-    accountMovements(businessId, range, ids),
+    range.gte ? balancesBefore(businessId, range.gte, ids, book) : Promise.resolve(new Map<string, number>()),
+    accountMovements(businessId, range, ids, book),
   ]);
   return new Map(
     ids.map((id) => {

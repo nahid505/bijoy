@@ -11,5 +11,6 @@ export const BUSINESS_TYPE_LABELS: Record<(typeof BUSINESS_TYPES)[number], strin
   MANUFACTURING: "উৎপাদন / কারখানা",
   SERVICE: "সার্ভিস / মেরামত",
   DISTRIBUTION: "ডিস্ট্রিবিউশন / ডিলার",
+  DEPOT: "ডিপো ব্যবসা",
   OTHER: "অন্যান্য",
 };

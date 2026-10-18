@@ -11,6 +11,7 @@ import { balanceSheet, trialBalance } from "../services/report";
 import type { ReportDef, ReportParams, ReportResult, ReportRow } from "./types";
 import type { AppContext } from "../auth";
 import { ci, rawRows, sql } from "@/lib/dialect";
+import { allowedParties, canSeeParty, voucherScopeWhere } from "../party-scope";
 
 const periodText = (from: string, to: string) => `${formatDate(from)} — ${formatDate(to)}`;
 const asOfOf = (p: ReportParams) => (p.asOf && /^\d{4}-\d{2}-\d{2}$/.test(p.asOf) ? p.asOf : toDateInput());
@@ -21,7 +22,7 @@ async function duesReport(ctx: AppContext, p: ReportParams, kind: "CUSTOMER" | "
   const asOf = asOfOf(p);
   const cur = ctx.business.currencySymbol;
   const q = p.q?.trim().toLowerCase();
-  let rows = (await partyAging(ctx.business.id, kind, new Date(`${asOf}T00:00:00.000Z`))).filter((r) => r.balance !== 0);
+  let rows = (await partyAging(ctx.business.id, kind, new Date(`${asOf}T00:00:00.000Z`), allowedParties(ctx, kind) ?? undefined)).filter((r) => r.balance !== 0);
   if (q) rows = rows.filter((r) => `${r.name} ${r.mobile ?? ""}`.toLowerCase().includes(q));
   if (p.type === "overdue") rows = rows.filter((r) => r.overdue > 0);
   rows.sort((a, b) => b.overdue - a.overdue || b.balance - a.balance);
@@ -71,7 +72,7 @@ async function duesReport(ctx: AppContext, p: ReportParams, kind: "CUSTOMER" | "
 async function partyStatementReport(ctx: AppContext, p: ReportParams, kind: "CUSTOMER" | "SUPPLIER"): Promise<ReportResult> {
   const title = kind === "CUSTOMER" ? "কাস্টমার স্টেটমেন্ট" : "সরবরাহকারী স্টেটমেন্ট";
   const account = p.accountId ? await prisma.account.findFirst({ where: { id: p.accountId, businessId: ctx.business.id, kind } }) : null;
-  if (!account) return { title, columns: [], rows: [], emptyMessage: `${kind === "CUSTOMER" ? "কাস্টমার" : "সরবরাহকারী"} নির্বাচন করুন` };
+  if (!account || !canSeeParty(ctx, kind, account.id)) return { title, columns: [], rows: [], emptyMessage: `${kind === "CUSTOMER" ? "কাস্টমার" : "সরবরাহকারী"} নির্বাচন করুন` };
   const { from, to, range } = reportPeriod(p, ctx.business.fiscalYearStartMonth);
   const cur = ctx.business.currencySymbol;
   const st = await statement(ctx.business.id, [account.id], range);
@@ -111,11 +112,11 @@ export const EXTRA_REPORTS: ReportDef[] = [
       const businessId = ctx.business.id;
       const [salePays, receipts] = await Promise.all([
         prisma.voucherPayment.findMany({
-          where: { voucher: { businessId, type: "SALES", date: range } },
+          where: { voucher: { businessId, book: "GENERAL", type: "SALES", date: range, ...voucherScopeWhere(ctx) } },
           include: { account: { select: { name: true } }, voucher: { select: { id: true, voucherNo: true, date: true, partyAccount: { select: { name: true } } } } },
         }),
         prisma.journalEntry.findMany({
-          where: { businessId, date: range, credit: { gt: 0 }, account: { kind: "CUSTOMER" }, voucher: { type: "RECEIPT" } },
+          where: { businessId, book: "GENERAL", date: range, credit: { gt: 0 }, account: { kind: "CUSTOMER" }, voucher: { type: "RECEIPT", ...voucherScopeWhere(ctx) } },
           include: { account: { select: { name: true } }, voucher: { select: { id: true, voucherNo: true, reference: true, cashAccount: { select: { name: true } } } } },
         }),
       ]);
@@ -156,7 +157,7 @@ export const EXTRA_REPORTS: ReportDef[] = [
       const cur = ctx.business.currencySymbol;
       const accounts = await listAccounts(ctx.business.id, { nature: "EXPENSE", group: { isDirect: false } });
       const entries = await prisma.journalEntry.findMany({
-        where: { businessId: ctx.business.id, date: range, accountId: { in: accounts.map((a) => a.id) } },
+        where: { businessId: ctx.business.id, book: "GENERAL", date: range, accountId: { in: accounts.map((a) => a.id) } },
         orderBy: [{ date: "asc" }],
         include: { voucher: { select: { id: true, voucherNo: true, narration: true, type: true } } },
       });
@@ -196,7 +197,7 @@ export const EXTRA_REPORTS: ReportDef[] = [
       const [trade, ledger, cashOpen] = await Promise.all([
         rawRows<{ d: Date; type: string; amount: string }>(prisma, sql`
           SELECT "date" AS d, "type"::text AS type, SUM("amount")::text AS amount FROM "Voucher"
-          WHERE "businessId" = ${b} AND "date" >= ${range.gte} AND "date" < ${range.lt} AND "type" IN ('SALES','SALES_RETURN','PURCHASE','PURCHASE_RETURN')
+          WHERE "businessId" = ${b} AND "book" = 'GENERAL' AND "date" >= ${range.gte} AND "date" < ${range.lt} AND "type" IN ('SALES','SALES_RETURN','PURCHASE','PURCHASE_RETURN')
           GROUP BY 1, 2`),
         rawRows<{ d: Date; bucket: string; amount: string }>(prisma, sql`
           SELECT je."date" AS d,
@@ -208,14 +209,14 @@ export const EXTRA_REPORTS: ReportDef[] = [
             END AS bucket,
             SUM(CASE WHEN a."kind" = 'CUSTOMER' THEN je."credit" WHEN a."kind" = 'SUPPLIER' THEN je."debit" ELSE je."debit" - je."credit" END)::text AS amount
           FROM "JournalEntry" je JOIN "Account" a ON a."id" = je."accountId" JOIN "AccountGroup" g ON g."id" = a."groupId" JOIN "Voucher" v ON v."id" = je."voucherId"
-          WHERE je."businessId" = ${b} AND je."date" >= ${range.gte} AND je."date" < ${range.lt}
+          WHERE je."businessId" = ${b} AND je."book" = 'GENERAL' AND je."date" >= ${range.gte} AND je."date" < ${range.lt}
           GROUP BY 1, 2`),
-        prisma.journalEntry.aggregate({ where: { businessId: b, date: { lt: range.gte }, account: { kind: { in: ["CASH", "BANK"] } } }, _sum: { debit: true, credit: true } }),
+        prisma.journalEntry.aggregate({ where: { businessId: b, book: "GENERAL", date: { lt: range.gte }, account: { kind: { in: ["CASH", "BANK"] } } }, _sum: { debit: true, credit: true } }),
       ]);
       // walk-in sales are cash collections too
       const walkIn = await rawRows<{ d: Date; amount: string }>(prisma, sql`
         SELECT "date" AS d, SUM("amount")::text AS amount FROM "Voucher"
-        WHERE "businessId" = ${b} AND "type" = 'SALES' AND "partyAccountId" IS NULL AND "date" >= ${range.gte} AND "date" < ${range.lt} GROUP BY 1`);
+        WHERE "businessId" = ${b} AND "book" = 'GENERAL' AND "type" = 'SALES' AND "partyAccountId" IS NULL AND "date" >= ${range.gte} AND "date" < ${range.lt} GROUP BY 1`);
       let cash = round2(num(cashOpen._sum.debit) - num(cashOpen._sum.credit));
       const rows: ReportRow[] = [];
       const t = { sales: 0, purchase: 0, collection: 0, paid: 0, expense: 0, net: 0 };
@@ -265,7 +266,7 @@ export const EXTRA_REPORTS: ReportDef[] = [
       const b = ctx.business.id;
       const cashAccounts = await prisma.account.findMany({ where: { businessId: b, kind: { in: ["CASH", "BANK"] } }, select: { id: true } });
       const cashIds = new Set(cashAccounts.map((a) => a.id));
-      const cashEntries = await prisma.journalEntry.findMany({ where: { businessId: b, date: range, accountId: { in: [...cashIds] } }, select: { voucherId: true, debit: true, credit: true } });
+      const cashEntries = await prisma.journalEntry.findMany({ where: { businessId: b, book: "GENERAL", date: range, accountId: { in: [...cashIds] } }, select: { voucherId: true, debit: true, credit: true } });
       const voucherIds = [...new Set(cashEntries.map((e) => e.voucherId))];
       const counter = voucherIds.length
         ? await prisma.journalEntry.findMany({ where: { voucherId: { in: voucherIds }, accountId: { notIn: [...cashIds] } }, select: { voucherId: true, debit: true, credit: true, account: { select: { kind: true, name: true, group: { select: { id: true, name: true } } } } } })
@@ -357,7 +358,7 @@ export const EXTRA_REPORTS: ReportDef[] = [
       }
       rows.push({ kind: "total", cells: { product: "সর্বমোট", qty: null, rate: null, cost: round2(tCost), price: null, retail: round2(tRetail), margin: round2(tRetail - tCost) } });
       const inv = await prisma.account.findFirst({ where: { businessId: ctx.business.id, systemKey: "INVENTORY" }, select: { id: true } });
-      const ledger = inv ? (await balancesBefore(ctx.business.id, undefined, [inv.id])).get(inv.id) ?? 0 : 0;
+      const ledger = inv ? (await balancesBefore(ctx.business.id, undefined, [inv.id], "ALL")).get(inv.id) ?? 0 : 0; // stock is physical: both books
       return {
         title: "স্টক মূল্যায়ন",
         subtitle: `${formatDate(new Date())} পর্যন্ত — মুভিং গড় ক্রয়মূল্যে`,
@@ -385,8 +386,8 @@ export const EXTRA_REPORTS: ReportDef[] = [
       const cur = ctx.business.currencySymbol;
       const [unbalanced, tb, bs, inv, moveValue, stockMismatch, negative, payMismatch, custAging, custLedger] = await Promise.all([
         rawRows<{ n: bigint }>(prisma, sql`SELECT COUNT(*) AS n FROM (SELECT "voucherId" FROM "JournalEntry" WHERE "businessId" = ${b} GROUP BY 1 HAVING SUM("debit") <> SUM("credit")) x`),
-        trialBalance(b, {}),
-        balanceSheet(b, new Date("2999-01-01")),
+        trialBalance(b, {}, "ALL"), // each book balances on its own, so both together must too
+        balanceSheet(b, new Date("2999-01-01"), "ALL"),
         prisma.account.findFirst({ where: { businessId: b, systemKey: "INVENTORY" }, select: { id: true } }),
         rawRows<{ v: string | null }>(prisma, sql`SELECT SUM(("quantityIn" - "quantityOut") * "unitCost")::text AS v FROM "StockMovement" WHERE "businessId" = ${b}`),
         rawRows<{ n: bigint }>(prisma, sql`
@@ -398,10 +399,10 @@ export const EXTRA_REPORTS: ReportDef[] = [
           SELECT COUNT(*) AS n FROM "Voucher" v
           LEFT JOIN (SELECT "voucherId", SUM("amount") AS s FROM "VoucherPayment" GROUP BY 1) p ON p."voucherId" = v."id"
           WHERE v."businessId" = ${b} AND v."type" IN ('SALES','PURCHASE','SALES_RETURN','PURCHASE_RETURN') AND ABS(v."paidAmount" - COALESCE(p.s, 0)) > 0.005`),
-        partyAging(b, "CUSTOMER", new Date("2999-01-01")),
+        partyAging(b, "CUSTOMER", new Date("2999-01-01"), undefined, "ALL"),
         prisma.journalEntry.aggregate({ where: { businessId: b, account: { kind: "CUSTOMER" } }, _sum: { debit: true, credit: true } }),
       ]);
-      const invLedger = inv ? (await balancesBefore(b, undefined, [inv.id])).get(inv.id) ?? 0 : 0;
+      const invLedger = inv ? (await balancesBefore(b, undefined, [inv.id], "ALL")).get(inv.id) ?? 0 : 0;
       const agingTotal = round2(custAging.reduce((s, r) => s + r.balance, 0));
       const ledgerTotal = round2(num(custLedger._sum.debit) - num(custLedger._sum.credit));
       const checks: { name: string; detail: string; ok: boolean }[] = [

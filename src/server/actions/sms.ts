@@ -145,11 +145,11 @@ export async function sendManualSmsAction(_prev: ActionState, fd: FormData): Pro
     const target = parseTarget(fd);
     const ctx = await assertPermission(isBulk(target) ? "sms:bulk" : "sms:send");
     const today = businessToday();
-    const recipients = await resolveRecipients(prisma, ctx.business.id, target, today);
+    const recipients = await resolveRecipients(prisma, ctx.business.id, target, today, ctx.partyScope.customers);
     if (String(recipients.length) !== String(fd.get("confirmCount") ?? "")) {
       throw new UserError("প্রাপকের সংখ্যা পরিবর্তিত হয়েছে — পৃষ্ঠা নতুন করে খুলে আবার নিশ্চিত করুন");
     }
-    return sendManualSms(prisma, { businessId: ctx.business.id, userId: ctx.user.id, businessName: ctx.business.name }, { target, message: String(fd.get("message") ?? "") }, today);
+    return sendManualSms(prisma, { businessId: ctx.business.id, userId: ctx.user.id, businessName: ctx.business.name, allowedCustomers: ctx.partyScope.customers }, { target, message: String(fd.get("message") ?? "") }, today);
   });
   revalidatePath("/sms", "layout");
   if (!result.ok) return toResult(result);

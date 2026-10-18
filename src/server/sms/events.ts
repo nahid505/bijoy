@@ -27,8 +27,9 @@ async function eventEnabled(db: PrismaClient, businessId: string, event: string)
   return !!s?.enabled && strList(s.events).includes(event);
 }
 
-async function ledgerBalance(db: PrismaClient, businessId: string, accountId: string) {
-  const a = await db.journalEntry.aggregate({ where: { businessId, accountId }, _sum: { debit: true, credit: true } });
+/** the party's balance in the voucher's own book (a depot dealer's due is in the depot book) */
+async function ledgerBalance(db: PrismaClient, businessId: string, accountId: string, book: "GENERAL" | "DEPOT") {
+  const a = await db.journalEntry.aggregate({ where: { businessId, accountId, book }, _sum: { debit: true, credit: true } });
   return round2(Number(a._sum.debit ?? 0) - Number(a._sum.credit ?? 0));
 }
 
@@ -58,7 +59,7 @@ export async function smsForVoucher(db: PrismaClient, businessId: string, vouche
     if (!(await eventEnabled(db, businessId, event))) return null;
     const party = customer ?? supplier;
     if (!party?.mobile) return null;
-    const bal = await ledgerBalance(db, businessId, v.partyAccount.id);
+    const bal = await ledgerBalance(db, businessId, v.partyAccount.id, v.book);
     const due = customer ? bal : -bal; // customer: receivable; supplier: payable
     const vars: SmsVars = {
       customer_name: customer?.name, supplier_name: supplier?.name, business_name: v.business.name, invoice_no: v.voucherNo,

@@ -10,34 +10,60 @@ import { formToObject, guard, parseForm, safeReturnPath, toResult, UserError, ty
 import { flash } from "../flash";
 import { createAccountGroup, deleteAccount, deleteParty, deleteProduct, saveAccount, saveParty, saveProduct, setPartyActive, type AccountGroupOption } from "../services/master";
 import { assertFeature } from "../features";
+import { assertPartyRecordAllowed, assignToCreator } from "../party-scope";
+import { DEPOT_ACCESS, isDepot } from "@/lib/depot";
 
 // ───────────────────────── customers & suppliers ─────────────────────────
 
 type PartyKind = "CUSTOMER" | "SUPPLIER";
+/** DEALER: a depot dealer (customer row with isDepotDealer) — managed from the depot menu */
+type PartyPageKind = PartyKind | "DEALER";
 const PARTY_CFG = {
-  CUSTOMER: { perm: "customers:manage", path: "/customers", entity: "Customer" },
-  SUPPLIER: { perm: "suppliers:manage", path: "/suppliers", entity: "Supplier" },
+  CUSTOMER: { perm: "customers:manage", path: "/customers", entity: "Customer", model: "CUSTOMER" },
+  SUPPLIER: { perm: "suppliers:manage", path: "/suppliers", entity: "Supplier", model: "SUPPLIER" },
+  DEALER: { perm: DEPOT_ACCESS.dealers, path: "/depot/dealers", entity: "Customer", model: "CUSTOMER" },
 } as const;
 
-export async function savePartyAction(kind: PartyKind, id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const cfg = PARTY_CFG[kind];
+/** The record must be of the page's kind: a dealer is not edited as a general customer, nor the reverse. */
+async function assertPartyKind(businessId: string, kind: PartyPageKind, id: string) {
+  if (kind === "SUPPLIER") return;
+  const dealer = kind === "DEALER";
+  if (!(await prisma.customer.count({ where: { id, businessId, isDepotDealer: dealer } }))) throw new UserError(dealer ? "ডিলার পাওয়া যায়নি" : "কাস্টমার পাওয়া যায়নি");
+}
+
+/** Create / edit a depot dealer (/depot/dealers). */
+export async function saveDealerAction(id: string | null, prev: ActionState, fd: FormData): Promise<ActionState> {
+  return savePartyAction("DEALER", id, prev, fd);
+}
+
+export async function savePartyAction(pageKind: PartyPageKind, id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const cfg = PARTY_CFG[pageKind];
+  const kind = cfg.model;
   const result = await guard(async () => {
     const ctx = await assertPermission(cfg.perm);
+    if (pageKind === "DEALER" && !isDepot(ctx.business.businessType)) throw new UserError("ডিলার শুধু ডিপো ব্যবসায়");
+    if (id) await assertPartyKind(ctx.business.id, pageKind, id);
     const input = parseForm(partySchema, fd);
-    const saved = await saveParty(ctx.svc, kind, input, id ?? undefined);
+    if (!fd.has("route")) delete (input as { route?: string | null }).route; // form without the depot field: keep the stored route
+    if (id) await assertPartyRecordAllowed(ctx, kind, id);
+    const saved = await saveParty(ctx.svc, kind, input, id ?? undefined, { dealer: pageKind === "DEALER" });
+    if (!id) await assignToCreator(ctx, kind, saved.id); // a restricted user keeps what they create
     await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: id ? "UPDATE" : "CREATE", entity: cfg.entity, entityId: saved.id, details: { name: input.name, opening: input.openingBalance } });
     return saved.id;
   });
   if (!result.ok) return toResult(result);
-  await flash(`${kind === "CUSTOMER" ? "কাস্টমার" : "সরবরাহকারী"} সংরক্ষণ হয়েছে`);
+  await flash(`${pageKind === "DEALER" ? "ডিলার" : pageKind === "CUSTOMER" ? "কাস্টমার" : "সরবরাহকারী"} সংরক্ষণ হয়েছে`);
   revalidatePath(cfg.path);
   redirect(`${cfg.path}/${result.data}`);
 }
 
-export async function deletePartyAction(kind: PartyKind, id: string, _prev: ActionState, _fd: FormData): Promise<ActionState> {
-  const cfg = PARTY_CFG[kind];
+export async function deletePartyAction(pageKind: PartyPageKind, id: string, _prev: ActionState, _fd: FormData): Promise<ActionState> {
+  const cfg = PARTY_CFG[pageKind];
+  const kind = cfg.model;
   const result = await guard(async () => {
     const ctx = await assertPermission(cfg.perm);
+    await assertPartyKind(ctx.business.id, pageKind, id);
+    await assertPartyRecordAllowed(ctx, kind, id);
     const p = await deleteParty(ctx.svc, kind, id);
     await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: "DELETE", entity: cfg.entity, entityId: id, details: { name: p.name } });
   });
@@ -46,10 +72,13 @@ export async function deletePartyAction(kind: PartyKind, id: string, _prev: Acti
   redirect(cfg.path);
 }
 
-export async function togglePartyAction(kind: PartyKind, id: string, active: boolean, _prev: ActionState, _fd: FormData): Promise<ActionState> {
-  const cfg = PARTY_CFG[kind];
+export async function togglePartyAction(pageKind: PartyPageKind, id: string, active: boolean, _prev: ActionState, _fd: FormData): Promise<ActionState> {
+  const cfg = PARTY_CFG[pageKind];
+  const kind = cfg.model;
   const result = await guard(async () => {
     const ctx = await assertPermission(cfg.perm);
+    await assertPartyKind(ctx.business.id, pageKind, id);
+    await assertPartyRecordAllowed(ctx, kind, id);
     await setPartyActive(ctx.svc, kind, id, active);
     await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: "UPDATE", entity: cfg.entity, entityId: id, details: { isActive: active } });
   });

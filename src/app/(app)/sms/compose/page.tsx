@@ -10,6 +10,7 @@ import { businessToday } from "@/server/services/notifications";
 import { isBulk, MAX_BULK_RECIPIENTS, resolveRecipients, type SmsTarget } from "@/server/sms/manual";
 import { SmsTabs } from "../sms-ui";
 import { ComposeForm } from "./compose-form";
+import { partyListWhere } from "@/server/party-scope";
 
 export const metadata: Metadata = { title: "এসএমএস পাঠান" };
 
@@ -31,9 +32,9 @@ export default async function ComposePage({ searchParams }: { searchParams: Sear
         : null;
   const canBulk = can(ctx, "sms:bulk");
   const [groups, settings, recipients] = await Promise.all([
-    prisma.customer.groupBy({ by: ["groupName"], where: { businessId: ctx.business.id, isActive: true, groupName: { not: null } }, _count: true, orderBy: { groupName: "asc" } }),
+    prisma.customer.groupBy({ by: ["groupName"], where: { businessId: ctx.business.id, ...partyListWhere(ctx, "CUSTOMER"), isActive: true, groupName: { not: null } }, _count: true, orderBy: { groupName: "asc" } }),
     prisma.smsSettings.findUnique({ where: { businessId: ctx.business.id }, select: { enabled: true } }),
-    target ? resolveRecipients(prisma, ctx.business.id, target, businessToday()) : Promise.resolve([]),
+    target ? resolveRecipients(prisma, ctx.business.id, target, businessToday(), ctx.partyScope.customers) : Promise.resolve([]),
   ]);
   const blockedBulk = target && isBulk(target) && !canBulk;
   const withMobile = new Set(recipients.filter((r) => r.mobile).map((r) => r.mobile)).size;

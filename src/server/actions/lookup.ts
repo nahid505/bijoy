@@ -9,17 +9,22 @@ import { audit } from "../audit";
 import { guard } from "../action-utils";
 import { saveAccount, saveParty, saveProduct } from "../services/master";
 import { ACCOUNT_SCOPES, SCOPE_GROUPS, searchAccounts, searchParties, searchProducts, type AccountHit, type AccountScope } from "../lookup";
+import { assignToCreator } from "../party-scope";
+import { DEPOT_ACCESS, isDepot } from "@/lib/depot";
 
 type Result<T> = { ok: true; item: T } | { ok: false; message: string; errors?: Record<string, string[]> };
 
 /** "Create new" from a customer / supplier picker: name + mobile, ready to use in the voucher. */
-export async function quickCreatePartyAction(kind: "CUSTOMER" | "SUPPLIER", input: { name: string; mobile: string }): Promise<Result<PartyOption>> {
+export async function quickCreatePartyAction(kind: "CUSTOMER" | "SUPPLIER", input: { name: string; mobile: string; dealer?: boolean }): Promise<Result<PartyOption>> {
+  const dealer = kind === "CUSTOMER" && !!input.dealer; // "+ নতুন ডিলার তৈরি করুন" (depot forms)
   const r = await guard(async () => {
-    const ctx = await assertPermission(kind === "CUSTOMER" ? "customers:manage" : "suppliers:manage");
+    const ctx = await assertPermission(dealer ? DEPOT_ACCESS.dealers : kind === "CUSTOMER" ? "customers:manage" : "suppliers:manage");
+    if (dealer && !isDepot(ctx.business.businessType)) throw new UserError("ডিলার শুধু ডিপো ব্যবসায় তৈরি করা যায়");
     const data = partySchema.parse({ name: input.name, mobile: input.mobile, email: "", address: "", notes: "", openingBalance: 0, creditLimit: 0, creditDays: 0 });
-    const party = await saveParty(ctx.svc, kind, data);
-    await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: "CREATE", entity: kind === "CUSTOMER" ? "Customer" : "Supplier", entityId: party.id, details: { name: data.name, via: "quick-create" } });
-    const [item] = await searchParties(ctx.business.id, kind, "", { accountIds: [party.accountId] });
+    const party = await saveParty(ctx.svc, kind, data, undefined, { dealer });
+    await assignToCreator(ctx, kind, party.id); // a restricted user keeps what they create
+    await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: "CREATE", entity: kind === "CUSTOMER" ? "Customer" : "Supplier", entityId: party.id, details: { name: data.name, via: "quick-create", ...(dealer ? { dealer: true } : {}) } });
+    const [item] = await searchParties(ctx.business.id, kind, "", { accountIds: [party.accountId], dealer });
     return item;
   });
   return r.ok ? { ok: true, item: r.data } : { ok: false, message: r.message, errors: r.errors };

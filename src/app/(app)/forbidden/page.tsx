@@ -10,6 +10,7 @@ export default async function ForbiddenPage({ searchParams }: { searchParams: Se
   return (
     <div className="card mx-auto mt-16 max-w-lg p-10 text-center">
       <p className="text-5xl">{f ? f.icon : "🔒"}</p>
+      {!f && <p className="mt-3 font-mono text-sm font-bold tracking-wide text-credit" id="forbidden-code">403 — Forbidden</p>}
       <h1 className="mt-4 text-xl font-bold text-slate-800">{f ? `"${f.nameBn}" ফিচারটি বন্ধ আছে` : "প্রবেশাধিকার নেই"}</h1>
       <p className="mt-2 text-sm text-slate-500">
         {f

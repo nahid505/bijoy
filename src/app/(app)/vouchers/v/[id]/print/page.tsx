@@ -7,10 +7,12 @@ import { paymentStatus, PAYMENT_STATUS_LABELS, round2 } from "@/lib/calc";
 import { formatDate, formatMoney, formatQty, toBnDigits } from "@/lib/format";
 import { PrintButton } from "@/components/forms";
 import { PaddySlip } from "@/components/paddy-slip";
+import { DepotChallan } from "@/components/depot-challan";
 import { amountInBanglaWords } from "@/lib/words";
 import { can, requireContext } from "@/server/auth";
 import { batchesOfItem, loadVoucher } from "@/server/voucher-detail";
-import { voucherPermission } from "@/server/voucher-permissions";
+import { voucherAccess } from "@/server/voucher-permissions";
+import { canSeeVoucher } from "@/server/party-scope";
 
 export const metadata: Metadata = { title: "প্রিন্ট" };
 
@@ -20,7 +22,8 @@ export default async function VoucherPrintPage({ params }: { params: Promise<{ i
   const ctx = await requireContext();
   const v = await loadVoucher(ctx.business.id, id);
   if (!v) notFound();
-  if (!can(ctx, voucherPermission(v.type, "view")) && !(v.type === "OPENING" && can(ctx, "accounts:view"))) redirect("/forbidden");
+  if (!can(ctx, voucherAccess(v.type, "view", ctx.business.businessType, v.book)) && !(v.type === "OPENING" && can(ctx, "accounts:view"))) redirect("/forbidden");
+  if (!(await canSeeVoucher(ctx, v.id))) redirect("/forbidden"); // assigned-only roles: another party's voucher
   const b = ctx.business;
   const cur = b.currencySymbol;
   const meta = VOUCHER_TYPES[v.type];
@@ -28,7 +31,8 @@ export default async function VoucherPrintPage({ params }: { params: Promise<{ i
   const party = v.partyAccount?.customer ?? v.partyAccount?.supplier;
   const amount = num(v.amount);
   const paid = num(v.paidAmount);
-  const title = v.paddyPurchase ? "ধান ক্রয় চালান" : v.type === "SALES" ? "ইনভয়েস / বিল" : v.type === "RECEIPT" ? "মানি রিসিপ্ট" : meta.long;
+  const doRelease = v.type === "DEPOT_DELIVERY";
+  const title = v.depotDelivery ? "ডেলিভারি চালান" : v.paddyPurchase ? "ধান ক্রয় চালান" : v.type === "SALES" ? "ইনভয়েস / বিল" : v.type === "RECEIPT" ? "মানি রিসিপ্ট" : meta.long;
   const dr = round2(v.entries.reduce((s, e) => s + num(e.debit), 0));
 
   return (
@@ -63,13 +67,14 @@ export default async function VoucherPrintPage({ params }: { params: Promise<{ i
 
         {v.partyAccount && (
           <section className="py-4">
-            <p className="text-xs font-semibold text-slate-500">{v.type === "SALES" || v.type === "SALES_RETURN" ? "কাস্টমার" : v.type === "PURCHASE" || v.type === "PURCHASE_RETURN" ? "সরবরাহকারী" : "পার্টি/হিসাব"}</p>
+            <p className="text-xs font-semibold text-slate-500">{doRelease ? "কোম্পানি (ডিও)" : v.depotDelivery ? "ডিলার" : v.type === "SALES" || v.type === "SALES_RETURN" ? "কাস্টমার" : v.type === "PURCHASE" || v.type === "PURCHASE_RETURN" ? "সরবরাহকারী" : "পার্টি/হিসাব"}</p>
             <p className="text-base font-semibold">{v.partyAccount.name}</p>
             {party?.address && <p className="text-slate-600">{party.address}</p>}
             {party?.mobile && <p className="text-slate-600">{party.mobile}</p>}
           </section>
         )}
 
+        {v.depotDelivery && <DepotChallan currency={cur} d={{ mode: v.depotDelivery.mode, doNumber: v.depotDelivery.doNumber, company: v.depotDelivery.companyAccount?.name ?? null, dealer: v.depotDelivery.dealerAccount?.name ?? null, route: v.depotDelivery.dealerAccount?.customer?.route ?? null, dealerMobile: v.depotDelivery.dealerAccount?.customer?.mobile ?? null, vehicleNo: v.depotDelivery.vehicleNo, driverName: v.depotDelivery.driverName, commission: num(v.depotDelivery.commissionTotal), notes: v.depotDelivery.notes }} />}
         {v.paddyPurchase && <PaddySlip currency={cur} d={{ bagCount: v.paddyPurchase.bagCount, grossKg: num(v.paddyPurchase.grossKg), dhaltaKg: num(v.paddyPurchase.dhaltaKg), netKg: num(v.paddyPurchase.netKg), mon: num(v.paddyPurchase.mon), ratePerMon: num(v.paddyPurchase.ratePerMon), totalPrice: num(v.paddyPurchase.totalPrice), notes: v.paddyPurchase.notes }} />}
 
         {v.items.length > 0 ? (
@@ -79,9 +84,9 @@ export default async function VoucherPrintPage({ params }: { params: Promise<{ i
                 <th className="px-2 py-1.5">ক্রম</th>
                 <th className="px-2 py-1.5">পণ্যের বিবরণ</th>
                 <th className="px-2 py-1.5 text-right">পরিমাণ</th>
-                <th className="px-2 py-1.5 text-right">দর</th>
+                <th className="px-2 py-1.5 text-right">{doRelease ? "কমিশন হার" : "দর"}</th>
                 {trade && <th className="px-2 py-1.5 text-right">ছাড়</th>}
-                <th className="px-2 py-1.5 text-right">টাকা</th>
+                <th className="px-2 py-1.5 text-right">{doRelease ? "কমিশন" : "টাকা"}</th>
               </tr>
             </thead>
             <tbody>
@@ -92,7 +97,7 @@ export default async function VoucherPrintPage({ params }: { params: Promise<{ i
                     {i.product.name}{v.type === "STOCK_JOURNAL" && ` (${i.direction === 1 ? "আগমন" : "বাহির"} — ${i.warehouse?.name})`}
                     {batchesOfItem(i, formatDate, formatQty) && <span className="block text-[11px] text-slate-500">ব্যাচ: {batchesOfItem(i, formatDate, formatQty)}</span>}
                   </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{formatQty(num(i.quantity))} {i.unit?.name}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{formatQty(num(i.quantity))} {i.unit?.name}{num(i.freeQuantity) > 0 && <span className="block text-[11px] font-semibold text-amber-800">+ ফ্রি {formatQty(num(i.freeQuantity))}</span>}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{formatMoney(num(i.rate), cur)}</td>
                   {trade && <td className="px-2 py-1.5 text-right tabular-nums">{num(i.discount) ? formatMoney(num(i.discount), cur) : ""}</td>}
                   <td className="px-2 py-1.5 text-right tabular-nums">{formatMoney(num(i.amount), cur)}</td>
@@ -141,14 +146,15 @@ export default async function VoucherPrintPage({ params }: { params: Promise<{ i
           </div>
         )}
 
-        <p className="mt-4 rounded border border-rule bg-ink-50 px-3 py-2 text-sm"><b>কথায়:</b> {amountInBanglaWords(amount)}</p>
+        {/* a DO release has no sale amount (cost + commission is not a bill) — the challan block shows the commission */}
+        {!doRelease && <p className="mt-4 rounded border border-rule bg-ink-50 px-3 py-2 text-sm"><b>কথায়:</b> {amountInBanglaWords(amount)}</p>}
         {v.dueDate && amount - paid > 0 && <p className="mt-2 text-sm">বাকি পরিশোধের শেষ তারিখ: <b>{formatDate(v.dueDate)}</b></p>}
         {v.returnOf && <p className="mt-2 text-sm">মূল ইনভয়েস: {v.returnOf.voucherNo}</p>}
         {v.narration && v.narration !== v.paddyPurchase?.notes && <p className="mt-2 text-slate-600">বিবরণ: {v.narration}</p>}
         {v.type === "SALES" && b.invoiceTerms && <p className="mt-3 whitespace-pre-line text-xs text-slate-500">{b.invoiceTerms}</p>}
 
         <footer className="mt-16 grid grid-cols-3 gap-8 text-center text-xs text-slate-600">
-          <div className="border-t border-slate-500 pt-1">{v.type === "SALES" ? "কাস্টমারের স্বাক্ষর" : "গ্রহীতার স্বাক্ষর"}</div>
+          <div className="border-t border-slate-500 pt-1">{v.depotDelivery ? "ডিলারের স্বাক্ষর" : v.type === "SALES" ? "কাস্টমারের স্বাক্ষর" : "গ্রহীতার স্বাক্ষর"}</div>
           <div className="border-t border-slate-500 pt-1">প্রস্তুতকারী ({v.createdBy.name})</div>
           <div className="border-t border-slate-500 pt-1">অনুমোদনকারী</div>
         </footer>

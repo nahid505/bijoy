@@ -12,6 +12,7 @@ import { reportPeriod } from "@/server/period";
 import { pageOf, readParams, totalPages, type SearchParams } from "@/server/params";
 import { voucherPermission } from "@/server/voucher-permissions";
 import { ci } from "@/lib/dialect";
+import { voucherScopeWhere } from "@/server/party-scope";
 
 export async function generateMetadata({ params }: { params: Promise<{ type: string }> }): Promise<Metadata> {
   const t = voucherTypeFromSlug((await params).type);
@@ -33,6 +34,8 @@ export default async function VoucherListPage({ params, searchParams }: { params
 
   const where: Prisma.VoucherWhereInput = {
     businessId: ctx.business.id,
+    book: "GENERAL", // depot stock in / collections / market sales are listed under the depot menu
+    ...voucherScopeWhere(ctx), // assigned-only roles: their own customers / suppliers
     type,
     date: range,
     ...(q ? { OR: [{ voucherNo: ci(q) }, { reference: ci(q) }, { narration: ci(q) }, { partyAccount: { name: ci(q) } }] } : {}),

@@ -4,13 +4,15 @@ import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { isPermission } from "@/lib/permissions";
+import { DEPOT_PERMISSIONS, isPermission } from "@/lib/permissions";
+import { isDepot } from "@/lib/depot";
 import { businessSchema, memberSchema, newBusinessSchema, roleSchema } from "@/lib/validation";
 import { assertPermission, getContext, requireUser, setBusinessCookie, setSessionCookie } from "../auth";
 import { revokeAllSessions } from "../services/sessions";
 import { audit } from "../audit";
 import { formToObject, guard, parseForm, toResult, UserError, type ActionState } from "../action-utils";
-import { createBusiness } from "../services/bootstrap";
+import { createBusiness, ensureDepotRole } from "../services/bootstrap";
+import { isRestricted, saveAssignments } from "../party-scope";
 import { assertUserSlot } from "../services/subscriptions";
 import { notifyBusiness } from "../services/billing-notify";
 import { listHas, strList } from "@/lib/dialect";
@@ -65,6 +67,7 @@ export async function saveBusinessAction(_prev: ActionState, fd: FormData): Prom
     }
     if (fd.get("removeLogo") === "on") logo = null;
     await prisma.business.update({ where: { id: ctx.business.id }, data: { ...input, ...(logo !== undefined ? { logo } : {}) } });
+    if (isDepot(input.businessType)) await ensureDepotRole(prisma, ctx.business.id); // switched to a depot business: offer the depot-only role
     await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: "UPDATE", entity: "Business", entityId: ctx.business.id, details: { ...input, booksStartDate: input.booksStartDate.toISOString(), lockDate: input.lockDate?.toISOString() ?? null } });
   });
   revalidatePath("/", "layout");
@@ -87,6 +90,11 @@ export async function saveMemberAction(userId: string | null, _prev: ActionState
     const role = await prisma.role.findFirst({ where: { id: input.roleId, businessId } });
     if (!role) throw new UserError("রোল পাওয়া যায়নি");
     if (strList(role.permissions).includes("*") && !ctx.permissions.includes("*")) throw new UserError("শুধু মালিক অন্য কাউকে মালিক রোল দিতে পারেন");
+    // customer / supplier assignment (sent by the form's assignment section; an assigned-only admin cannot change it)
+    const assign = async (memberId: string) =>
+      fd.get("assignment") === "1" && !isRestricted(ctx)
+        ? saveAssignments(businessId, memberId, fd.getAll("customerIds").map(String), fd.getAll("supplierIds").map(String))
+        : null;
 
     if (userId) {
       const membership = await prisma.membership.findUnique({ where: { userId_businessId: { userId, businessId } }, include: { role: true } });
@@ -118,7 +126,8 @@ export async function saveMemberAction(userId: string | null, _prev: ActionState
         await revokeAllSessions(prisma, userId);
         if (userId === ctx.user.id) await setSessionCookie(userId);
       }
-      await audit({ businessId, userId: ctx.user.id, action: "UPDATE", entity: "Member", entityId: userId, details: { email: input.email, role: role.name, isActive: input.isActive } });
+      const assignment = await assign(userId);
+      await audit({ businessId, userId: ctx.user.id, action: "UPDATE", entity: "Member", entityId: userId, details: { email: input.email, role: role.name, isActive: input.isActive, ...(assignment ? { assignment } : {}) } });
     } else {
       // Existing account (e.g. member of another business) is linked; otherwise a new login is created.
       let user = await prisma.user.findUnique({ where: { email: input.email } });
@@ -131,7 +140,8 @@ export async function saveMemberAction(userId: string | null, _prev: ActionState
       if (input.isActive) await assertUserSlot(businessId); // plan user limit
       await prisma.membership.create({ data: { userId: user.id, businessId, roleId: role.id, isActive: input.isActive } });
       await notifyBusiness(prisma, businessId, { kind: "USER_ADDED", key: `user:${user.id}`, title: `নতুন ব্যবহারকারী: ${input.name}`, message: `${input.email} — রোল ${role.name}`, link: "/users" });
-      await audit({ businessId, userId: ctx.user.id, action: "CREATE", entity: "Member", entityId: user.id, details: { email: input.email, role: role.name } });
+      const assignment = await assign(user.id);
+      await audit({ businessId, userId: ctx.user.id, action: "CREATE", entity: "Member", entityId: user.id, details: { email: input.email, role: role.name, ...(assignment ? { assignment } : {}) } });
     }
   });
   if (!result.ok) return toResult(result);
@@ -149,6 +159,7 @@ export async function removeMemberAction(userId: string, _prev: ActionState, _fd
     if (strList(m.role.permissions).includes("*") && !ctx.permissions.includes("*")) throw new UserError("মালিককে শুধু মালিক সরাতে পারেন");
     if (strList(m.role.permissions).includes("*") && (await ownerCount(businessId, userId)) === 0) throw new UserError("কমপক্ষে একজন সক্রিয় মালিক থাকতে হবে");
     await prisma.membership.delete({ where: { id: m.id } });
+    await saveAssignments(ctx.business.id, userId, [], []); // their customer / supplier assignment goes with the membership
     await audit({ businessId, userId: ctx.user.id, action: "DELETE", entity: "Member", entityId: userId });
   });
   if (!result.ok) return toResult(result);
@@ -165,7 +176,8 @@ export async function saveRoleAction(id: string | null, _prev: ActionState, fd: 
     const input = roleSchema.parse({
       name: fd.get("name"),
       description: fd.get("description"),
-      permissions: fd.getAll("permissions").map(String).filter(isPermission),
+      // depot permissions are granted only in a depot business
+      permissions: fd.getAll("permissions").map(String).filter(isPermission).filter((p) => isDepot(ctx.business.businessType) || !DEPOT_PERMISSIONS.includes(p)),
     });
     if (id) {
       const role = await prisma.role.findFirst({ where: { id, businessId } });

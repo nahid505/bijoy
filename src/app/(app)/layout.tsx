@@ -14,6 +14,8 @@ import { getT } from "@/server/i18n";
 import { LangToggle } from "@/components/lang";
 import { SubscriptionBanner } from "@/components/subscription-banner";
 import { unreadCount, visibleKinds } from "@/server/services/notifications";
+import { notificationScopeWhere } from "@/server/party-scope";
+import { reportOpenFor, reportSlugForPath } from "@/server/reports/registry";
 
 export const dynamic = "force-dynamic";
 
@@ -30,19 +32,25 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     const f = featureForPath(href);
     return !f || ctx.features.includes(f);
   };
-  const allowed = (p?: Parameters<typeof hasPermission>[1], href?: string) => (!p || hasPermission(ctx.permissions, p)) && (!href || featureOn(href));
+  // assigned-only roles: menu entries of business-wide reports they may not open are hidden
+  const reportOk = (href: string) => {
+    const slug = reportSlugForPath(href);
+    return !slug || reportOpenFor(ctx, slug);
+  };
+  const allowed = (p?: Parameters<typeof hasPermission>[1], href?: string) => (!p || hasPermission(ctx.permissions, p)) && (!href || (featureOn(href) && reportOk(href)));
 
   const entries: SidebarEntry[] = NAV.flatMap((e): SidebarEntry[] => {
+    if (e.businessTypes && !e.businessTypes.includes(ctx.business.businessType ?? "")) return [];
     if (e.children) {
       const children = e.children.filter((c) => allowed(c.permission, c.href)).map(({ href, label }) => ({ href, label: t(label) }));
-      return children.length ? [{ key: e.key, label: t(e.label), icon: e.icon, children }] : [];
+      return children.length ? [{ key: e.key, label: t(e.label), icon: e.icon, children, highlight: e.highlight }] : [];
     }
     return allowed(e.permission, e.href) ? [{ key: e.key, label: t(e.label), icon: e.icon, href: e.href }] : [];
   });
   const tabs = MOBILE_TABS.filter((x) => allowed(x.permission, x.href)).map((x) => ({ ...x, label: t(x.label) }));
   const fy = fiscalYearRange(ctx.business.fiscalYearStartMonth);
   const alertKinds = visibleKinds((p) => allowed(p as Parameters<typeof hasPermission>[1]), ctx.features);
-  const unread = alertKinds.length ? await unreadCount(ctx.business.id, ctx.user.id, alertKinds) : 0;
+  const unread = alertKinds.length ? await unreadCount(ctx.business.id, ctx.user.id, alertKinds, notificationScopeWhere(ctx)) : 0;
 
   return (
     <div className="min-h-screen">

@@ -11,6 +11,8 @@ export interface SidebarEntry {
   icon: string;
   href?: string;
   children?: { href: string; label: string }[];
+  /** emphasised and open by default (e.g. the depot menu) */
+  highlight?: boolean;
 }
 
 function Icon({ d, className = "h-[18px] w-[18px]" }: { d: string; className?: string }) {
@@ -30,7 +32,7 @@ function isActive(pathname: string, href: string) {
 function NavTree({ entries, onNavigate }: { entries: SidebarEntry[]; onNavigate?: () => void }) {
   const pathname = usePathname();
   const [open, setOpen] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(entries.filter((e) => e.children?.some((c) => isActive(pathname, c.href))).map((e) => [e.key, true])),
+    Object.fromEntries(entries.filter((e) => e.highlight || e.children?.some((c) => isActive(pathname, c.href))).map((e) => [e.key, true])),
   );
 
   return (
@@ -60,7 +62,7 @@ function NavTree({ entries, onNavigate }: { entries: SidebarEntry[]; onNavigate?
                 type="button"
                 onClick={() => setOpen((o) => ({ ...o, [e.key]: !expanded }))}
                 aria-expanded={expanded}
-                className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left ${childActive ? "text-white" : "text-ink-100"} hover:bg-white/8`}
+                className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left ${childActive || e.highlight ? "text-white" : "text-ink-100"} ${e.highlight ? "bg-amber-400/15 font-semibold ring-1 ring-inset ring-amber-300/40" : ""} hover:bg-white/8`}
               >
                 <Icon d={e.icon} />
                 <span className="flex-1">{e.label}</span>

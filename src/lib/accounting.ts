@@ -221,6 +221,20 @@ export function stockJournalEntries(valueIn: number, valueOut: number, acc: Syst
     : [dr(adj, -diff, label), cr(acc.INVENTORY, -diff, "মজুদ ঘাটতি")];
 }
 
+/**
+ * Depot delivery against a company DO (the dealer paid the company):
+ *   the goods leave at cost — Dr the company's ledger / Cr Inventory (no dealer due, no P&L effect);
+ *   the commission is earned — Dr "কমিশন প্রাপ্য — <company>" / Cr "ডিপো কমিশন আয়".
+ */
+export function depotDeliveryEntries(cost: number, commission: number, acc: { company: string; inventory: string; receivable: string; income: string }): EntryLine[] {
+  const c = round2(cost);
+  const k = round2(commission);
+  return [
+    ...(c > 0 ? [dr(acc.company, c, "ডিও ডেলিভারি — পণ্য কোম্পানির পক্ষে সরবরাহ"), cr(acc.inventory, c, "ডিও ডেলিভারি — মজুদ বাহির")] : []),
+    ...(k > 0 ? [dr(acc.receivable, k, "ডিপো কমিশন প্রাপ্য"), cr(acc.income, k, "ডিপো কমিশন আয়")] : []),
+  ];
+}
+
 /** Opening balance: signed amount (+ = debit balance) against the opening-balance equity ledger. */
 export function openingEntries(accountId: string, signedAmount: number, acc: SystemAccounts): EntryLine[] {
   const amt = round2(signedAmount);
@@ -261,24 +275,26 @@ export const VOUCHER_TYPES = {
   PURCHASE_RETURN: { slug: "purchase-return", label: "ক্রয় ফেরত", long: "ক্রয় ফেরত ভাউচার", prefix: "PR" },
   STOCK_JOURNAL: { slug: "stock-journal", label: "স্টক জার্নাল", long: "স্টক জার্নাল", prefix: "SJ" },
   PRODUCTION: { slug: "production", label: "উৎপাদন", long: "উৎপাদন এন্ট্রি", prefix: "PRD" },
+  DEPOT_DELIVERY: { slug: "depot-delivery", label: "ডিও ডেলিভারি", long: "ডিও ডেলিভারি চালান", prefix: "DO" },
   OPENING: { slug: "opening", label: "প্রারম্ভিক", long: "প্রারম্ভিক ব্যালেন্স", prefix: "OB" },
 } as const;
 
 export type VoucherTypeKey = keyof typeof VOUCHER_TYPES;
 
-/** Types edited in the generic voucher screens (/vouchers/…); production runs live under /production. */
-export type EditableVoucherType = Exclude<VoucherTypeKey, "OPENING" | "PRODUCTION">;
+/** Types edited in the generic voucher screens (/vouchers/…); production runs live under /production,
+ *  depot DO deliveries under /depot/deliveries. */
+export type EditableVoucherType = Exclude<VoucherTypeKey, "OPENING" | "PRODUCTION" | "DEPOT_DELIVERY">;
 
 export function voucherTypeFromSlug(slug: string): EditableVoucherType | null {
   const hit = (Object.keys(VOUCHER_TYPES) as VoucherTypeKey[]).find((k) => VOUCHER_TYPES[k].slug === slug);
-  return hit && hit !== "OPENING" && hit !== "PRODUCTION" ? hit : null;
+  return hit && hit !== "OPENING" && hit !== "PRODUCTION" && hit !== "DEPOT_DELIVERY" ? hit : null;
 }
 
 export const TRADE_TYPES: VoucherTypeKey[] = ["SALES", "PURCHASE", "SALES_RETURN", "PURCHASE_RETURN"];
 
 /** Which permission family governs a voucher type. */
 export function voucherPermissionFamily(type: VoucherTypeKey): "sales" | "purchases" | "vouchers" | "stock" | "production" {
-  if (type === "SALES" || type === "SALES_RETURN") return "sales";
+  if (type === "SALES" || type === "SALES_RETURN" || type === "DEPOT_DELIVERY") return "sales";
   if (type === "PURCHASE" || type === "PURCHASE_RETURN") return "purchases";
   if (type === "STOCK_JOURNAL") return "stock";
   if (type === "PRODUCTION") return "production";

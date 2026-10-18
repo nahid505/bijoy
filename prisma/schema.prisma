@@ -35,6 +35,13 @@ enum AccountKind {
   SUPPLIER
 }
 
+/// Accounting book. DEPOT (depot management) is kept completely apart from the business's GENERAL books:
+/// every general report reads GENERAL entries only, the depot menu / reports read DEPOT entries.
+enum Book {
+  GENERAL
+  DEPOT
+}
+
 enum VoucherType {
   OPENING
   RECEIPT
@@ -46,6 +53,7 @@ enum VoucherType {
   PURCHASE_RETURN
   STOCK_JOURNAL
   PRODUCTION
+  DEPOT_DELIVERY // depot: delivery against a company DO (dealer paid the company) — stock out, commission due
 }
 
 enum StockMovementType {
@@ -58,6 +66,13 @@ enum StockMovementType {
   ADJUSTMENT_OUT
   PRODUCTION_IN
   PRODUCTION_OUT
+  DEPOT_OUT // depot delivery against a company DO
+}
+
+/// Depot delivery challan: how the dealer pays for the goods.
+enum DepotDeliveryMode {
+  COMPANY_PAID // "কোম্পানি পেইড (ডিও রিলিজ)": dealer paid the company; depot earns commission
+  DEPOT_COLLECTION // "ডিপো কালেকশন (মার্কেট সেলস)": depot sells to the dealer (cash or market due)
 }
 
 enum NotificationKind {
@@ -126,6 +141,8 @@ model Business {
   updatedAt            DateTime  @updatedAt
 
   memberships         Membership[]
+  userCustomers       UserCustomer[]
+  userSuppliers       UserSupplier[]
   roles               Role[]
   accountGroups       AccountGroup[]
   accounts            Account[]
@@ -160,6 +177,7 @@ model Business {
   recipes             Recipe[]
   productionRuns      ProductionRun[]
   paddyPurchases      PaddyPurchase[]
+  depotDeliveries     DepotDelivery[]
 }
 
 model User {
@@ -177,6 +195,8 @@ model User {
   updatedAt         DateTime  @updatedAt
 
   memberships       Membership[]
+  assignedCustomers UserCustomer[]
+  assignedSuppliers UserSupplier[]
   auditLogs         AuditLog[]
   notificationReads NotificationRead[]
   sessions          Session[]
@@ -215,6 +235,36 @@ model Membership {
 
   @@unique([userId, businessId])
   @@index([businessId])
+}
+
+// Party restriction (row-level): a member whose role holds "customers:assigned_only" / "suppliers:assigned_only"
+// sees only the customers / suppliers assigned here (lists, vouchers, ledgers, reports). See src/server/party-scope.ts.
+model UserCustomer {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, customerId])
+  @@index([businessId, userId])
+}
+
+model UserSupplier {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, supplierId])
+  @@index([businessId, userId])
 }
 
 // ───────────────────────────── chart of accounts ─────────────────────────────
@@ -261,20 +311,22 @@ model Account {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  entries            JournalEntry[]
-  customer           Customer?
-  supplier           Supplier?
-  partyVouchers      Voucher[]         @relation("VoucherParty")
-  voucherPayments    VoucherPayment[]
-  cashVouchers       Voucher[]         @relation("VoucherCash")
-  adjustmentVouchers Voucher[]         @relation("VoucherAdjustment")
-  notifications      Notification[]
-  payrollPayableFor  PayrollSettings[] @relation("PayrollPayableAccount")
-  payrollAdvanceFor  PayrollSettings[] @relation("PayrollAdvanceAccount")
-  payComponents      PayComponent[]    @relation("PayComponentAccount")
-  payComponentsLiab  PayComponent[]    @relation("PayComponentLiability")
-  payslipLines       PayslipLine[]     @relation("PayslipLineAccount")
-  payslipLinesLiab   PayslipLine[]     @relation("PayslipLineLiability")
+  entries                JournalEntry[]
+  customer               Customer?
+  supplier               Supplier?
+  partyVouchers          Voucher[]         @relation("VoucherParty")
+  voucherPayments        VoucherPayment[]
+  cashVouchers           Voucher[]         @relation("VoucherCash")
+  adjustmentVouchers     Voucher[]         @relation("VoucherAdjustment")
+  notifications          Notification[]
+  payrollPayableFor      PayrollSettings[] @relation("PayrollPayableAccount")
+  payrollAdvanceFor      PayrollSettings[] @relation("PayrollAdvanceAccount")
+  payComponents          PayComponent[]    @relation("PayComponentAccount")
+  payComponentsLiab      PayComponent[]    @relation("PayComponentLiability")
+  depotCompanyDeliveries DepotDelivery[]   @relation("DepotCompany")
+  depotDealerDeliveries  DepotDelivery[]   @relation("DepotDealer")
+  payslipLines           PayslipLine[]     @relation("PayslipLineAccount")
+  payslipLinesLiab       PayslipLine[]     @relation("PayslipLineLiability")
 
   @@unique([businessId, systemKey])
   @@unique([businessId, code])
@@ -290,6 +342,7 @@ model Voucher {
   businessId          String
   business            Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
   type                VoucherType
+  book                Book        @default(GENERAL)
   voucherNo           String
   date                DateTime
   reference           String?
@@ -324,6 +377,7 @@ model Voucher {
   items          VoucherItem[]
   productionRun  ProductionRun?
   paddyPurchase  PaddyPurchase?
+  depotDelivery  DepotDelivery?
   payments       VoucherPayment[]
   stockMovements StockMovement[]
   smsMessages    SmsMessage[]
@@ -368,9 +422,12 @@ model JournalEntry {
   credit     Decimal  @default(0) @db.Decimal(14, 2)
   narration  String?
   lineNo     Int      @default(0)
+  /// copy of the voucher's book (general reports filter on it)
+  book       Book     @default(GENERAL)
 
   @@index([businessId, accountId, date])
   @@index([businessId, date])
+  @@index([businessId, book, date])
   @@index([voucherId])
 }
 
@@ -388,6 +445,10 @@ model VoucherItem {
   unitFactor     Decimal         @default(1) @db.Decimal(14, 6) // entered unit → base unit
   quantity       Decimal         @db.Decimal(14, 3) // in entered unit
   baseQuantity   Decimal         @db.Decimal(14, 3) // in product base unit
+  /// free / scheme quantity (entered unit) on top of quantity: moves stock (quantity + free) but is never billed
+  freeQuantity   Decimal         @default(0) @db.Decimal(14, 3)
+  /// depot delivery: the rate printed on the dealer challan (the product's purchase price at delivery); null = not a depot line
+  challanRate    Decimal?        @db.Decimal(14, 2)
   rate           Decimal         @db.Decimal(14, 2) // per entered unit
   discount       Decimal         @default(0) @db.Decimal(14, 2)
   amount         Decimal         @db.Decimal(14, 2) // quantity × rate − discount
@@ -410,23 +471,27 @@ model VoucherItem {
 // ───────────────────────────── parties ─────────────────────────────
 
 model Customer {
-  id          String       @id @default(cuid())
-  businessId  String
-  business    Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  accountId   String       @unique
-  account     Account      @relation(fields: [accountId], references: [id])
-  name        String
-  mobile      String?
-  email       String?
-  address     String?
-  notes       String?
-  creditLimit Decimal      @default(0) @db.Decimal(14, 2) // 0 = no limit
-  creditDays  Int          @default(0) // payment terms: invoice due = date + creditDays
-  groupName   String? // customer group (e.g. "পাইকারি", "এলাকা: মিরপুর") — used for group SMS
-  isActive    Boolean      @default(true)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  smsMessages SmsMessage[]
+  id            String         @id @default(cuid())
+  businessId    String
+  business      Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  accountId     String         @unique
+  account       Account        @relation(fields: [accountId], references: [id])
+  name          String
+  mobile        String?
+  email         String?
+  address       String?
+  notes         String?
+  creditLimit   Decimal        @default(0) @db.Decimal(14, 2) // 0 = no limit
+  creditDays    Int            @default(0) // payment terms: invoice due = date + creditDays
+  groupName     String? // customer group (e.g. "পাইকারি", "এলাকা: মিরপুর") — used for group SMS
+  route         String? // depot: dealer's route / area (market dues by route)
+  /// depot dealer: kept out of the general customer list / pickers; their trade lives in the DEPOT book
+  isDepotDealer Boolean        @default(false)
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  smsMessages   SmsMessage[]
+  assignedTo    UserCustomer[]
 
   @@index([businessId, name])
   @@index([businessId, mobile])
@@ -450,6 +515,7 @@ model Supplier {
   updatedAt   DateTime       @updatedAt
   batches     ProductBatch[]
   smsMessages SmsMessage[]
+  assignedTo  UserSupplier[]
 
   @@index([businessId, name])
   @@index([businessId, mobile])
@@ -508,30 +574,32 @@ model Warehouse {
 }
 
 model Product {
-  id             String    @id @default(cuid())
-  businessId     String
-  business       Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  name           String
-  code           String?
-  barcode        String?
-  categoryId     String?
-  category       Category? @relation(fields: [categoryId], references: [id])
-  brandId        String?
-  brand          Brand?    @relation(fields: [brandId], references: [id])
-  unitId         String
-  unit           Unit      @relation(fields: [unitId], references: [id])
-  purchasePrice  Decimal   @default(0) @db.Decimal(14, 2) // last purchase rate (base unit)
-  salePrice      Decimal   @default(0) @db.Decimal(14, 2)
-  wholesalePrice Decimal   @default(0) @db.Decimal(14, 2)
-  minStock       Decimal   @default(0) @db.Decimal(14, 3)
-  openingStock   Decimal   @default(0) @db.Decimal(14, 3)
-  openingRate    Decimal   @default(0) @db.Decimal(14, 2)
-  stock          Decimal   @default(0) @db.Decimal(14, 3) // cached Σ movements (base unit)
-  avgCost        Decimal   @default(0) @db.Decimal(14, 4) // cached moving weighted-average cost
-  trackBatch     Boolean   @default(false) // batch / expiry tracking
-  isActive       Boolean   @default(true)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id                  String    @id @default(cuid())
+  businessId          String
+  business            Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name                String
+  code                String?
+  barcode             String?
+  categoryId          String?
+  category            Category? @relation(fields: [categoryId], references: [id])
+  brandId             String?
+  brand               Brand?    @relation(fields: [brandId], references: [id])
+  unitId              String
+  unit                Unit      @relation(fields: [unitId], references: [id])
+  purchasePrice       Decimal   @default(0) @db.Decimal(14, 2) // last purchase rate (base unit)
+  salePrice           Decimal   @default(0) @db.Decimal(14, 2)
+  /// depot: commission the company pays per base unit delivered against its DO
+  depotCommissionRate Decimal   @default(0) @db.Decimal(14, 4)
+  wholesalePrice      Decimal   @default(0) @db.Decimal(14, 2)
+  minStock            Decimal   @default(0) @db.Decimal(14, 3)
+  openingStock        Decimal   @default(0) @db.Decimal(14, 3)
+  openingRate         Decimal   @default(0) @db.Decimal(14, 2)
+  stock               Decimal   @default(0) @db.Decimal(14, 3) // cached Σ movements (base unit)
+  avgCost             Decimal   @default(0) @db.Decimal(14, 4) // cached moving weighted-average cost
+  trackBatch          Boolean   @default(false) // batch / expiry tracking
+  isActive            Boolean   @default(true)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   stockMovements StockMovement[]
   voucherItems   VoucherItem[]
@@ -1500,6 +1568,35 @@ model ProductionRun {
 
 /// Paddy purchase details (rice mill weighbridge slip) of a PURCHASE voucher:
 ///   net = gross − dhalta (manual deduction, kg) · mon = net ÷ 40 (2 dp) · total = mon × rate per mon.
+/// Depot delivery challan (one per voucher).
+///   COMPANY_PAID      voucher type DEPOT_DELIVERY: stock out at moving-average cost against the company's
+///                     account; commission (Σ line amount = quantity × commission rate) is posted
+///                     Dr "কমিশন প্রাপ্য — <company>" / Cr "ডিপো কমিশন আয়". No dealer due.
+///   DEPOT_COLLECTION  voucher type SALES to the dealer: stock out, sale, cash or market due.
+model DepotDelivery {
+  id               String            @id @default(cuid())
+  businessId       String
+  business         Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  voucherId        String            @unique
+  voucher          Voucher           @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  mode             DepotDeliveryMode
+  companyAccountId String? // the company (supplier ledger) whose DO is delivered
+  companyAccount   Account?          @relation("DepotCompany", fields: [companyAccountId], references: [id])
+  dealerAccountId  String? // the dealer (customer ledger) receiving the goods
+  dealerAccount    Account?          @relation("DepotDealer", fields: [dealerAccountId], references: [id])
+  doNumber         String? // company DO / release order number
+  vehicleNo        String?
+  driverName       String?
+  notes            String?
+  commissionTotal  Decimal           @default(0) @db.Decimal(14, 2)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([businessId])
+  @@index([companyAccountId])
+  @@index([dealerAccountId])
+}
+
 /// The voucher line is in মণ (quantity = mon, rate = rate per mon → amount = total exactly) while the
 /// stock receives the exact net kg. bagCount is information for the slip only (no calculation).
 model PaddyPurchase {

@@ -9,6 +9,7 @@ import { can, requireContext } from "@/server/auth";
 import { pageOf, readParams, totalPages, type SearchParams } from "@/server/params";
 import { markNotificationsReadAction, runChecksNowAction } from "@/server/actions/expiry";
 import { ensureDailyChecks, visibleKinds } from "@/server/services/notifications";
+import { notificationScopeWhere } from "@/server/party-scope";
 
 export const metadata: Metadata = { title: "নোটিফিকেশন" };
 
@@ -50,6 +51,7 @@ export default async function NotificationsPage({ searchParams }: { searchParams
   const tabKinds = (tab.kinds ?? kinds).filter((k) => kinds.includes(k));
   const where: Prisma.NotificationWhereInput = {
     businessId: ctx.business.id,
+    ...notificationScopeWhere(ctx), // assigned-only roles: alerts of their customers only
     kind: { in: tabKinds },
     ...(tab.history ? { resolvedAt: { not: null } } : { resolvedAt: null }),
   };
@@ -63,7 +65,7 @@ export default async function NotificationsPage({ searchParams }: { searchParams
       take,
     }),
     prisma.notification.count({ where }),
-    prisma.notification.groupBy({ by: ["kind"], where: { businessId: ctx.business.id, kind: { in: kinds }, resolvedAt: null }, _count: true }),
+    prisma.notification.groupBy({ by: ["kind"], where: { businessId: ctx.business.id, ...notificationScopeWhere(ctx), kind: { in: kinds }, resolvedAt: null }, _count: true }),
     prisma.jobRun.findFirst({ where: { businessId: ctx.business.id, job: "daily-check" }, orderBy: { runOn: "desc" }, select: { finishedAt: true } }),
   ]);
   const countOf = (k?: NotificationKind[]) => counts.filter((c) => !k || k.includes(c.kind)).reduce((s, c) => s + c._count, 0);

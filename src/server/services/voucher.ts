@@ -11,10 +11,12 @@ import { computeTotals, lineAmount, round2, round3, round4 } from "@/lib/calc";
 import { formatMoney } from "@/lib/format";
 import { UserError } from "@/lib/errors";
 import type { CashVoucherInput, JournalVoucherInput, StockJournalInput, TradeVoucherInput } from "@/lib/validation";
-import { assertAccounts, assertNotLocked, nextVoucherNo, writeEntries, type Ctx, type Tx } from "./accounting";
+import { assertAccounts, assertBookAccounts, assertNotLocked, nextVoucherNo, writeEntries, type Ctx, type Tx } from "./accounting";
 import { defaultWarehouseId, lockProducts, writeMovements, type MovementInput } from "./inventory";
 import { repostVoucher, revalueProducts } from "./posting";
 import { allocateSaleBatches, ensureInboundBatch, expiryLossAccount, requireBatch, type BatchAllocation } from "./batches";
+import type { BookKey } from "@/lib/book";
+import { TRANSFER_SOURCE } from "@/lib/depot";
 
 export const TX_OPTIONS = { timeout: 60_000, maxWait: 10_000 };
 
@@ -44,6 +46,7 @@ export async function loadEditable(tx: Tx, ctx: Ctx, id: string, type: VoucherTy
   if (!v) throw new UserError("ভাউচার পাওয়া যায়নি");
   if (v.type !== type) throw new UserError("ভাউচারের ধরন মিলছে না");
   if (isPayrollVoucher(v.sourceKey)) throw new UserError(PAYROLL_VOUCHER_MESSAGE);
+  if (v.sourceKey?.startsWith(TRANSFER_SOURCE)) throw new UserError("ডিপো কমিশন স্থানান্তর সম্পাদনা করা যায় না — মুছে আবার স্থানান্তর করুন");
   return v;
 }
 
@@ -64,8 +67,8 @@ export async function assertWarehouse(tx: Tx, businessId: string, warehouseId: s
   return w.id;
 }
 
-async function ledgerBalance(tx: Tx, businessId: string, accountId: string) {
-  const agg = await tx.journalEntry.aggregate({ where: { businessId, accountId }, _sum: { debit: true, credit: true } });
+async function ledgerBalance(tx: Tx, businessId: string, accountId: string, book: BookKey) {
+  const agg = await tx.journalEntry.aggregate({ where: { businessId, accountId, book }, _sum: { debit: true, credit: true } });
   return round2(Number(agg._sum.debit ?? 0) - Number(agg._sum.credit ?? 0));
 }
 
@@ -79,17 +82,20 @@ async function ledgerBalance(tx: Tx, businessId: string, accountId: string) {
 export type TradeLineInput = TradeVoucherInput["items"][number] & { baseQuantity?: number };
 export type TradeInputWithBase = Omit<TradeVoucherInput, "items"> & { items: TradeLineInput[] };
 
-export async function saveTradeVoucher(ctx: Ctx, type: TradeType, input: TradeInputWithBase, editId?: string) {
-  return prisma.$transaction((tx) => tradeVoucherTx(tx, ctx, type, input, editId), TX_OPTIONS);
+/** book: the book of a NEW voucher (depot pages: DEPOT); an edit keeps the voucher's own book. */
+export async function saveTradeVoucher(ctx: Ctx, type: TradeType, input: TradeInputWithBase, editId?: string, book?: BookKey) {
+  return prisma.$transaction((tx) => tradeVoucherTx(tx, ctx, type, input, editId, book), TX_OPTIONS);
 }
 
 /** Posts a sale / purchase / return inside the caller's transaction (also used by the paddy purchase). */
-export async function tradeVoucherTx(tx: Tx, ctx: Ctx, type: TradeType, input: TradeInputWithBase, editId?: string) {
+export async function tradeVoucherTx(tx: Tx, ctx: Ctx, type: TradeType, input: TradeInputWithBase, editId?: string, book?: BookKey) {
   const rule = TRADE_RULES[type];
   {
     const business = await tx.business.findUniqueOrThrow({ where: { id: ctx.businessId } });
     const existing = editId ? await loadEditable(tx, ctx, editId, type) : null;
     await assertNotLocked(tx, ctx.businessId, input.date, existing?.date);
+    const vBook: BookKey = existing ? existing.book : book ?? "GENERAL";
+    await assertBookAccounts(tx, ctx.businessId, vBook, [input.partyAccountId, ...input.payments.map((p) => p.accountId)]);
     const removedProducts = existing ? await clearPostings(tx, existing.id) : [];
 
     // ── parties & ledgers (tenant + kind checks)
@@ -126,6 +132,9 @@ export async function tradeVoucherTx(tx: Tx, ctx: Ctx, type: TradeType, input: T
       // Sales may leave the batch empty: FEFO picks it. Receipts and purchase returns must name it.
       if (p.trackBatch && type !== "SALES" && !item.batchNo) throw new UserError(`"${p.name}" ব্যাচভিত্তিক পণ্য — ব্যাচ নম্বর দিন`);
       const computedBase = round3(item.quantity * factor);
+      // free / scheme goods: on purchases (received with the invoice) and sales (given with it) only
+      const freeQuantity = round3(item.freeQuantity ?? 0);
+      if (freeQuantity > 0 && type !== "PURCHASE" && type !== "SALES") throw new UserError("ফেরত ভাউচারে ফ্রি পরিমাণ দেওয়া যায় না");
       if (item.baseQuantity !== undefined && Math.abs(item.baseQuantity - computedBase) > factor * 0.005 + 1e-9) {
         throw new UserError(`"${p.name}" — পরিমাণ ও মূল এককের পরিমাণ মিলছে না`);
       }
@@ -136,6 +145,8 @@ export async function tradeVoucherTx(tx: Tx, ctx: Ctx, type: TradeType, input: T
         factor,
         quantity: item.quantity,
         baseQuantity: item.baseQuantity !== undefined ? round3(item.baseQuantity) : computedBase,
+        freeQuantity,
+        freeBase: round3(freeQuantity * factor),
         rate: item.rate,
         discount: item.discount,
         amount: lineAmount({ quantity: item.quantity, unitPrice: item.rate, discount: item.discount }),
@@ -192,7 +203,7 @@ export async function tradeVoucherTx(tx: Tx, ctx: Ctx, type: TradeType, input: T
 
     // ── customer credit limit
     if (type === "SALES" && input.partyAccountId && partyTerms && partyTerms.creditLimit > 0) {
-      const projected = round2((await ledgerBalance(tx, ctx.businessId, input.partyAccountId)) + totals.total - paid);
+      const projected = round2((await ledgerBalance(tx, ctx.businessId, input.partyAccountId, vBook)) + totals.total - paid);
       if (projected > partyTerms.creditLimit) {
         throw new UserError(`ক্রেডিট সীমা অতিক্রম করছে: বাকি হবে ${formatMoney(projected)}, সীমা ${formatMoney(partyTerms.creditLimit)}। আরও টাকা আদায় নিন বা সীমা বাড়ান।`);
       }
@@ -222,12 +233,14 @@ export async function tradeVoucherTx(tx: Tx, ctx: Ctx, type: TradeType, input: T
     const voucher = existing
       ? await tx.voucher.update({ where: { id: existing.id }, data: { ...header, updatedById: ctx.userId } })
       : await tx.voucher.create({
-          data: { ...header, businessId: ctx.businessId, type, voucherNo: await nextVoucherNo(tx, ctx.businessId, type, business.invoicePrefix), createdById: ctx.userId },
+          data: { ...header, businessId: ctx.businessId, type, book: vBook, voucherNo: await nextVoucherNo(tx, ctx.businessId, type, business.invoicePrefix, vBook), createdById: ctx.userId },
         });
 
     // ── batches: receipts create / match the lot; sales use the chosen batch or FEFO
     const allocation = totals.subtotal > 0 ? totals.total / totals.subtotal : 0; // spreads purchase discount over lines
-    const purchaseCostOf = (l: (typeof lines)[number]) => (type === "PURCHASE" && l.baseQuantity > 0 ? (l.amount * allocation) / l.baseQuantity : 0);
+    // stock moves by paid + free; only the paid quantity is billed — a purchase's cost is spread over both
+    const stockBase = (l: (typeof lines)[number]) => round3(l.baseQuantity + l.freeBase);
+    const purchaseCostOf = (l: (typeof lines)[number]) => (type === "PURCHASE" && stockBase(l) > 0 ? (l.amount * allocation) / stockBase(l) : 0);
     const supplier = type === "PURCHASE" && input.partyAccountId ? await tx.supplier.findUnique({ where: { accountId: input.partyAccountId }, select: { id: true } }) : null;
     const batchesOf = new Map<string, BatchAllocation[]>();
     const used = new Map<string, number>();
@@ -239,10 +252,10 @@ export async function tradeVoucherTx(tx: Tx, ctx: Ctx, type: TradeType, input: T
           supplierId: supplier?.id, date: input.date,
           ...(type === "PURCHASE" ? { unitCost: round4(purchaseCostOf(l)), salePrice: Number(l.product.salePrice) } : {}),
         });
-        batchesOf.set(l.id, [{ batchId: b.id, batchNo: b.batchNo, expiryDate: b.expiryDate, baseQuantity: l.baseQuantity }]);
+        batchesOf.set(l.id, [{ batchId: b.id, batchNo: b.batchNo, expiryDate: b.expiryDate, baseQuantity: stockBase(l) }]);
       } else if (type === "SALES") {
         batchesOf.set(l.id, await allocateSaleBatches(tx, {
-          product: l.product, batchNo: l.batchNo, baseQuantity: l.baseQuantity, warehouseId, saleDate: input.date,
+          product: l.product, batchNo: l.batchNo, baseQuantity: stockBase(l), warehouseId, saleDate: input.date,
           allowExpiredSale: business.allowExpiredSale, used,
         }));
       } else {
@@ -262,8 +275,8 @@ export async function tradeVoucherTx(tx: Tx, ctx: Ctx, type: TradeType, input: T
         const b = single(l.id);
         return {
           id: l.id, voucherId: voucher.id, productId: l.product.id, warehouseId, unitId: l.unitId, unitFactor: l.factor,
-          quantity: l.quantity, baseQuantity: l.baseQuantity, rate: l.rate, discount: l.discount, amount: l.amount,
-          costRate: round4(purchaseCost), costAmount: round2(purchaseCost * l.baseQuantity),
+          quantity: l.quantity, baseQuantity: l.baseQuantity, freeQuantity: l.freeQuantity, rate: l.rate, discount: l.discount, amount: l.amount,
+          costRate: round4(purchaseCost), costAmount: round2(purchaseCost * stockBase(l)),
           batchId: b?.batchId ?? null, batchNo: b?.batchNo ?? null, expiryDate: b?.expiryDate ?? null, lineNo: i,
         };
       }),
@@ -275,7 +288,7 @@ export async function tradeVoucherTx(tx: Tx, ctx: Ctx, type: TradeType, input: T
     }
     // one movement per batch used (a FEFO line can span several batches); line cost = Σ movement costs
     const moves: MovementInput[] = lines.flatMap((l) =>
-      (batchesOf.get(l.id) ?? [{ batchId: null, batchNo: null, expiryDate: null, baseQuantity: l.baseQuantity }]).map((b) => ({
+      (batchesOf.get(l.id) ?? [{ batchId: null, batchNo: null, expiryDate: null, baseQuantity: stockBase(l) }]).map((b) => ({
         productId: l.product.id,
         warehouseId,
         voucherItemId: l.id,
@@ -302,10 +315,12 @@ export async function tradeVoucherTx(tx: Tx, ctx: Ctx, type: TradeType, input: T
 
 // ───────────────────────── receipt / payment / journal ─────────────────────────
 
-export async function saveCashVoucher(ctx: Ctx, type: "RECEIPT" | "PAYMENT", input: CashVoucherInput, editId?: string) {
+export async function saveCashVoucher(ctx: Ctx, type: "RECEIPT" | "PAYMENT", input: CashVoucherInput, editId?: string, book?: BookKey) {
   return prisma.$transaction(async (tx) => {
     const existing = editId ? await loadEditable(tx, ctx, editId, type) : null;
     await assertNotLocked(tx, ctx.businessId, input.date, existing?.date);
+    const vBook: BookKey = existing ? existing.book : book ?? "GENERAL";
+    await assertBookAccounts(tx, ctx.businessId, vBook, [input.cashAccountId, ...input.lines.map((l) => l.accountId)]);
     await assertAccounts(tx, ctx.businessId, [input.cashAccountId], { kinds: ["CASH", "BANK"], label: "নগদ/ব্যাংক হিসাব" });
     await assertAccounts(tx, ctx.businessId, input.lines.map((l) => l.accountId));
     if (input.lines.some((l) => l.accountId === input.cashAccountId)) throw new UserError("একই নগদ/ব্যাংক হিসাব উভয় দিকে ব্যবহার করা যাবে না");
@@ -315,23 +330,25 @@ export async function saveCashVoucher(ctx: Ctx, type: "RECEIPT" | "PAYMENT", inp
     const header = { date: input.date, reference: input.reference, narration: input.narration, cashAccountId: input.cashAccountId, partyAccountId: party, amount, paidAmount: amount };
     const voucher = existing
       ? await tx.voucher.update({ where: { id: existing.id }, data: { ...header, updatedById: ctx.userId } })
-      : await tx.voucher.create({ data: { ...header, businessId: ctx.businessId, type, voucherNo: await nextVoucherNo(tx, ctx.businessId, type), createdById: ctx.userId } });
+      : await tx.voucher.create({ data: { ...header, businessId: ctx.businessId, type, book: vBook, voucherNo: await nextVoucherNo(tx, ctx.businessId, type, undefined, vBook), createdById: ctx.userId } });
     await writeEntries(tx, voucher, entries);
     return voucher;
   }, TX_OPTIONS);
 }
 
-export async function saveJournalVoucher(ctx: Ctx, input: JournalVoucherInput, editId?: string) {
+export async function saveJournalVoucher(ctx: Ctx, input: JournalVoucherInput, editId?: string, book?: BookKey) {
   return prisma.$transaction(async (tx) => {
     const existing = editId ? await loadEditable(tx, ctx, editId, "JOURNAL") : null;
     await assertNotLocked(tx, ctx.businessId, input.date, existing?.date);
+    const vBook: BookKey = existing ? existing.book : book ?? "GENERAL";
+    await assertBookAccounts(tx, ctx.businessId, vBook, input.lines.map((l) => l.accountId));
     await assertAccounts(tx, ctx.businessId, input.lines.map((l) => l.accountId));
     const entries = journalLinesFromInput(input.lines);
     const amount = round2(entries.reduce((s, l) => s + l.debit, 0));
     const header = { date: input.date, reference: input.reference, narration: input.narration, amount };
     const voucher = existing
       ? await tx.voucher.update({ where: { id: existing.id }, data: { ...header, updatedById: ctx.userId } })
-      : await tx.voucher.create({ data: { ...header, businessId: ctx.businessId, type: "JOURNAL", voucherNo: await nextVoucherNo(tx, ctx.businessId, "JOURNAL"), createdById: ctx.userId } });
+      : await tx.voucher.create({ data: { ...header, businessId: ctx.businessId, type: "JOURNAL", book: vBook, voucherNo: await nextVoucherNo(tx, ctx.businessId, "JOURNAL", undefined, vBook), createdById: ctx.userId } });
     await writeEntries(tx, voucher, entries);
     return voucher;
   }, TX_OPTIONS);
@@ -476,6 +493,11 @@ export async function deleteVoucher(ctx: Ctx, id: string) {
     if (v._count.returns > 0) throw new UserError("এই ইনভয়েসের বিপরীতে ফেরত ভাউচার আছে — আগে সেগুলো মুছুন");
     const products = await clearPostings(tx, v.id);
     await tx.voucher.delete({ where: { id: v.id } });
+    // a depot commission transfer is two linked vouchers (depot + general): both go
+    if (v.sourceKey?.startsWith(TRANSFER_SOURCE)) {
+      const link = v.sourceKey.slice(0, v.sourceKey.lastIndexOf(":") + 1);
+      await tx.voucher.deleteMany({ where: { businessId: ctx.businessId, sourceKey: { startsWith: link } } });
+    }
     await lockProducts(tx, products);
     await revalueProducts(tx, ctx.businessId, products);
     return v;

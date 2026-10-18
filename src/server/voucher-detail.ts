@@ -23,6 +23,7 @@ export async function loadVoucher(businessId: string, id: string) {
       payments: { orderBy: { lineNo: "asc" }, include: { account: { select: { name: true } } } },
       returnOf: { select: { id: true, voucherNo: true } },
       paddyPurchase: true,
+      depotDelivery: { include: { companyAccount: { select: { name: true } }, dealerAccount: { select: { name: true, customer: { select: { route: true, mobile: true } } } } } },
       returns: { select: { id: true, voucherNo: true, amount: true, date: true }, orderBy: { date: "asc" } },
     },
   });

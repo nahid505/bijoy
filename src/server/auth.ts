@@ -11,6 +11,7 @@ import { SESSION_COOKIE, SESSION_MAX_AGE_SECONDS, createSessionToken, verifySess
 import { clientIpFrom, trustedProxyHops } from "@/lib/client-ip";
 import { activeSessionUser, createSession, revokeSession } from "./services/sessions";
 import { strList } from "@/lib/dialect";
+import { loadPartyScope, restrictionsOf, type PartyScope } from "./party-scope";
 
 export const BUSINESS_COOKIE = "bl_business";
 
@@ -49,6 +50,8 @@ export interface AppContext {
     invoiceTerms: string | null;
     expiryWarningDays: number[];
     allowExpiredSale: boolean;
+    /** e.g. "DEPOT" (depot management dashboard, menus and reports) */
+    businessType: string | null;
   };
   roleName: string;
   /** role permissions, plus "!key" blocks for permissions of switched-off features */
@@ -62,6 +65,8 @@ export interface AppContext {
   /** subscription summary for banners / billing redirects (null: no subscription row) */
   subscription: { status: string; blocked: boolean; daysLeft: number | null; inGrace: boolean; accessUntil: Date | null } | null;
   businesses: BusinessSummary[];
+  /** "শুধু নির্ধারিত কাস্টমার / সরবরাহকারী": the party accounts this member may see (null = all) — src/server/party-scope.ts */
+  partyScope: PartyScope;
   /** shape expected by services */
   svc: { businessId: string; userId: string };
 }
@@ -108,6 +113,7 @@ export const getContext = cache(async (): Promise<AppContext | null> => {
   const eff = access.effective;
   // a suspended subscription leaves only the billing pages (to pay / contact the platform)
   const billingOnly = strList(m.role.permissions).filter((p) => p === "*" || p === "billing:view" || p === "billing:manage").map((p) => (p === "*" ? ["billing:view", "billing:manage"] : [p])).flat();
+  const partyScope = await loadPartyScope(b.id, user.id, restrictionsOf(m.role.permissions, isOwner));
   const permissions = eff?.blocked ? billingOnly : !on.has("MULTI_USER") && !isOwner ? [] : [...strList(m.role.permissions), ...blockedPermissions(off).map((x) => `!${x}`)];
   return {
     user,
@@ -129,6 +135,7 @@ export const getContext = cache(async (): Promise<AppContext | null> => {
       invoiceTerms: b.invoiceTerms,
       expiryWarningDays: normalizeThresholds(b.expiryWarningDays),
       allowExpiredSale: b.allowExpiredSale,
+      businessType: b.businessType,
     },
     roleName: m.role.name,
     permissions,
@@ -137,6 +144,7 @@ export const getContext = cache(async (): Promise<AppContext | null> => {
     entitled: [...access.entitled],
     subscription: eff ? { status: eff.status, blocked: eff.blocked, daysLeft: eff.daysLeft, inGrace: eff.inGrace, accessUntil: eff.accessUntil } : null,
     businesses: memberships.map((x) => ({ id: x.businessId, name: x.business.name, roleName: x.role.name })),
+    partyScope,
     svc: { businessId: b.id, userId: user.id },
   };
 });
@@ -161,20 +169,21 @@ export class ForbiddenError extends Error {
   }
 }
 
-export async function requirePermission(permission: Permission): Promise<AppContext> {
+export async function requirePermission(permission: Permission | readonly Permission[]): Promise<AppContext> {
   const ctx = await requireContext();
   if (!hasPermission(ctx.permissions, permission)) redirect("/forbidden");
   return ctx;
 }
 
 /** For server actions / API routes: throws instead of redirecting. */
-export async function assertPermission(permission: Permission): Promise<AppContext> {
+export async function assertPermission(permission: Permission | readonly Permission[]): Promise<AppContext> {
   const ctx = await getContext();
   if (!ctx || !hasPermission(ctx.permissions, permission)) throw new ForbiddenError();
   return ctx;
 }
 
-export function can(ctx: AppContext, permission: Permission): boolean {
+/** A list means "any of these". */
+export function can(ctx: AppContext, permission: Permission | readonly Permission[]): boolean {
   return hasPermission(ctx.permissions, permission);
 }
 

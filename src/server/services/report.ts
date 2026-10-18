@@ -2,6 +2,8 @@
 import { round2 } from "@/lib/calc";
 import { naturalBalance, type Nature } from "@/lib/accounting";
 import { accountMovements, balancesBefore, listAccounts, type AccountRow, type DateRange } from "./ledger";
+import type { BookFilter } from "@/lib/book";
+// Each statement reads one book (default GENERAL — the depot's own book is "DEPOT"; see src/lib/book.ts).
 
 // ───────────────────────── trial balance ─────────────────────────
 
@@ -12,11 +14,11 @@ export interface TrialBalanceRow extends AccountRow {
   closing: number; // debit − credit at end of range
 }
 
-export async function trialBalance(businessId: string, range: DateRange) {
+export async function trialBalance(businessId: string, range: DateRange, book: BookFilter = "GENERAL") {
   const [accounts, openings, period] = await Promise.all([
     listAccounts(businessId),
-    range.gte ? balancesBefore(businessId, range.gte) : Promise.resolve(new Map<string, number>()),
-    accountMovements(businessId, range),
+    range.gte ? balancesBefore(businessId, range.gte, undefined, book) : Promise.resolve(new Map<string, number>()),
+    accountMovements(businessId, range, undefined, book),
   ]);
   const rows: TrialBalanceRow[] = accounts
     .map((a) => {
@@ -60,10 +62,10 @@ export interface ProfitLoss {
   netProfit: number;
 }
 
-export async function profitAndLoss(businessId: string, range: DateRange): Promise<ProfitLoss> {
+export async function profitAndLoss(businessId: string, range: DateRange, book: BookFilter = "GENERAL"): Promise<ProfitLoss> {
   const [accounts, period] = await Promise.all([
     listAccounts(businessId, { nature: { in: ["INCOME", "EXPENSE"] } }),
-    accountMovements(businessId, range),
+    accountMovements(businessId, range, undefined, book),
   ]);
   const line = (a: AccountRow): PlLine => {
     const m = period.get(a.id) ?? { debit: 0, credit: 0 };
@@ -109,8 +111,8 @@ export interface BalanceSheet {
   difference: number; // must be 0
 }
 
-export async function balanceSheet(businessId: string, asOfExclusive: Date): Promise<BalanceSheet> {
-  const [accounts, bal] = await Promise.all([listAccounts(businessId), balancesBefore(businessId, asOfExclusive)]);
+export async function balanceSheet(businessId: string, asOfExclusive: Date, book: BookFilter = "GENERAL"): Promise<BalanceSheet> {
+  const [accounts, bal] = await Promise.all([listAccounts(businessId), balancesBefore(businessId, asOfExclusive, undefined, book)]);
   const group = (nature: Nature): BsGroup[] => {
     const map = new Map<string, BsGroup & { sort: number }>();
     for (const a of accounts.filter((x) => x.nature === nature)) {

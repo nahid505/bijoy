@@ -9,6 +9,7 @@
 //   The replay also enforces that stock never goes negative at ANY point in time.
 import type { Prisma } from "@prisma/client";
 import {
+  depotDeliveryEntries,
   purchaseEntries,
   purchaseReturnEntries,
   salesEntries,
@@ -20,6 +21,7 @@ import {
 import { round2, round3, round4, weightedAverageCost } from "@/lib/calc";
 import { formatDate } from "@/lib/format";
 import { allocateCost } from "@/lib/production";
+import { COMMISSION_INCOME_KEY, commissionReceivableKey } from "@/lib/depot";
 import { UserError } from "@/lib/errors";
 import { systemAccounts, writeEntries, type Tx } from "./accounting";
 import { syncBatchQuantities } from "./batches";
@@ -57,6 +59,17 @@ export async function repostVoucher(tx: Tx, voucherId: string, acc?: SystemAccou
     // power…) reaches the ledger — Dr Inventory / Cr the chosen cash, bank or expense account
     const label = v.type === "PRODUCTION" ? "উৎপাদন খরচ (মজুরি, বিদ্যুৎ ইত্যাদি)" : v.adjustmentAccountId ? "মজুদ বাতিল (ক্ষতি)" : undefined;
     await writeEntries(tx, v, stockJournalEntries(valueIn, valueOut, accounts, v.adjustmentAccountId, label), { allowEmpty: true });
+  } else if (v.type === "DEPOT_DELIVERY") {
+    // depot DO release: goods out at cost against the company; commission (Σ line amounts) receivable
+    if (!v.partyAccountId) throw new UserError("ডিও ডেলিভারির কোম্পানি পাওয়া যায়নি");
+    const cost = round2(v.items.reduce((s, i) => s + Number(i.costAmount), 0));
+    const commission = round2(v.items.reduce((s, i) => s + Number(i.amount), 0));
+    const keys = [COMMISSION_INCOME_KEY, commissionReceivableKey(v.partyAccountId)];
+    const ledgers = new Map((await tx.account.findMany({ where: { businessId: v.businessId, systemKey: { in: keys } }, select: { id: true, systemKey: true } })).map((a) => [a.systemKey, a.id]));
+    if (commission > 0 && (!ledgers.get(keys[0]) || !ledgers.get(keys[1]))) throw new UserError("ডিপো কমিশনের হিসাব পাওয়া যায়নি");
+    await tx.voucher.update({ where: { id: v.id }, data: { subtotal: commission, amount: round2(cost + commission) } });
+    const lines = depotDeliveryEntries(cost, commission, { company: v.partyAccountId, inventory: accounts.INVENTORY, receivable: ledgers.get(keys[1]) ?? "", income: ledgers.get(keys[0]) ?? "" });
+    await writeEntries(tx, v, lines, { allowEmpty: true });
   }
 }
 

@@ -35,11 +35,12 @@ async function hasActivity(tx: Tx, businessId: string, accountId: string) {
 
 // ───────────────────────── customers / suppliers ─────────────────────────
 
-export async function saveParty(ctx: Ctx, kind: PartyKind, input: PartyInput, id?: string) {
+/** opts.dealer: a NEW customer is a depot dealer (kept out of the general customer list; trades in the depot book). */
+export async function saveParty(ctx: Ctx, kind: PartyKind, input: PartyInput, id?: string, opts: { dealer?: boolean } = {}) {
   return prisma.$transaction(async (tx) => {
     const cfg = PARTY[kind];
     const base = { name: input.name, mobile: input.mobile, email: input.email, address: input.address, notes: input.notes, creditDays: input.creditDays };
-    const data = kind === "CUSTOMER" ? { ...base, creditLimit: input.creditLimit, groupName: input.groupName ?? null } : base;
+    const data = kind === "CUSTOMER" ? { ...base, creditLimit: input.creditLimit, groupName: input.groupName ?? null, ...(input.route !== undefined ? { route: input.route } : {}) } : base;
     let accountId: string;
     let partyId: string;
     if (id) {
@@ -61,7 +62,7 @@ export async function saveParty(ctx: Ctx, kind: PartyKind, input: PartyInput, id
       accountId = account.id;
       const party =
         kind === "CUSTOMER"
-          ? await tx.customer.create({ data: { ...data, businessId: ctx.businessId, accountId } })
+          ? await tx.customer.create({ data: { ...data, businessId: ctx.businessId, accountId, isDepotDealer: !!opts.dealer } })
           : await tx.supplier.create({ data: { ...data, businessId: ctx.businessId, accountId } });
       partyId = party.id;
     }
@@ -247,6 +248,7 @@ export async function saveProduct(ctx: Ctx, input: ProductInput, id?: string) {
       purchasePrice: input.purchasePrice,
       salePrice: input.salePrice,
       wholesalePrice: input.wholesalePrice,
+      ...(input.depotCommissionRate !== undefined ? { depotCommissionRate: input.depotCommissionRate } : {}),
       minStock: input.minStock,
       trackBatch: input.trackBatch,
       openingStock: input.openingStock,

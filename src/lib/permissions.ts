@@ -67,6 +67,17 @@ export const PERMISSION_GROUPS = [
       { key: "customers:manage", label: "কাস্টমার ব্যবস্থাপনা" },
       { key: "suppliers:view", label: "সরবরাহকারী দেখা" },
       { key: "suppliers:manage", label: "সরবরাহকারী ব্যবস্থাপনা" },
+      // restrictions, not grants: they apply only when ticked explicitly (never through "*" / the Owner)
+      {
+        key: "customers:assigned_only",
+        label: "শুধু নির্ধারিত কাস্টমার দেখতে পারবে",
+        hint: "টিক দিলে এই রোলের ব্যবহারকারী শুধু তার জন্য নির্ধারিত কাস্টমারদের তথ্য, বিক্রয়, লেজার ও রিপোর্ট দেখবেন (ব্যবহারকারী সম্পাদনা পেজে কাস্টমার নির্ধারণ করুন)",
+      },
+      {
+        key: "suppliers:assigned_only",
+        label: "শুধু নির্ধারিত সরবরাহকারী দেখতে পারবে",
+        hint: "টিক দিলে শুধু নির্ধারিত সরবরাহকারীদের তথ্য, ক্রয়, লেজার ও রিপোর্ট দেখা যাবে",
+      },
     ],
   },
   {
@@ -107,6 +118,21 @@ export const PERMISSION_GROUPS = [
     ],
   },
   {
+    // business type DEPOT only (the role form hides the group elsewhere). A role with only these keys works the
+    // depot alone: depot dashboard, challans, stock in, market collection and depot reports — no ledgers,
+    // general vouchers, profit & loss or settings. Where each one opens: DEPOT_ACCESS in src/lib/depot.ts.
+    label: "ডিপো ব্যবস্থাপনা",
+    depotOnly: true,
+    permissions: [
+      { key: "depot:view", label: "ডিপো ড্যাশবোর্ড ও চালান দেখা", hint: "ডিপো ড্যাশবোর্ড, ডেলিভারি চালান তালিকা, চালান প্রিন্ট ও ডেলিভারি রেজিস্টার" },
+      { key: "depot:delivery_manage", label: "ডেলিভারি চালান তৈরি ও সম্পাদনা", hint: "ডিও রিলিজ ও মার্কেট সেলস চালান তৈরি, সম্পাদনা ও মুছা" },
+      { key: "depot:stock_in", label: "স্টক ইন — কোম্পানি থেকে প্রাপ্তি", hint: "কোম্পানি থেকে পণ্য গ্রহণ (ফ্রি সহ) এন্ট্রি ও দেখা" },
+      { key: "depot:collection_create", label: "মার্কেট কালেকশন এন্ট্রি", hint: "ডিলারদের কাছ থেকে টাকা আদায় এবং কোম্পানির কমিশন আদায়/সমন্বয়" },
+      { key: "depot:reports_view", label: "কোম্পানি কমিশন ও মার্কেট বাকি রিপোর্ট দেখা", hint: "কোম্পানি কমিশন হিসাব ও রিপোর্ট, রুটভিত্তিক মার্কেট বাকি" },
+      { key: "depot:scheme_manage", label: "ফ্রি স্কিম রিপোর্ট দেখা ও ব্যবস্থাপনা", hint: "কোম্পানি থেকে প্রাপ্ত ও ডিলারদের দেওয়া ফ্রি পণ্যের হিসাব" },
+    ],
+  },
+  {
     label: "সাবস্ক্রিপশন ও বিলিং",
     permissions: [
       { key: "billing:view", label: "প্ল্যান, মেয়াদ, পেমেন্ট ও ইনভয়েস দেখা" },
@@ -127,7 +153,12 @@ export function isPermission(value: string): value is Permission {
  * "!key" entries block a permission even for "*" — used for permissions of switched-off features
  * (see src/lib/features.ts), so every existing check refuses them without further changes.
  */
-export function hasPermission(granted: readonly string[], required: Permission): boolean {
+export function hasPermission(granted: readonly string[], required: Permission | readonly Permission[]): boolean {
+  // a list means "any of these" (e.g. a depot page: the depot permission or the general one)
+  if (typeof required !== "string") return required.some((r) => hasPermission(granted, r));
   if (granted.includes(`!${required}`)) return false;
   return granted.includes("*") || granted.includes(required);
 }
+
+/** The depot permission group's keys (business type DEPOT only). */
+export const DEPOT_PERMISSIONS: Permission[] = PERMISSION_GROUPS.flatMap((g) => ("depotOnly" in g && g.depotOnly ? g.permissions.map((p) => p.key) : []));

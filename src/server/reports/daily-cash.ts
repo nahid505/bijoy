@@ -66,7 +66,7 @@ export async function dailyCash(businessId: string, params: { date?: string; sco
 
   const [openMap, entries] = await Promise.all([
     ids.length ? balancesBefore(businessId, range.gte, ids) : new Map<string, number>(),
-    ids.length ? prisma.journalEntry.findMany({ where: { businessId, accountId: { in: ids }, date: range }, select: { voucherId: true, debit: true, credit: true } }) : [],
+    ids.length ? prisma.journalEntry.findMany({ where: { businessId, book: "GENERAL", accountId: { in: ids }, date: range }, select: { voucherId: true, debit: true, credit: true } }) : [],
   ]);
   let opening = round2([...openMap.values()].reduce((s, v) => s + v, 0));
 

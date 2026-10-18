@@ -36,6 +36,7 @@ export interface ReportDef {
   title: string;
   description: string;
   filters: FilterKey[];
-  permission: Permission;
+  /** a list means "any of these" (depot reports: the depot permission or reports:view) */
+  permission: Permission | readonly Permission[];
   run(ctx: AppContext, params: ReportParams): Promise<ReportResult>;
 }

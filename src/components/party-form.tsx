@@ -13,6 +13,7 @@ export interface PartyDefaults {
   creditLimit?: number;
   creditDays?: number;
   groupName?: string | null;
+  route?: string | null;
 }
 
 export function PartyForm({
@@ -21,12 +22,15 @@ export function PartyForm({
   cancelHref,
   openingHint,
   kind = "CUSTOMER",
+  showRoute = false,
 }: {
   action: FormAction;
   defaults?: PartyDefaults;
   cancelHref: string;
   openingHint: string;
   kind?: "CUSTOMER" | "SUPPLIER";
+  /** depot businesses: the dealer's route / area */
+  showRoute?: boolean;
 }) {
   return (
     <ActionForm action={action}>
@@ -40,6 +44,11 @@ export function PartyForm({
         {kind === "CUSTOMER" && (
           <Field label="কাস্টমার গ্রুপ" name="groupName" hint="যেমন: পাইকারি, খুচরা, এলাকা — গ্রুপে এসএমএস পাঠাতে ব্যবহার হয়">
             <input id="groupName" name="groupName" maxLength={60} defaultValue={defaults.groupName ?? ""} className="input" />
+          </Field>
+        )}
+        {kind === "CUSTOMER" && showRoute && (
+          <Field label="রুট / এরিয়া" name="route" hint="ডিলার কোন রুট/এরিয়ার — রুটভিত্তিক মার্কেট বাকি রিপোর্টে ব্যবহার হয়">
+            <input id="route" name="route" maxLength={80} defaultValue={defaults.route ?? ""} className="input" placeholder="যেমন: রুট-১ বীরগঞ্জ" />
           </Field>
         )}
         {kind === "CUSTOMER" && (

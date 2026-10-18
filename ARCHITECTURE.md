@@ -415,8 +415,8 @@ A new top group is listed last and is never "direct".
 **Filter.** A date (default today), with previous/next-day links.
 
 **Section ১ — অন্যান্য ক্রয়.** `dailyPurchase` in `src/server/reports/daily-purchase.ts` lists every line of the day's PURCHASE vouchers that have no paddy slip:
-- columns: নম্বর | বিবরণ | পণ্যের নাম | পরিমাণ | দর | মোট টাকা | নোট;
-- বিবরণ is the supplier (or "নগদ ক্রয়") with the voucher number, পণ্যের নাম is the product, পরিমাণ includes the unit, and মোট টাকা is the line amount (quantity × rate − line discount, as posted);
+- columns: নম্বর | পার্টির নাম | পণ্যের নাম | পরিমাণ | দর | মোট টাকা | নোট;
+- পার্টির নাম is the supplier (or "নগদ ক্রয়") with the voucher number, পণ্যের নাম is the product, পরিমাণ includes the unit, and মোট টাকা is the line amount (quantity × rate − line discount, as posted);
 - নোট holds the batch and the voucher's narration;
 - below the total, voucher-level discount and VAT are shown with the net when present.
 
@@ -427,7 +427,7 @@ A new top group is listed last and is never "direct".
 
 Figure cells never wrap, so ৳ stays with the amount on A4.
 
-**Export columns.** The export puts both sections in one sheet: নম্বর | বিবরণ / পার্টির নাম | পণ্যের নাম | পরিমাণ | বস্তা | … | দর | মোট টাকা | নোট.
+**Export columns.** The export puts both sections in one sheet: নম্বর | পার্টির নাম | পণ্যের নাম | পরিমাণ | বস্তা | … | দর | মোট টাকা | নোট.
 
 Purchase returns are not included. The grand total is the other purchases' net plus the paddy total.
 
@@ -470,6 +470,230 @@ The payroll month-end posting date is not covered: an accrual must be dated at m
 **Roles and migration.** Default roles grant the permission to Admin, Manager, Accountant, Purchase and Inventory; Salesperson and Cashier start locked. Migration `20261014300000_transaction_change_date` (PostgreSQL and MySQL/MariaDB) is data-only and idempotent: it grants the permission to every existing role that can create or edit entries, so no current user is locked out. Roles are not part of backups, since restore recreates the defaults.
 
 **Tests.** The test database uses `connection_limit=5`, as production does (`vitest.config.ts`).
+
+## 6n. Depot management (business type `DEPOT`)
+**Switching it on.** At registration the user picks "ডিপো ব্যবসা" (value `DEPOT`; "depot" in any case is accepted), or later in business settings. `ctx.business.businessType` then turns on:
+- the "ডিপো ব্যবস্থাপনা" sidebar group, which is highlighted and open by default (`NavEntry.businessTypes`, `highlight`);
+- the dashboard depot panel;
+- the depot reports;
+- the route field on customers (dealers) and the commission-rate field on products.
+
+Depot pages and the service refuse other businesses with an explanation.
+
+**Delivery challan** (`/depot/deliveries`, `saveDepotDelivery` in `src/server/services/depot.ts`; one `DepotDelivery` row per voucher):
+- **কোম্পানি পেইড (ডিও রিলিজ)** — voucher type `DEPOT_DELIVERY`, prefix DO; requires a company (supplier) and a dealer (customer).
+  - Stock leaves as `DEPOT_OUT` at moving-average cost, through the normal replay, which refuses negative stock and re-costs after backdated changes.
+  - The line rate is the commission per unit, pre-filled from `Product.depotCommissionRate`.
+  - Ledger (`depotDeliveryEntries`): Dr the company's ledger / Cr Inventory at cost, so there is no dealer due and no P&L effect; Dr "কমিশন প্রাপ্য — <company>" / Cr "ডিপো কমিশন আয়" for the commission.
+- **ডিপো কালেকশন (মার্কেট সেলস)** — a normal `SALES` voucher to the dealer: stock out, sale, cash collected now, and the rest is the dealer's market due. A cash sale needs no dealer.
+- **Editing** keeps the number. The mode cannot change; delete and create a new challan instead. The generic voucher edit redirects to the depot form. Detail and print show the challan block; a DO release prints commission columns and no amount in words.
+
+**Commission** (`/depot/commission`):
+- Ledgers are created on first use: `DEPOT_COMMISSION_INCOME` (indirect income) and `DEPOT_COMMISSION_RECEIVABLE:<company account id>` (current assets).
+- Settlement (`settleCommission`) is either a receipt into cash/bank, or a journal against the company's ledger ("adjusted with the company"). It can never exceed what is outstanding.
+
+**Dashboard** (`depotDashboard`): quick actions are stock in (purchase), delivery challan, market collection (receipt) and company commission. The cards show today's deliveries, commission receivable, dealers' market due and stock value.
+
+**Reports** (`src/server/reports/depot.ts`): `depot-deliveries` (register), `depot-market-dues` (dealer dues grouped by `Customer.route`), and `depot-commission` (earned, settled and outstanding per company). All support print, Excel and CSV.
+
+**Delivery list** (`/depot/deliveries`, `listDepotDeliveries`):
+- The **বিক্রয় মূল্য** column shows each challan's goods value, Σ supplied quantity × challan rate (`challanValue` / `challanLineRate`, the same rule as the dealer copy). It applies to every mode, DO releases included.
+- The cards and the সর্বমোট footer row total the whole filter, not just the current page.
+- "প্রিন্ট / PDF" opens `?print=1`: every matching challan, no pagination, with PrintHeader and auto print.
+- "Excel (XLSX)" downloads `/api/reports/depot-deliveries` with the same filters (from, to, mode, q). `all=1` without dates exports every challan instead of the fiscal year.
+
+**Backups and migrations.** Backups carry `depotDeliveries`, the business type, the commission rate and the dealer route. Restore remaps the receivable ledger's system key along with the account ids. Migration `20261017000000_depot` (PostgreSQL and MySQL/MariaDB) is additive: enum values, the `DepotDelivery` table, `Product.depotCommissionRate` and `Customer.route`.
+
+## 6o. Free / scheme goods and the dealer challan
+**Field.** `VoucherItem.freeQuantity`, in the entered unit with a default of 0, sits on top of `quantity`. It is allowed on PURCHASE, SALES and DEPOT_DELIVERY lines; return vouchers refuse it, which keeps returnable-quantity checks exact. In forms it appears as the "ফ্রি" column on the depot stock-in (purchase) and sales forms, and as "ফ্রি পরিমাণ" on delivery challans.
+
+**Calculation** (`tradeVoucherTx`, `saveDoRelease`, `depotTotals`):
+- stock moves by quantity + free;
+- the bill or line amount is quantity × rate − discount; free goods are never billed and earn no commission;
+- a purchase's cost is spread over quantity + free (1 000 @ 450 + 50 free → 1 050 at 428.5714 average), so the average cost falls automatically;
+- on a sale or DO release the free goods leave at average cost, so cost of goods sold includes them;
+- the replay re-costs everything after an edit.
+
+**Free scheme report** (`depot-free`): per product, the free received from the company and given to dealers in the period, and the free stock left (all received − all given up to the end date; negative means free given from the depot's own stock). Totals are shown only when every product has the same unit.
+
+**Dealer copy** (`/depot/deliveries/[id]/print`; the challan's "সংরক্ষণ ও প্রিন্ট চালান (ডিলার কপি)" button and the voucher page's main print button open it):
+- columns ক্রমিক | পণ্যের কোড (`Product.code`, "—" when empty) | পণ্য | সরবরাহ | ফ্রি (highlighted) | মোট পরিমাণ | দর | মোট টাকা; the POS slip shows the code after the name;
+- then the totals (amount, collected, due), the amount in words, notes, driver, vehicle, and depot-representative and dealer signatures;
+- never commission or cost. Every line, in both modes, shows its **challan rate** (`VoucherItem.challanRate`) and amount = supplied quantity × rate, with the grand total and the amount in words. A DO release shows "পরিশোধ: কোম্পানির ডিও-তে" instead of collection/due;
+- the challan rate is the product's latest purchase price (`Product.purchasePrice`, updated by every stock-in). It is filled in when a product is chosen on the challan form, can be edited, and is saved with the line, so later price changes never alter an issued challan. On a market sale the sale rate is pre-filled with the purchase price and is itself the challan rate;
+- migration `20261017200000_challan_rate` adds the nullable column and fills existing DO-release lines from their product's purchase price;
+- `?format=pos` gives an 80 mm slip whose `@page` height is measured from the slip before printing (`PosPageSize`); A4 uses the global `@page`. Print CSS keeps the free highlight (`print-color-adjust: exact`).
+
+The internal voucher print (commission) remains available as "অফিস কপি".
+
+**Migration.** `20261017100000_free_quantity` adds one column with default 0 and a non-negative check. Backups carry `freeQuantity`.
+
+## 6p. Depot permissions (RBAC)
+
+A permission group, **ডিপো ব্যবস্থাপনা**, in `PERMISSION_GROUPS`, marked `depotOnly`. It has six keys: `depot:view`, `depot:delivery_manage`, `depot:stock_in`, `depot:collection_create`, `depot:reports_view` and `depot:scheme_manage`.
+
+**Role form.** The group is shown only in a depot business, or on a role that already holds a depot key. It comes with:
+- a "🏬 শুধু ডিপো (ডিপো হিসাবরক্ষক)" preset that ticks exactly the six keys;
+- "সব নির্বাচন" and "সব বাদ" buttons for the group.
+
+`saveRoleAction` drops depot keys outside a depot business.
+
+**Any-of checks.** `hasPermission`, `can`, `requirePermission`, `assertPermission`, `NavLink.permission` and `ReportDef.permission` all accept a list, and any one key in the list is enough.
+
+**Which screens open.** `DEPOT_ACCESS` in `src/lib/depot.ts` maps each depot screen to its keys. Every entry pairs the depot key with the general key the screen used before, so existing roles keep working:
+
+| Screen | Depot key(s) | General key |
+| --- | --- | --- |
+| Depot dashboard, challan list, dealer copy | `depot:view` (or `depot:delivery_manage`) | `sales:view` |
+| Create / edit challan | `depot:delivery_manage` | `sales:create` / `sales:edit` |
+| Stock in (`/depot/stock-in`), company payment (`/depot/payments`) | `depot:stock_in` | `purchases:create` / `vouchers:create` |
+| Market collection (`/depot/collections`) | `depot:collection_create` | `vouchers:create` |
+| Commission page | `depot:reports_view` or `depot:view` | `sales:view` |
+| Commission settlement | `depot:collection_create` | `vouchers:create` |
+| Market dues, commission report | `depot:reports_view` | `reports:view` |
+| Delivery register and the list's Excel export | `depot:view` or `depot:reports_view` | `reports:view` |
+| Free scheme report | `depot:scheme_manage` | `reports:view` |
+
+**Vouchers.** `voucherAccess(type, action, businessType, book)` in `src/server/voucher-permissions.ts` adds the depot keys to `voucherPermission` — in a depot business, and only for DEPOT-book vouchers (6r) and challans:
+- **PURCHASE / PURCHASE_RETURN:** view and create with `depot:stock_in`.
+- **PAYMENT** (to the company): view and create with `depot:stock_in`.
+- **RECEIPT:** view and create with `depot:collection_create`.
+- **SALES** (a market-sale challan): view with `depot:view` or `depot:delivery_manage`; edit and delete with `depot:delivery_manage`.
+- **DEPOT_DELIVERY:** view with `depot:view` or `depot:delivery_manage`; create, edit and delete with `depot:delivery_manage`.
+
+A GENERAL purchase / receipt / payment is never opened by a depot key. Editing or deleting stock in, collections and payments, and every other voucher type, still needs the general keys. The voucher pages and `saveVoucherAction` / `deleteVoucherAction` use `voucherAccess`.
+
+**Depot-only user.** A user opening a voucher through a depot key alone:
+- sees the voucher without its journal postings or ledger links;
+- enters stock in, market collection and company payments on the depot pages (`/depot/stock-in`, `/depot/collections`, `/depot/payments`, DEPOT book — see 6r); the general `/vouchers/.../new` pages redirect there.
+
+**Depot-only role.** For a role holding only depot keys:
+- **Dashboard:** `/dashboard` shows only the depot panel ("ডিপো ড্যাশবোর্ড"); dashboard cards link only where the user may go.
+- **Sidebar:** shows the dashboard, the depot menu and the own-profile page `/account`.
+- **Other routes:** every other route, such as ledgers, general vouchers, reports, profit & loss, products, POS and settings, redirects to `/forbidden`. That page shows "403 — Forbidden", and APIs answer 403.
+- **Lookups:** `/api/lookup` accepts the depot keys for the dealer, company, product and cash pickers.
+
+**Default role.** `DEPOT_ROLE` is "ডিপো হিসাবরক্ষক (Depot Accountant)", holding the six keys. It is created:
+- by `createBusiness` for a new depot business;
+- by `ensureDefaultRoles` (seed / restore) for existing depot businesses;
+- when the business type is switched to depot in business settings (`ensureDepotRole`).
+
+No schema change: role permissions are stored as before.
+
+## 6q. User-specific customer / supplier restriction (row-level)
+
+**Permissions.** Two keys in the "কাস্টমার ও সরবরাহকারী" group:
+- `customers:assigned_only` — "শুধু নির্ধারিত কাস্টমার দেখতে পারবে";
+- `suppliers:assigned_only` — "শুধু নির্ধারিত সরবরাহকারী দেখতে পারবে".
+
+They are restrictions, not grants. They apply only when a role names them explicitly, never through `*` or the Owner role (`restrictionsOf`). If neither is ticked, the role sees every customer and supplier as before.
+
+**Data.** Migration `20261018000000_user_party_assignment` (PostgreSQL and MySQL) only adds tables:
+- `UserCustomer` (businessId, userId, customerId) and `UserSupplier` (businessId, userId, supplierId);
+- unique per user and party; cascade on user, business and party delete.
+
+**Assignment UI.** On `/users/new` and `/users/[id]/edit`, the "কাস্টমার ও সরবরাহকারী নির্ধারণ" section has:
+- two searchable multi-selects (`PartyMultiSelect`, backed by `/api/lookup`), shown as chips and posted as `customerIds` / `supplierIds`;
+- a note saying whether the selected role applies the list.
+
+`saveMemberAction` replaces the assignment with `saveAssignments`, ignoring ids from other businesses. An assigned-only admin cannot change assignments. Removing a member clears theirs. `/users` shows "শুধু নির্ধারিত: N কাস্টমার · M সরবরাহকারী".
+
+A restricted user who creates a customer or supplier (form or picker quick-create) gets it assigned automatically (`assignToCreator`).
+
+**Request context.** `ctx.partyScope = { customers, suppliers }` holds the allowed party ledger-account ids; `null` means unrestricted. It is loaded in `getContext` (`loadPartyScope`).
+
+**Filtering.** All rules live in `src/server/party-scope.ts`:
+
+| Area | Rule |
+| --- | --- |
+| Customer / supplier lists, groups | `partyListWhere` |
+| Profile, edit, statement print, toggle / delete actions | `canSeeParty` / `assertPartyRecordAllowed`; another party's profile is a 404 |
+| Pickers (`/api/lookup` customers, suppliers, accounts) | `searchParties({ allowed })`, `searchAccounts({ where: accountScopeWhere })`; also the voucher editor's `?party=` / `?from=` prefill and the report filter preload |
+| Voucher lists (all types), detail, print, edit | `voucherScopeWhere` / `canSeeVoucher` (see below) |
+| Paddy slips, depot challans | The same rule, through `listPaddyPurchases` / `listDepotDeliveries({ scope })` |
+| Saving (voucher, paddy, depot, commission settlement) | `assertPartiesAllowed` on the party and every line account; `assertVoucherAllowed` on edit / delete |
+| Ledgers | `/accounts` lists no other party's ledger. `/accounts/[id]` and the `ledger` report open only the user's own party ledgers (`canOpenLedger`), because a sales or cash ledger lists every party. |
+| Notifications | Overdue alerts of other customers are hidden (`notificationScopeWhere`) |
+| SMS | Recipients are limited to the user's customers |
+| Dashboard | Instead of business-wide figures, "আমার কাস্টমার / সরবরাহকারী" (count, dues, today's trade) and own recent vouchers (`AssignedDashboard`) |
+
+A voucher is hidden from a restricted user when any of these holds:
+- it names (`partyAccountId`) a party outside their list;
+- it posts (`JournalEntry`) to a party outside their list, which also covers multi-party receipts;
+- it is a walk-in trade voucher (no party) of the restricted kind that someone else entered.
+
+**Reports** (`reportOpenFor` in `src/server/reports/registry.ts`):
+- **Filtered to the user's parties:** ledger, customers, suppliers, sales, purchases, customer / supplier dues, statements, collection, daily sales / purchase, depot deliveries, depot market dues.
+- **Open because they hold no party data:** stock, payroll and similar reports. Batch-expiry reports that name the supplier open only when suppliers are unrestricted.
+- **Refused (`/forbidden`, export API 403):** everything else, such as day book, cash / bank book, trial balance, P&L, balance sheet, daily cash and expenses. These are also hidden from the report index and the sidebar (`reportSlugForPath`).
+
+**Backups.** Assignments are not included, the same as users and memberships.
+
+## 6r. Depot isolation: the DEPOT book and depot dealers
+
+The depot is kept completely apart from the business's general accounting (`src/lib/book.ts`).
+
+**Books.** Two new columns, both `Book { GENERAL, DEPOT }` with default GENERAL:
+- `Voucher.book`;
+- `JournalEntry.book`, a copy of its voucher's book written by `writeEntries`, indexed `(businessId, book, date)`.
+
+Each voucher balances on its own, so each book is a complete, balanced set of accounts. Ledgers that both books use (cash, inventory, a company that is also a general supplier) keep a separate balance per book.
+
+**What goes in the DEPOT book:**
+- challans (`DEPOT_DELIVERY` DO releases and the market-sale SALES voucher);
+- stock in (PURCHASE), market collection (RECEIPT) and company payment (PAYMENT), entered on `/depot/stock-in`, `/depot/collections` and `/depot/payments` via `VoucherEditor` with `book="DEPOT"` and `saveDepotVoucherAction`;
+- commission settlement;
+- dealers' opening balances (`accountBook`).
+
+Depot vouchers are numbered in their own series (`DEPOT_PREFIX`): SI- (stock in), MS- (market sale), MC- (market collection), DP- (company payment), DJ- (journal). DO- is kept for challans. The general series has no gaps.
+
+An edit keeps the voucher's book. The book is never taken from the client.
+
+**Reading.** Every ledger / report function takes a `book` argument, default GENERAL:
+- `accountMovements`, `balancesBefore`, `statement`, `partySummaries`, `partyAging`, `trialBalance`, `profitAndLoss`, `balanceSheet`.
+
+Every other general query filters `book: "GENERAL"`:
+- voucher lists, day book, sales / purchase registers, daily sales / purchase / cash, collection, expenses, daily summary, cash flow, dashboard, SMS due amounts.
+
+Depot code passes DEPOT:
+- depot dashboard, commission, market dues, free scheme, dealer pages.
+
+The integrity report, the stock-valuation comparison and the restore check use ALL, because stock is physical.
+
+**Dealers.** `Customer.isDepotDealer`:
+- **List and profile:** dealers are kept out of the general customer list, pickers, reports and the general chart of accounts (`bookAccountWhere`). Their list, profile and statement live at `/depot/dealers` (`PartyListPage` / `PartyDetailPage` kind `DEALER`, read from the DEPOT book). `/customers/<dealer>` redirects there.
+- **Creating:** new dealers come from `/depot/dealers/new` (`saveDealerAction`) or from the challan's picker, "+ নতুন ডিলার তৈরি করুন" (`SearchSelect book="depot"` → `/api/lookup/...&book=depot` → `quickCreatePartyAction(..., { dealer: true })`).
+- **Challans:** they accept only dealers.
+
+`assertBookAccounts` keeps the books apart on save:
+- a GENERAL voucher may not use a dealer or a `DEPOT_*` account;
+- a DEPOT voucher may not use a general customer.
+
+**Permissions.** The depot permissions (6p) open only depot-book vouchers (`voucherAccess(..., book)`), never a general purchase or receipt. `/vouchers/purchase|receipt|payment/new` sends a depot-only user to the depot page.
+
+**Depot reports.**
+- `depot-profit-loss` — the depot's own profit and loss: commission, market-sale margin, depot expenses.
+- `depot-cash-book`.
+- `depot-dealer-ledger` — the statement tab of the dealer profile.
+
+**Commission → general income.** `transferCommission` on `/depot/commission` is the only link between the books. One transaction writes two vouchers linked by `sourceKey depot-transfer:<uuid>:depot|general`:
+
+| Voucher | Book | Entries |
+| --- | --- | --- |
+| DJ- | DEPOT | Dr "মূল ব্যবসায় স্থানান্তর (ডিপো)" (equity) / Cr depot cash |
+| RECEIPT | GENERAL | Dr general cash / Cr "ডিপো কমিশন আয় (স্থানান্তরিত)" (income) |
+
+- **Limit:** the amount is capped at earned commission minus earlier transfers.
+- **Permission:** it needs `vouchers:create`, because it posts to the general books.
+- **Edit / delete:** neither voucher can be edited. Deleting either one deletes both.
+
+**Migration** `20261018100000_depot_book` (PostgreSQL + MySQL). It adds the columns, then relabels existing depot data; amounts are never changed:
+- customers that received challans → dealers;
+- challan vouchers → DEPOT;
+- in depot businesses, purchases / returns / payments with a depot company, and receipts / payments / journals / openings / returns that post to a dealer or a `DEPOT_*` account → DEPOT;
+- entries follow their voucher.
+
+**Backups** carry `book` and `isDepotDealer`. Older backups restore as GENERAL.
 
 ## 7b. UI runtime notes
 - Language: the `bl_lang` cookie selects Bangla or English. Bangla strings are the dictionary keys (`src/lib/i18n.ts`). Toasts after redirects travel in the short-lived `bl_flash` cookie.

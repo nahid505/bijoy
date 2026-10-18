@@ -87,7 +87,7 @@ run("ডেইলি বিক্রয় রিপোর্ট (daily sales re
   });
 
   it("export: Excel / CSV columns and totals; the report belongs to the sales module", async () => {
-    const report = await DAILY_SALES_REPORT.run({ business: { id: ctx.businessId, currencySymbol: "৳", fiscalYearStartMonth: 7 } } as never, { date: "2026-10-10" });
+    const report = await DAILY_SALES_REPORT.run({ business: { id: ctx.businessId, currencySymbol: "৳", fiscalYearStartMonth: 7 }, partyScope: { customers: null, suppliers: null }, user: { id: ctx.userId } } as never, { date: "2026-10-10" });
     expect(report.columns.map((c) => c.label)).toEqual(["নম্বর", "পার্টির নাম", "পণ্যের নাম", "পরিমাণ", "একক", "দর", "টাকা", "নোট"]);
     const csv = toCsv(report);
     for (const s of ["রহিম স্টোর (INV-", "নগদ বিক্রয়", "5500.00", "6685.00", "6585.00", "১৩০ কেজি · ৫ পিস", "চালান C-101"]) expect(csv).toContain(s);

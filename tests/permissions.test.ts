@@ -33,10 +33,10 @@ describe("catalogue consistency", () => {
 
   it("every navigation item is guarded by a known permission", () => {
     for (const e of NAV) {
-      if (e.permission) expect(isPermission(e.permission)).toBe(true);
-      for (const c of e.children ?? []) expect(isPermission(c.permission)).toBe(true);
+      for (const p of [e.permission ?? []].flat()) expect(isPermission(p)).toBe(true);
+      for (const c of e.children ?? []) for (const p of [c.permission].flat()) expect(isPermission(p)).toBe(true);
     }
-    for (const t of MOBILE_TABS) expect(isPermission(t.permission)).toBe(true);
+    for (const t of MOBILE_TABS) for (const p of [t.permission].flat()) expect(isPermission(p)).toBe(true);
   });
 
   it("voucher permissions map to real keys", () => {

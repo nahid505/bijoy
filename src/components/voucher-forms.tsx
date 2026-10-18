@@ -69,7 +69,7 @@ export interface TradeDefaults {
   returnOfId: string;
   returnOfNo: string;
   payments: { accountId: string; amount: number; reference: string }[];
-  items: { productId: string; unitId: string; quantity: number; rate: number; discount: number; batchNo: string; expiryDate: string; mfgDate?: string; maxQty?: number }[];
+  items: { productId: string; unitId: string; quantity: number; freeQuantity?: number; rate: number; discount: number; batchNo: string; expiryDate: string; mfgDate?: string; maxQty?: number }[];
 }
 
 interface TradeLine {
@@ -77,6 +77,7 @@ interface TradeLine {
   productId: string;
   unitId: string;
   quantity: string;
+  freeQuantity: string;
   rate: string;
   discount: string;
   batchNo: string;
@@ -98,6 +99,8 @@ export function TradeVoucherForm({
   currency,
   cancelHref,
   allowExpiredSale = false,
+  showFree = false,
+  book,
 }: {
   kind: "SALES" | "PURCHASE" | "SALES_RETURN" | "PURCHASE_RETURN";
   action: FormAction;
@@ -111,6 +114,10 @@ export function TradeVoucherForm({
   currency: string;
   cancelHref: string;
   allowExpiredSale?: boolean;
+  /** depot: free / scheme quantity column (purchase and sales) */
+  showFree?: boolean;
+  /** "depot": a depot-book voucher — dealers instead of customers, depot-book balances */
+  book?: "depot";
 }) {
   const isSale = kind === "SALES" || kind === "SALES_RETURN";
   const outgoing = kind === "SALES" || kind === "PURCHASE_RETURN";
@@ -133,8 +140,8 @@ export function TradeVoucherForm({
   const [priceMode, setPriceMode] = useState<"retail" | "wholesale">("retail");
   const [lines, setLines] = useState<TradeLine[]>(
     defaults.items.length
-      ? defaults.items.map((i) => ({ key: nextKey(), productId: i.productId, unitId: i.unitId, quantity: String(i.quantity), rate: String(i.rate), discount: i.discount ? String(i.discount) : "", batchNo: i.batchNo, expiryDate: i.expiryDate, mfgDate: i.mfgDate ?? "", maxQty: i.maxQty }))
-      : [{ key: nextKey(), productId: "", unitId: "", quantity: "1", rate: "", discount: "", batchNo: "", expiryDate: "", mfgDate: "" }],
+      ? defaults.items.map((i) => ({ key: nextKey(), productId: i.productId, unitId: i.unitId, quantity: String(i.quantity), freeQuantity: i.freeQuantity ? String(i.freeQuantity) : "", rate: String(i.rate), discount: i.discount ? String(i.discount) : "", batchNo: i.batchNo, expiryDate: i.expiryDate, mfgDate: i.mfgDate ?? "", maxQty: i.maxQty }))
+      : [{ key: nextKey(), productId: "", unitId: "", quantity: "1", freeQuantity: "", rate: "", discount: "", batchNo: "", expiryDate: "", mfgDate: "" }],
   );
 
   const compatibleUnits = (productId: string) => {
@@ -168,7 +175,7 @@ export function TradeVoucherForm({
     discount: Number(discount) || 0, vatPercent: kind === "SALES" ? Number(vat) || 0 : 0,
     payments: pay,
     items: lines.filter((l) => l.productId).map((l) => ({
-      productId: l.productId, unitId: l.unitId || null, quantity: Number(l.quantity) || 0, rate: Number(l.rate) || 0, discount: Number(l.discount) || 0,
+      productId: l.productId, unitId: l.unitId || null, quantity: Number(l.quantity) || 0, ...(showFree ? { freeQuantity: Number(l.freeQuantity) || 0 } : {}), rate: Number(l.rate) || 0, discount: Number(l.discount) || 0,
       batchNo: l.batchNo || null, expiryDate: l.expiryDate || null, mfgDate: l.mfgDate || null,
     })),
   });
@@ -188,6 +195,7 @@ export function TradeVoucherForm({
           <label className="label" htmlFor="v-party">{isSale ? "কাস্টমার" : "সরবরাহকারী"}</label>
           <SearchSelect
             kind={isSale ? "customers" : "suppliers"}
+            book={book}
             id="v-party"
             value={party}
             onChange={setParty}
@@ -236,6 +244,7 @@ export function TradeVoucherForm({
                 <th className="w-40">ব্যাচ / মেয়াদ</th>
                 <th className="w-32">ইউনিট</th>
                 <th className="w-28 text-right">পরিমাণ</th>
+                {showFree && <th className="w-24 text-right" title="ফ্রি / স্কিম — স্টকে যোগ/বাদ হবে, দাম ধরা হবে না">ফ্রি</th>}
                 <th className="w-32 text-right">দর</th>
                 <th className="w-28 text-right">ছাড়</th>
                 <th className="w-36 text-right">মোট</th>
@@ -292,6 +301,12 @@ export function TradeVoucherForm({
                       <input className="input-num" type="number" min="0" step="0.001" value={l.quantity} onChange={(e) => update(l.key, { quantity: e.target.value })} aria-label="পরিমাণ" />
                       <FieldError name={`items.${idx}.quantity`} />
                     </td>
+                    {showFree && (
+                      <td>
+                        <input className="input-num border-amber-300 bg-amber-50" type="number" min="0" step="0.001" value={l.freeQuantity} placeholder="0" onChange={(e) => update(l.key, { freeQuantity: e.target.value })} aria-label="ফ্রি পরিমাণ" />
+                        <FieldError name={`items.${idx}.freeQuantity`} />
+                      </td>
+                    )}
                     <td><input className="input-num" type="number" min="0" step="0.01" value={l.rate} onChange={(e) => update(l.key, { rate: e.target.value })} aria-label="দর" /></td>
                     <td><input className="input-num" type="number" min="0" step="0.01" value={l.discount} placeholder="0" onChange={(e) => update(l.key, { discount: e.target.value })} aria-label="ছাড়" /></td>
                     <td className="num font-semibold">{formatMoney(lineAmount({ quantity: Number(l.quantity) || 0, unitPrice: Number(l.rate) || 0, discount: Number(l.discount) || 0 }), currency)}</td>
@@ -304,7 +319,7 @@ export function TradeVoucherForm({
         </div>
         {!lockedToInvoice && (
           <div className="flex items-center justify-between border-t border-rule px-4 py-2.5">
-            <button type="button" className="btn-secondary btn-sm" onClick={() => setLines((ls) => [...ls, { key: nextKey(), productId: "", unitId: "", quantity: "1", rate: "", discount: "", batchNo: "", expiryDate: "", mfgDate: "" }])}>
+            <button type="button" className="btn-secondary btn-sm" onClick={() => setLines((ls) => [...ls, { key: nextKey(), productId: "", unitId: "", quantity: "1", freeQuantity: "", rate: "", discount: "", batchNo: "", expiryDate: "", mfgDate: "" }])}>
               + আরেকটি পণ্য
             </button>
             <FieldError name="items" />
@@ -315,9 +330,9 @@ export function TradeVoucherForm({
       <div className="grid gap-4 lg:grid-cols-5">
         <section className="panel space-y-3 p-4 lg:col-span-3">
           {partyId ? (
-            <PaymentRows rows={payments} setRows={setPayments} cashAccounts={cashAccounts} total={totals.total} currency={currency} label={payLabel} />
+            <PaymentRows rows={payments} setRows={setPayments} cashAccounts={cashAccounts} total={totals.total} currency={currency} label={payLabel} book={book} />
           ) : (
-            <PaymentRows rows={payments.length ? payments : []} setRows={setPayments} cashAccounts={cashAccounts} total={totals.total} currency={currency} label={`${payLabel} — নগদ লেনদেনে সম্পূর্ণ টাকা`} />
+            <PaymentRows rows={payments.length ? payments : []} setRows={setPayments} cashAccounts={cashAccounts} total={totals.total} currency={currency} label={`${payLabel} — নগদ লেনদেনে সম্পূর্ণ টাকা`} book={book} />
           )}
           <FieldError name="payments" />
           <div>
@@ -384,6 +399,7 @@ export function CashVoucherForm({
   currency,
   cancelHref,
   expenseMode,
+  book,
 }: {
   kind: "RECEIPT" | "PAYMENT";
   action: FormAction;
@@ -393,6 +409,8 @@ export function CashVoucherForm({
   currency: string;
   cancelHref: string;
   expenseMode?: boolean;
+  /** "depot": depot-book ledgers (dealers, companies, depot cash) and balances */
+  book?: "depot";
 }) {
   const [date, setDate] = useState(defaults.date);
   const [reference, setReference] = useState(defaults.reference);
@@ -416,7 +434,7 @@ export function CashVoucherForm({
       <section className="panel grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="sm:col-span-2">
           <label className="label" htmlFor="v-cash">{receipt ? "জমা হবে (নগদ/ব্যাংক) — ডেবিট" : "প্রদান হবে (নগদ/ব্যাংক) — ক্রেডিট"}</label>
-          <SearchableAccountSelect id="v-cash" scope="cash" known={cashAccounts} value={cashId} onChange={(v, a) => { setCashId(v); rememberAcc(a); }} currency={currency} />
+          <SearchableAccountSelect id="v-cash" scope="cash" book={book} known={cashAccounts} value={cashId} onChange={(v, a) => { setCashId(v); rememberAcc(a); }} currency={currency} />
           {cash?.balance !== undefined && <p className="mt-1 text-xs text-slate-500">বর্তমান ব্যালেন্স: {formatDrCr(cash.balance, currency)}</p>}
           <FieldError name="cashAccountId" />
         </div>
@@ -434,7 +452,7 @@ export function CashVoucherForm({
                 return (
                   <tr key={l.key}>
                     <td>
-                      <SearchableAccountSelect scope={expenseMode ? "expense" : "all"} known={accounts} value={l.accountId} onChange={(v, acc) => { update(l.key, { accountId: v }); rememberAcc(acc); }} currency={currency} ariaLabel={`হিসাব, লাইন ${idx + 1}`} />
+                      <SearchableAccountSelect scope={expenseMode ? "expense" : "all"} book={book} known={accounts} value={l.accountId} onChange={(v, acc) => { update(l.key, { accountId: v }); rememberAcc(acc); }} currency={currency} ariaLabel={`হিসাব, লাইন ${idx + 1}`} />
                       {a?.balance !== undefined && !expenseMode && <p className="mt-1 text-xs text-slate-500">ব্যালেন্স: {formatDrCr(a.balance, currency)}</p>}
                       <FieldError name={`lines.${idx}.accountId`} />
                     </td>

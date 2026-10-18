@@ -8,6 +8,7 @@ import { Badge, EmptyState } from "@/components/ui";
 import { can, type AppContext } from "@/server/auth";
 import { visibleKinds } from "@/server/services/notifications";
 import { subscriptionState, userUsage } from "@/server/services/subscriptions";
+import { notificationScopeWhere } from "@/server/party-scope";
 
 export async function AccountSummary({ ctx }: { ctx: AppContext }) {
   const biz = ctx.business.id;
@@ -55,7 +56,7 @@ export async function AccountSummary({ ctx }: { ctx: AppContext }) {
 export async function RecentPurchases({ ctx }: { ctx: AppContext }) {
   if (!can(ctx, "purchases:view") || !ctx.features.includes("PURCHASE")) return null;
   const cur = ctx.business.currencySymbol;
-  const rows = await prisma.voucher.findMany({ where: { businessId: ctx.business.id, type: "PURCHASE" }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 7, include: { partyAccount: { select: { name: true } } } });
+  const rows = await prisma.voucher.findMany({ where: { businessId: ctx.business.id, book: "GENERAL", type: "PURCHASE" }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 7, include: { partyAccount: { select: { name: true } } } });
   return (
     <PanelBox title="সাম্প্রতিক ক্রয়" href="/vouchers/purchase">
       {rows.length === 0 ? <EmptyState message="এখনও কোনো ক্রয় নেই" /> : (
@@ -88,7 +89,7 @@ const SEV = { CRITICAL: "🔴", WARNING: "🟠", INFO: "🔵" } as const;
 export async function LatestNotifications({ ctx }: { ctx: AppContext }) {
   const kinds = visibleKinds((p) => can(ctx, p as never), ctx.features);
   if (!kinds.length) return null;
-  const rows = await prisma.notification.findMany({ where: { businessId: ctx.business.id, resolvedAt: null, kind: { in: kinds } }, orderBy: [{ severity: "asc" }, { createdAt: "desc" }], take: 6 });
+  const rows = await prisma.notification.findMany({ where: { businessId: ctx.business.id, ...notificationScopeWhere(ctx), resolvedAt: null, kind: { in: kinds } }, orderBy: [{ severity: "asc" }, { createdAt: "desc" }], take: 6 });
   return (
     <PanelBox title="নোটিফিকেশন" href="/notifications">
       {rows.length === 0 ? <EmptyState message="নতুন কোনো নোটিফিকেশন নেই ✅" /> : (

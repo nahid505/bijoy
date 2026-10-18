@@ -27,11 +27,13 @@ export interface Recipient {
   due: number;
 }
 
-export async function resolveRecipients(db: PrismaClient, businessId: string, target: SmsTarget, today: Date): Promise<Recipient[]> {
+/** allowed: the customer accounts an assigned-only user may reach (ctx.partyScope.customers; null = all). */
+export async function resolveRecipients(db: PrismaClient, businessId: string, target: SmsTarget, today: Date, allowed: string[] | null = null): Promise<Recipient[]> {
+  const scope = allowed ? { accountId: { in: allowed } } : {};
   const where =
-    target.kind === "customers" ? { businessId, id: { in: target.ids.slice(0, MAX_BULK_RECIPIENTS + 1) } }
-    : target.kind === "group" ? { businessId, isActive: true, groupName: target.group }
-    : { businessId, isActive: true };
+    target.kind === "customers" ? { businessId, ...scope, id: { in: target.ids.slice(0, MAX_BULK_RECIPIENTS + 1) } }
+    : target.kind === "group" ? { businessId, ...scope, isActive: true, groupName: target.group }
+    : { businessId, ...scope, isActive: true };
   const customers = await db.customer.findMany({ where, orderBy: { name: "asc" }, select: { id: true, name: true, mobile: true, accountId: true } });
   const aging = new Map((await partyAging(businessId, "CUSTOMER", today, customers.map((c) => c.accountId))).map((a) => [a.accountId, a]));
   return customers
@@ -44,7 +46,7 @@ export const isBulk = (target: SmsTarget) => target.kind !== "customers" || targ
 
 export async function sendManualSms(
   db: PrismaClient,
-  ctx: { businessId: string; userId: string; businessName: string },
+  ctx: { businessId: string; userId: string; businessName: string; allowedCustomers?: string[] | null },
   input: { target: SmsTarget; message: string },
   today: Date,
   now = new Date(),
@@ -55,7 +57,7 @@ export async function sendManualSms(
   if (!message) throw new UserError("বার্তা লিখুন");
   if (message.length > 1000) throw new UserError("বার্তা খুব বড়");
 
-  const recipients = await resolveRecipients(db, ctx.businessId, input.target, today);
+  const recipients = await resolveRecipients(db, ctx.businessId, input.target, today, ctx.allowedCustomers ?? null);
   if (recipients.length === 0) throw new UserError("কোনো প্রাপক পাওয়া যায়নি");
   if (recipients.length > MAX_BULK_RECIPIENTS) throw new UserError(`একবারে সর্বোচ্চ ${toBnDigits(MAX_BULK_RECIPIENTS)} জনকে পাঠানো যায়`);
 

@@ -21,6 +21,8 @@ const positiveMoney = z.coerce.number({ invalid_type_error: "সঠিক সং
 const quantity = z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).positive("পরিমাণ শূন্যের বেশি হতে হবে").max(1_000_000_000, "পরিমাণ খুব বড়");
 const nonNegQty = z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).min(0, "ঋণাত্মক হতে পারবে না").max(1_000_000_000);
 const dateField = z.coerce.date({ errorMap: () => ({ message: "সঠিক তারিখ দিন" }) });
+/** free / scheme quantity: moves stock with the quantity but is never billed (absent = 0) */
+const freeQuantity = z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).min(0, "ঋণাত্মক হতে পারবে না").max(1_000_000_000, "পরিমাণ খুব বড়").optional();
 const optionalId = z.string().trim().optional().nullable().transform((v) => (v ? v : null));
 const email = z.string().trim().toLowerCase().email("সঠিক ইমেইল দিন").max(200);
 const optionalEmail = z.union([email, z.literal("")]).optional().nullable().transform((v) => (v ? v : null));
@@ -78,7 +80,7 @@ export const mobileSchema = z
   });
 
 /** Business types offered at sign-up (key → label in src/lib/business-types.ts). */
-export const BUSINESS_TYPES = ["RETAIL", "WHOLESALE", "PHARMACY", "GROCERY", "ELECTRONICS", "CLOTHING", "RESTAURANT", "MANUFACTURING", "SERVICE", "DISTRIBUTION", "OTHER"] as const;
+export const BUSINESS_TYPES = ["RETAIL", "WHOLESALE", "PHARMACY", "GROCERY", "ELECTRONICS", "CLOTHING", "RESTAURANT", "MANUFACTURING", "SERVICE", "DISTRIBUTION", "DEPOT", "OTHER"] as const;
 
 /** Self-service sign-up: a new owner with a new business. */
 export const registrationSchema = z
@@ -87,7 +89,7 @@ export const registrationSchema = z
     ownerName: requiredText("মালিকের নাম", 100),
     mobile: mobileSchema,
     email: optionalEmail,
-    businessType: z.enum(BUSINESS_TYPES).optional().nullable().catch(null).transform((v) => v ?? null),
+    businessType: z.preprocess((v) => (typeof v === "string" ? v.trim().toUpperCase() : v), z.enum(BUSINESS_TYPES).optional().nullable()).catch(null).transform((v) => v ?? null),
     address: optionalText(300),
     plan: z.string().trim().max(30).regex(/^[A-Z0-9_]*$/).optional().nullable().catch(null).transform((v) => (v ? v : null)),
     password: passwordSchema,
@@ -153,8 +155,9 @@ export const partySchema = z.object({
   creditLimit: money.default(0),
   creditDays: z.coerce.number().int("পূর্ণ সংখ্যা দিন").min(0).max(3650).default(0),
   groupName: optionalText(60),
+  route: optionalText(80), // depot: dealer's route / area
 });
-export type PartyInput = Omit<z.infer<typeof partySchema>, "groupName"> & { groupName?: string | null };
+export type PartyInput = Omit<z.infer<typeof partySchema>, "groupName" | "route"> & { groupName?: string | null; route?: string | null };
 
 export const accountSchema = z.object({
   name: requiredText("হিসাবের নাম", 150),
@@ -187,6 +190,7 @@ export const productSchema = z.object({
   purchasePrice: money,
   salePrice: money,
   wholesalePrice: money.default(0),
+  depotCommissionRate: money.optional(), // depot: commission per base unit (absent = unchanged)
   minStock: nonNegQty.default(0),
   openingStock: nonNegQty.default(0),
   openingRate: money.default(0),
@@ -232,6 +236,7 @@ export const tradeVoucherSchema = z.object({
         productId: z.string().min(1, "পণ্য নির্বাচন করুন"),
         unitId: optionalId,
         quantity,
+        freeQuantity,
         rate: money,
         discount: money.default(0),
         batchNo: optionalText(60),
@@ -294,6 +299,66 @@ export const stockJournalSchema = z.object({
 export type StockJournalInput = z.infer<typeof stockJournalSchema>;
 
 // ───────────────────────── paddy purchase (weighbridge slip) ─────────────────────────
+
+/** Depot delivery challan (see src/lib/depot.ts). Rate = commission per unit (DO release) or sale rate (market sale). */
+export const depotDeliverySchema = z
+  .object({
+    ...voucherHeader,
+    mode: z.enum(["COMPANY_PAID", "DEPOT_COLLECTION"], { errorMap: () => ({ message: "ডেলিভারির ধরন নির্বাচন করুন" }) }),
+    doNumber: optionalText(60),
+    companyAccountId: optionalId, // the company (supplier) — required for a DO release
+    dealerAccountId: optionalId, // the dealer (customer) — required for a DO release; empty = cash sale
+    warehouseId: optionalId,
+    vehicleNo: optionalText(40),
+    driverName: optionalText(80),
+    notes: optionalText(500),
+    lines: z
+      // challanRate: the rate printed on the dealer challan (absent → the product's purchase price)
+      .array(z.object({ productId: z.string().min(1, "পণ্য নির্বাচন করুন"), quantity, freeQuantity, rate: money.default(0), challanRate: money.optional() }))
+      .min(1, "অন্তত একটি পণ্য দিন")
+      .max(200, "সর্বোচ্চ ২০০টি লাইন"),
+    paidAmount: money.default(0),
+    cashAccountId: optionalId,
+  })
+  .superRefine((v, ctx) => {
+    if (v.mode === "COMPANY_PAID") {
+      if (!v.companyAccountId) ctx.addIssue({ code: "custom", path: ["companyAccountId"], message: "কোম্পানি নির্বাচন করুন" });
+      if (!v.dealerAccountId) ctx.addIssue({ code: "custom", path: ["dealerAccountId"], message: "ডিলার নির্বাচন করুন" });
+    } else {
+      v.lines.forEach((l, i) => {
+        if (!(l.rate > 0)) ctx.addIssue({ code: "custom", path: ["lines", i, "rate"], message: "বিক্রয় দর দিন" });
+      });
+      if (v.paidAmount > 0 && !v.cashAccountId) ctx.addIssue({ code: "custom", path: ["cashAccountId"], message: "কালেকশনের নগদ/ব্যাংক হিসাব নির্বাচন করুন" });
+      if (!v.dealerAccountId && !v.cashAccountId) ctx.addIssue({ code: "custom", path: ["cashAccountId"], message: "ডিলার ছাড়া নগদ বিক্রয়ে নগদ/ব্যাংক হিসাব নির্বাচন করুন" });
+    }
+  });
+export type DepotDeliveryInput = z.infer<typeof depotDeliverySchema>;
+
+/** Commission received from (or adjusted with) a company. */
+export const commissionSettlementSchema = z
+  .object({
+    date: dateField,
+    companyAccountId: z.string().min(1, "কোম্পানি নির্বাচন করুন"),
+    amount: positiveMoney,
+    method: z.enum(["CASH", "ADJUST"]),
+    cashAccountId: optionalId,
+    reference: optionalText(100),
+  })
+  .superRefine((v, ctx) => {
+    if (v.method === "CASH" && !v.cashAccountId) ctx.addIssue({ code: "custom", path: ["cashAccountId"], message: "যে নগদ/ব্যাংক হিসাবে টাকা এসেছে তা নির্বাচন করুন" });
+  });
+export type CommissionSettlementInput = z.infer<typeof commissionSettlementSchema>;
+
+/** Depot commission → the business's general income (depot cash out, general cash in). */
+export const commissionTransferSchema = z
+  .object({
+    date: dateField,
+    amount: positiveMoney,
+    depotCashAccountId: z.string().min(1, "ডিপোর যে নগদ/ব্যাংক থেকে টাকা যাবে তা নির্বাচন করুন"),
+    generalCashAccountId: z.string().min(1, "সাধারণ হিসাবের যে নগদ/ব্যাংকে টাকা আসবে তা নির্বাচন করুন"),
+    reference: optionalText(100),
+  });
+export type CommissionTransferInput = z.infer<typeof commissionTransferSchema>;
 
 export const paddyPurchaseSchema = z
   .object({
@@ -391,6 +456,8 @@ export const businessSchema = z.object({
     .max(8)
     .transform((v) => [...new Set(v)].sort((a, b) => b - a)),
   allowExpiredSale: z.boolean().default(false),
+  // "" = not set; missing = unchanged. DEPOT turns on the depot dashboard, menus and reports.
+  businessType: z.preprocess((v) => (v === "" ? null : typeof v === "string" ? v.trim().toUpperCase() : v), z.enum(BUSINESS_TYPES).nullable().optional()),
 });
 
 export const newBusinessSchema = z.object({
