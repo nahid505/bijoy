@@ -81,6 +81,8 @@ Integration tests (`tests/integration`) post real vouchers through the services 
 | `npm run db:deploy` | Apply migrations |
 | `npm run db:seed` | Idempotent seed (TypeScript, reuses the accounting services) |
 | `npm run db:studio` | Prisma Studio |
+| `npm run deploy:cpanel` | Clean build → trimmed cPanel / Recohost package `dist/deploy.tar.gz` (with `SHA256SUMS.txt`); steps in [deploy-guide.md](deploy-guide.md) |
+| `npm run audit:integrity` | Read-only data-integrity audit of the database |
 
 ## Environment
 

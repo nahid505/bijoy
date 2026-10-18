@@ -20,7 +20,7 @@ const eslintConfig = [
   },
   {
     // CommonJS scripts that run on the server as plain Node.js (cPanel startup file and tools)
-    files: ["deploy/**/*.js", "deploy/**/*.cjs"],
+    files: ["deploy/**/*.js", "deploy/**/*.cjs", "server.js"],
     rules: { "@typescript-eslint/no-require-imports": "off" },
   },
 ];

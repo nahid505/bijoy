@@ -64,6 +64,7 @@ cpSync(join(schemaDir, "migrations"), join(out, "prisma", "migrations"), { recur
 writeFileSync(join(out, "DATABASE.txt"), mysql ? "This package is built for MySQL 8.0.16+ / MariaDB 10.6+ (DATABASE_URL=mysql://…).\n" : "This package is built for PostgreSQL 13+ (DATABASE_URL=postgresql://…).\n");
 for (const f of readdirSync(join(root, "deploy", "cpanel"))) cpSync(join(root, "deploy", "cpanel", f), join(out, f), { recursive: true });
 cpSync(join(root, "FINAL-RECOHOST-DEPLOYMENT.md"), join(out, "FINAL-RECOHOST-DEPLOYMENT.md"));
+cpSync(join(root, "deploy-guide.md"), join(out, "deploy-guide.md"));
 
 // Linux query engines (next's file tracing only keeps the ones it saw at build time)
 const engines = join(root, "node_modules", ".prisma", "client");
