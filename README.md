@@ -86,7 +86,7 @@ Integration tests (`tests/integration`) post real vouchers through the services 
 
 ## Environment
 
-All secrets come from the environment. `.env` is git- and docker-ignored. See [`.env.example`](.env.example).
+All secrets come from the environment. `.env` is git- and docker-ignored. See [`.env.example`](.env.example) (local / Docker) and [`.env.production.example`](.env.production.example) (Recohost / cPanel: every variable the app reads, marked required / recommended / optional).
 
 | Variable | Notes |
 |---|---|
