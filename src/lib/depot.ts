@@ -14,6 +14,18 @@ export const TRANSFER_OUT_KEY = "DEPOT_TRANSFER_TO_GENERAL";
 export const GENERAL_COMMISSION_INCOME_KEY = "GENERAL_DEPOT_COMMISSION";
 /** sourceKey prefix of the two linked transfer vouchers */
 export const TRANSFER_SOURCE = "depot-transfer:";
+/**
+ * "ডিপো ক্যাশ": the depot's own cash box — a general-book cash ledger (group নগদ), so the depot's expenses reach
+ * the business's P&L and cash flow. It is filled by a fund transfer from the main cash / bank and spent by depot
+ * expenses; depot-book collections and company payments may use it too. Not a DEPOT_ key: usable in both books.
+ */
+export const DEPOT_CASH_KEY = "GENERAL_DEPOT_CASH";
+export const DEPOT_CASH_NAME = "ডিপো ক্যাশ";
+/** sourceKey prefixes: a depot expense (general PAYMENT) and a fund transfer main cash ⇄ depot cash (general JOURNAL) */
+export const DEPOT_EXPENSE_SOURCE = "depot-expense:";
+export const DEPOT_FUND_SOURCE = "depot-fund:";
+/** sourceKeys linked by a random key (not a record id) — kept as they are by backup restore */
+export const RANDOM_SOURCE_PREFIXES = [TRANSFER_SOURCE, DEPOT_EXPENSE_SOURCE, DEPOT_FUND_SOURCE];
 
 /**
  * Who may open each depot screen: the depot permission (a depot-only role, e.g. "ডিপো হিসাবরক্ষক") or the
@@ -55,14 +67,18 @@ export const DEPOT_ACCESS = {
   paymentView: ["depot:company_payment", "vouchers:view"],
   /** depot stock adjustment: its own key only — without it the page and the menu are closed */
   stockAdjust: ["depot:stock_adjust"],
+  /** depot expenses (paid from ডিপো ক্যাশ): its own key only */
+  expense: ["depot:expense_manage"],
+  /** fund transfer main cash / bank ⇄ ডিপো ক্যাশ: moves general cash, so a general voucher permission */
+  fund: ["vouchers:create"],
 } as const satisfies Record<string, readonly Permission[]>;
 
 /** The default depot-only role (created for depot businesses). */
 export const DEPOT_ROLE = {
   name: "ডিপো হিসাবরক্ষক (Depot Accountant)",
-  description: "শুধু ডিপো ব্যবস্থাপনা — চালান, স্টক ইন, মার্কেট কালেকশন ও ডিপো রিপোর্ট; সাধারণ হিসাব, লেজার ও সেটিং নয়",
+  description: "শুধু ডিপো ব্যবস্থাপনা — চালান, স্টক ইন, মার্কেট কালেকশন, ডিপো খরচ ও ডিপো রিপোর্ট; সাধারণ হিসাব, লেজার ও সেটিং নয়",
   permissions: [
-    "depot:view", "depot:delivery_manage", "depot:dealers_manage", "depot:stock_in", "depot:stock_adjust", "depot:collection_create", "depot:company_payment",
+    "depot:view", "depot:delivery_manage", "depot:dealers_manage", "depot:stock_in", "depot:stock_adjust", "depot:collection_create", "depot:company_payment", "depot:expense_manage",
     "depot:reports_view", "depot:register_view", "depot:scheme_manage", "depot:company_ledger", "depot:profit_loss", "depot:cashbook",
   ] as Permission[],
 };
@@ -77,6 +93,8 @@ export const DEPOT_PERMISSION_UPGRADE: Record<string, Permission[]> = {
   "depot:delivery_manage": ["depot:dealers_manage"],
   "depot:stock_in": ["depot:stock_adjust", "depot:company_payment", "depot:company_ledger"],
   "depot:reports_view": ["depot:register_view", "depot:profit_loss", "depot:cashbook"],
+  // 20261019000000_depot_expense: whoever pays the company from the depot cash may also record depot expenses
+  "depot:company_payment": ["depot:expense_manage"],
 };
 export const DEPOT_MODES = ["COMPANY_PAID", "DEPOT_COLLECTION"] as const;
 export type DepotMode = (typeof DEPOT_MODES)[number];

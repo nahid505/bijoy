@@ -3,7 +3,7 @@
 import type { Prisma } from "@prisma/client";
 import defaults from "../../lib/business-defaults.json";
 import { startSubscription } from "./subscriptions";
-import { DEPOT_ROLE, isDepot } from "../../lib/depot";
+import { DEPOT_CASH_KEY, DEPOT_CASH_NAME, DEPOT_ROLE, isDepot } from "../../lib/depot";
 
 type Tx = Prisma.TransactionClient;
 
@@ -41,7 +41,20 @@ export async function ensureDefaultRoles(tx: Tx, businessId: string) {
   }
   const business = await tx.business.findUnique({ where: { id: businessId }, select: { businessType: true } });
   if (isDepot(business?.businessType) && (await ensureDepotRole(tx, businessId))) added++;
+  if (isDepot(business?.businessType)) await ensureDepotCash(tx, businessId);
   return added;
+}
+
+/** The business's "ডিপো ক্যাশ" ledger id (group নগদ) — created on first use; depot businesses only (null otherwise). */
+export async function ensureDepotCash(tx: Pick<Tx, "account" | "accountGroup" | "business">, businessId: string): Promise<string | null> {
+  const found = await tx.account.findFirst({ where: { businessId, systemKey: DEPOT_CASH_KEY }, select: { id: true } });
+  if (found) return found.id;
+  const business = await tx.business.findUnique({ where: { id: businessId }, select: { businessType: true } });
+  if (!isDepot(business?.businessType)) return null;
+  const group = await tx.accountGroup.findFirst({ where: { businessId, systemKey: "CASH_IN_HAND" }, select: { id: true } });
+  if (!group) throw new Error(`CASH_IN_HAND group missing for business ${businessId}`);
+  const code = (await tx.account.findFirst({ where: { businessId, code: "1002" }, select: { id: true } })) ? null : "1002";
+  return (await tx.account.create({ data: { businessId, groupId: group.id, nature: "ASSET", kind: "CASH", name: DEPOT_CASH_NAME, code, systemKey: DEPOT_CASH_KEY, isSystem: true } })).id;
 }
 
 /** Depot business: the depot-only role "ডিপো হিসাবরক্ষক" (depot permissions only), unless a role of that name exists. */
@@ -125,7 +138,10 @@ export async function createBusiness(
     });
     if (role.isSystem) ownerRoleId = role.id;
   }
-  if (isDepot(input.businessType)) await ensureDepotRole(tx, businessId);
+  if (isDepot(input.businessType)) {
+    await ensureDepotRole(tx, businessId);
+    await ensureDepotCash(tx, businessId);
+  }
   await tx.membership.create({ data: { businessId, userId: input.ownerUserId, roleId: ownerRoleId } });
 
   // SaaS: trial (or free plan) subscription

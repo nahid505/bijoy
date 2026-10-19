@@ -8,10 +8,13 @@ import { DEPOT_ROLE } from "@/lib/depot";
 import { createBusiness } from "@/server/services/bootstrap";
 
 const run = process.env.TEST_DATABASE_URL || process.env.TEST_MYSQL_URL ? describe : describe.skip;
+// the two permission migrations, in the order prisma migrate deploy runs them
 const migration = () =>
-  readFileSync(join(process.cwd(), "prisma", ...(isMySql() ? ["mysql"] : []), "migrations", "20261018200000_depot_permissions_v2", "migration.sql"), "utf8")
-    .split("\n")
-    .filter((l) => l.startsWith("UPDATE"));
+  ["20261018200000_depot_permissions_v2", "20261019000000_depot_expense"].flatMap((m) =>
+    readFileSync(join(process.cwd(), "prisma", ...(isMySql() ? ["mysql"] : []), "migrations", m, "migration.sql"), "utf8")
+      .split("\n")
+      .filter((l) => l.startsWith("UPDATE")),
+  );
 
 run("depot permission upgrade (migration)", () => {
   let businessId: string;
@@ -33,8 +36,8 @@ run("depot permission upgrade (migration)", () => {
 
   it("adds exactly the keys each old key used to include — and is safe to run twice", async () => {
     for (let pass = 0; pass < 2; pass++) for (const sql of migration()) await prisma.$executeRawUnsafe(sql);
-    expect(await perms("old-full")).toEqual([...DEPOT_ROLE.permissions].sort()); // all 13, no duplicates
-    expect(await perms("stock-only")).toEqual(["dashboard:view", "depot:company_ledger", "depot:company_payment", "depot:stock_adjust", "depot:stock_in"]);
+    expect(await perms("old-full")).toEqual([...DEPOT_ROLE.permissions].sort()); // all 14, no duplicates
+    expect(await perms("stock-only")).toEqual(["dashboard:view", "depot:company_ledger", "depot:company_payment", "depot:expense_manage", "depot:stock_adjust", "depot:stock_in"]);
     expect(await perms("viewer")).toEqual(["depot:register_view", "depot:view"]);
     expect(await perms("general")).toEqual(["reports:view", "sales:view"]); // untouched
   });

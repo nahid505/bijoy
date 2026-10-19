@@ -530,10 +530,10 @@ The internal voucher print (commission) remains available as "অফিস ক�
 
 ## 6p. Depot permissions (RBAC)
 
-A permission group, **ডিপো ব্যবস্থাপনা**, in `PERMISSION_GROUPS`, marked `depotOnly`. It has 13 keys, in this order: `depot:view`, `depot:delivery_manage`, `depot:dealers_manage`, `depot:stock_in`, `depot:stock_adjust`, `depot:collection_create`, `depot:company_payment`, `depot:reports_view`, `depot:register_view`, `depot:scheme_manage`, `depot:company_ledger`, `depot:profit_loss` and `depot:cashbook`.
+A permission group, **ডিপো ব্যবস্থাপনা**, in `PERMISSION_GROUPS`, marked `depotOnly`. It has 14 keys, in this order: `depot:view`, `depot:delivery_manage`, `depot:dealers_manage`, `depot:stock_in`, `depot:stock_adjust`, `depot:collection_create`, `depot:company_payment`, `depot:expense_manage`, `depot:reports_view`, `depot:register_view`, `depot:scheme_manage`, `depot:company_ledger`, `depot:profit_loss` and `depot:cashbook`.
 
 **Role form.** The group is shown only in a depot business, or on a role that already holds a depot key. It comes with:
-- a "🏬 শুধু ডিপো (ডিপো হিসাবরক্ষক)" preset that ticks exactly the 13 keys and nothing else;
+- a "🏬 শুধু ডিপো (ডিপো হিসাবরক্ষক)" preset that ticks exactly the 14 keys and nothing else;
 - a master checkbox, "ডিপো ব্যবস্থাপনার সব অনুমতি দিন (Select All)" (`GroupSelectAll`), that ticks or clears the whole group and shows half-ticked (indeterminate) when only some keys are on.
 
 **Upgrade.** Migration `20261018200000_depot_permissions_v2` gives roles made with the first six keys the new keys that used to be part of them (`DEPOT_PERMISSION_UPGRADE`), so no role loses a screen:
@@ -541,6 +541,8 @@ A permission group, **ডিপো ব্যবস্থাপনা**, in `PERM
 - `delivery_manage` → `dealers_manage`;
 - `stock_in` → `stock_adjust`, `company_payment`, `company_ledger`;
 - `reports_view` → `register_view`, `profit_loss`, `cashbook`.
+
+Migration `20261019000000_depot_expense` then gives `depot:expense_manage` to every role holding `depot:company_payment` (whoever pays the company from the depot cash may also record depot expenses).
 
 It only adds keys and runs once, so a key an admin removes later stays removed.
 
@@ -560,6 +562,8 @@ It only adds keys and runs once, so a key an admin removes later stays removed.
 | **Depot stock adjustment** (`/depot/stock-adjust` and sub-routes) | `depot:stock_adjust` **only** | — |
 | Market collection (`/depot/collections`), commission settlement | `depot:collection_create` | `vouchers:create` |
 | Company payment (`/depot/payments`) | `depot:company_payment` | `vouchers:create` |
+| **Depot expenses** (`/depot/expenses`, new, edit, delete) | `depot:expense_manage` **only** | — |
+| Fund transfer main cash ⇄ ডিপো ক্যাশ (on `/depot/expenses`) | — | `vouchers:create` (it moves the general cash) |
 | Commission page | `depot:reports_view` or `depot:view` | `sales:view` |
 | Market dues, commission report | `depot:reports_view` | `reports:view` |
 | Delivery register and the list's Excel export | `depot:register_view` | `reports:view` |
@@ -590,7 +594,7 @@ A GENERAL purchase / receipt / payment is never opened by a depot key. Editing o
 - **Other routes:** every other route, such as ledgers, general vouchers, reports, profit & loss, products, POS and settings, redirects to `/forbidden`. That page shows "403 — Forbidden", and APIs answer 403.
 - **Lookups:** `/api/lookup` accepts the depot keys for the dealer, company, product and cash pickers.
 
-**Default role.** `DEPOT_ROLE` is "ডিপো হিসাবরক্ষক (Depot Accountant)", holding the six keys. It is created:
+**Default role.** `DEPOT_ROLE` is "ডিপো হিসাবরক্ষক (Depot Accountant)", holding all 14 keys. It is created:
 - by `createBusiness` for a new depot business;
 - by `ensureDefaultRoles` (seed / restore) for existing depot businesses;
 - when the business type is switched to depot in business settings (`ensureDepotRole`).
@@ -756,6 +760,50 @@ Backups are refused, as for every restricted user.
 A user with the restriction and no heads sees no general ledger.
 
 The integrity audit checks that assignments stay inside one business and never hold a party ledger.
+
+## 6t. Depot cash (ডিপো ক্যাশ) and depot expenses (ডিপো খরচ)
+
+**The cash box.** Every depot business has one ledger "ডিপো ক্যাশ": kind CASH, group নগদ (`CASH_IN_HAND`), code 1002 when free, systemKey `GENERAL_DEPOT_CASH`, `isSystem`. It is not a `DEPOT_*` key, so both books may use it. `ensureDepotCash` (`src/server/services/bootstrap.ts`) creates it:
+- in `createBusiness` for a new depot business;
+- in `ensureDefaultRoles` (seed / restore);
+- when the business type is switched to depot;
+- on first use (the expense pages, fund transfer) for existing depot businesses.
+
+No schema change and no data migration.
+
+**Postings** (`src/server/services/depot-cash.ts`) — both in the **GENERAL** book:
+
+| Action | Voucher | Entries | sourceKey |
+| --- | --- | --- | --- |
+| Fund transfer IN (main → depot) | JOURNAL (JV-) | Dr ডিপো ক্যাশ / Cr main cash or bank | `depot-fund:<uuid>` |
+| Fund transfer OUT (depot → main) | JOURNAL (JV-) | Dr main cash or bank / Cr ডিপো ক্যাশ | `depot-fund:<uuid>` |
+| Depot expense | PAYMENT (PV-) | Dr expense head / Cr ডিপো ক্যাশ (or the chosen cash / bank) | `depot-expense:<uuid>` |
+
+So a depot expense is part of the business's P&L, cash flow (operating outflow), day book and expense report. It is not part of the depot-only P&L (6r).
+
+A fund transfer is cash → cash. It is neither income nor expense, and the cash flow statement does not count it.
+
+**Cash check.** The real balance of a cash box is the sum over both books (`cashInHand`), because depot-book collections and company payments may also use ডিপো ক্যাশ. Spending more than a CASH ledger holds is refused: "… পর্যাপ্ত টাকা নেই — বর্তমান ব্যালেন্স …". This applies to the expense (an edit counts its own amount back) and to the fund transfer's source. A bank account may go into overdraft.
+
+**Validation.**
+- The expense head must be an EXPENSE-nature ledger. The payment method must be a cash or bank account. Both must be general-book accounts (`assertBookAccounts`).
+- The lock date and the entry-date permission apply.
+- Restricted users are checked with `assertPartiesAllowed` (heads) and `assertVoucherAllowed` (edit / delete).
+
+**Screens.**
+- **`/depot/expenses`** (menu "ডিপো খরচ"): date, head and text filters; cards for the box balance, the period total and the count; edit and delete per row; the fund-transfer panel (`#depot-fund`, needs `vouchers:create`, hidden from restricted users).
+- **`/depot/expenses/new`** and **`/depot/expenses/[id]/edit`**: date, expense head (the `expense` picker), payment method (defaults to ডিপো ক্যাশ), amount (the hint shows the box before and after), memo no and description. "সংরক্ষণ ও আরেকটি" returns to a new form.
+- **Depot dashboard:** a "ডিপো খরচ এন্ট্রি" quick action and a "ডিপো ক্যাশ — বর্তমান ব্যালেন্স" card.
+- **Depot cash book** (`depot-cash-book`):
+  - By default it shows every cash ledger's depot-book movements (collections, company payments, as before) plus ডিপো ক্যাশ's general-book ones (fund transfers, expenses), with one running balance (`statement(…, { parts })`).
+  - Picking **ডিপো ক্যাশ** in the filter shows that ledger alone across both books (`"ALL"`); its closing balance is the cash in the box.
+  - Picking another cash account shows its depot-book movements.
+
+**Edit / delete.** Depot expenses are edited and deleted on the depot pages; delete returns the money to the box. As general PAYMENT vouchers they also open through `/vouchers/v/[id]` for holders of the general voucher keys.
+
+**Backups.** Backups keep the `depot-expense:` and `depot-fund:` sourceKeys unchanged (`RANDOM_SOURCE_PREFIXES`).
+
+**Tests:** `tests/integration/depot-cash.test.ts`.
 
 ## 7b. UI runtime notes
 - Language: the `bl_lang` cookie selects Bangla or English. Bangla strings are the dictionary keys (`src/lib/i18n.ts`). Toasts after redirects travel in the short-lived `bl_flash` cookie.

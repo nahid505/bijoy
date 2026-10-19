@@ -103,13 +103,19 @@ export interface StatementLine {
  * Statement for one or more ledgers (multiple = combined cash book / bank book).
  * Opening = balance before `range.gte`; lines are in date order with a running balance.
  */
-export async function statement(businessId: string, accountIds: string[], range: DateRange, opts: { take?: number; book?: BookFilter } = {}) {
-  const book = opts.book ?? "GENERAL";
-  const opening = range.gte
-    ? round2([...(await balancesBefore(businessId, range.gte, accountIds, book)).values()].reduce((s, v) => s + v, 0))
-    : 0;
+/**
+ * parts: a statement over several (accounts, book) pairs at once — e.g. the depot cash book: every cash ledger's
+ * depot-book movements plus the depot cash box's general-book ones. The pairs must not overlap; accountIds is
+ * then their union (it decides the counter ledgers).
+ */
+export async function statement(businessId: string, accountIds: string[], range: DateRange, opts: { take?: number; book?: BookFilter; parts?: { accountIds: string[]; book: BookFilter }[] } = {}) {
+  const parts = opts.parts ?? [{ accountIds, book: opts.book ?? "GENERAL" }];
+  let opening = 0;
+  if (range.gte) for (const p of parts) opening += [...(await balancesBefore(businessId, range.gte, p.accountIds, p.book)).values()].reduce((s, v) => s + v, 0);
+  opening = round2(opening);
+  const scope = parts.map((p) => ({ ...bookWhere(p.book), accountId: { in: p.accountIds } }));
   const entries = await prisma.journalEntry.findMany({
-    where: { businessId, ...bookWhere(book), accountId: { in: accountIds }, ...(range.gte || range.lt ? { date: range } : {}) },
+    where: { businessId, ...(scope.length === 1 ? scope[0] : { OR: scope }), ...(range.gte || range.lt ? { date: range } : {}) },
     orderBy: [{ date: "asc" }, { voucher: { createdAt: "asc" } }, { lineNo: "asc" }],
     take: opts.take ?? 5000,
     include: { voucher: { select: { id: true, voucherNo: true, type: true, narration: true } }, account: { select: { name: true } } },

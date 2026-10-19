@@ -10,7 +10,7 @@ import { balanceSheet, profitAndLoss, trialBalance } from "../services/report";
 import type { ReportDef, ReportParams, ReportResult, ReportRow } from "./types";
 import type { AppContext } from "../auth";
 import { ci } from "@/lib/dialect";
-import type { BookKey } from "@/lib/book";
+import type { BookFilter, BookKey } from "@/lib/book";
 import { allowedAccounts, canOpenLedger, partyListWhere, voucherScopeWhere } from "../party-scope";
 
 const typeLabel = (t: VoucherType) => VOUCHER_TYPES[t as VoucherTypeKey].label;
@@ -25,10 +25,10 @@ function asOfRange(p: ReportParams) {
 // ───────────────────────── statements over ledgers ─────────────────────────
 
 /** Ledger / cash book of one book (GENERAL by default; the depot reports pass DEPOT). */
-export async function ledgerReport(ctx: AppContext, p: ReportParams, accountIds: string[], title: string, book: BookKey = "GENERAL"): Promise<ReportResult> {
+export async function ledgerReport(ctx: AppContext, p: ReportParams, accountIds: string[], title: string, book: BookFilter = "GENERAL", parts?: { accountIds: string[]; book: BookFilter }[]): Promise<ReportResult> {
   const { from, to, range } = reportPeriod(p, ctx.business.fiscalYearStartMonth);
   const cur = ctx.business.currencySymbol;
-  const st = await statement(ctx.business.id, accountIds, range, { book });
+  const st = await statement(ctx.business.id, accountIds, range, { book, parts });
   const multi = accountIds.length > 1;
   const q = p.q?.trim().toLowerCase();
   const lines = q ? st.lines.filter((l) => `${l.voucherNo} ${l.narration ?? ""} ${l.against}`.toLowerCase().includes(q)) : st.lines;
@@ -71,7 +71,7 @@ export async function ledgerReport(ctx: AppContext, p: ReportParams, accountIds:
 }
 
 /** heads: the assigned account heads of a restricted user (null = all) */
-async function kindAccounts(businessId: string, kind: "CASH" | "BANK", selected?: string, heads: string[] | null = null) {
+export async function kindAccounts(businessId: string, kind: "CASH" | "BANK", selected?: string, heads: string[] | null = null) {
   const all = await prisma.account.findMany({ where: { businessId, kind, ...(heads ? { id: { in: heads } } : {}) }, select: { id: true, name: true }, orderBy: { name: "asc" } });
   const ids = selected && all.some((a) => a.id === selected) ? [selected] : all.map((a) => a.id);
   return { ids, names: all.filter((a) => ids.includes(a.id)).map((a) => a.name) };

@@ -12,7 +12,7 @@ import { revalueProducts } from "./posting";
 import { trialBalance } from "./report";
 import { isMySql, rawExec, sql } from "@/lib/dialect";
 import { assertVouchersBalanced } from "./accounting";
-import { TRANSFER_SOURCE } from "@/lib/depot";
+import { RANDOM_SOURCE_PREFIXES } from "@/lib/depot";
 
 export const BACKUP_FORMAT = "bijoy-lenden-backup";
 export const BACKUP_VERSION = 5;
@@ -315,8 +315,8 @@ export async function restoreBackup(raw: unknown, userId: string): Promise<{ bus
           id: must(v.id), businessId, type: v.type as never, book: v.book === "DEPOT" ? "DEPOT" : "GENERAL", voucherNo: String(v.voucherNo), date: date(v.date)!, reference: (v.reference as string) ?? null, narration: (v.narration as string) ?? null,
           partyAccountId: id(v.partyAccountId), cashAccountId: id(v.cashAccountId), warehouseId: id(v.warehouseId), subtotal: Number(v.subtotal), discount: Number(v.discount),
           vatPercent: Number(v.vatPercent), vatAmount: Number(v.vatAmount), amount: Number(v.amount), paidAmount: Number(v.paidAmount),
-          // depot commission transfers are linked by a random key, not by a record id
-          sourceKey: v.sourceKey ? (String(v.sourceKey).startsWith(TRANSFER_SOURCE) ? String(v.sourceKey) : String(v.sourceKey).replace(/:([^:]+)$/, (_m, old) => `:${must(old)}`)) : null,
+          // depot commission transfers, depot expenses and fund transfers are linked by a random key, not by a record id
+          sourceKey: v.sourceKey ? (RANDOM_SOURCE_PREFIXES.some((p) => String(v.sourceKey).startsWith(p)) ? String(v.sourceKey) : String(v.sourceKey).replace(/:([^:]+)$/, (_m, old) => `:${must(old)}`)) : null,
           dueDate: date(v.dueDate), adjustmentAccountId: id(v.adjustmentAccountId), createdById: userId,
         })),
       });

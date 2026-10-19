@@ -5,8 +5,8 @@ import { NAV } from "@/lib/nav";
 import { depotVoucherPermissions, voucherAccess } from "@/server/voucher-permissions";
 
 const depotOnly = [...DEPOT_ROLE.permissions];
-const ALL13 = [
-  "depot:view", "depot:delivery_manage", "depot:dealers_manage", "depot:stock_in", "depot:stock_adjust", "depot:collection_create", "depot:company_payment",
+const ALL14 = [
+  "depot:view", "depot:delivery_manage", "depot:dealers_manage", "depot:stock_in", "depot:stock_adjust", "depot:collection_create", "depot:company_payment", "depot:expense_manage",
   "depot:reports_view", "depot:register_view", "depot:scheme_manage", "depot:company_ledger", "depot:profit_loss", "depot:cashbook",
 ];
 // what the app layout does for the sidebar
@@ -22,13 +22,14 @@ const sidebar = (granted: string[], businessType: string) =>
 const depotMenu = (granted: string[]) => sidebar(granted, "DEPOT").find((e) => e.key === "depot")?.children ?? [];
 
 describe("depot permissions (ডিপো ব্যবস্থাপনা)", () => {
-  it("the depot card holds the full set of 13 keys, in order; the depot role holds all of them", () => {
+  it("the depot card holds the full set of 14 keys, in order; the depot role holds all of them", () => {
     const g = PERMISSION_GROUPS.find((x) => x.label === "ডিপো ব্যবস্থাপনা")!;
-    expect(g.permissions.map((p) => p.key)).toEqual(ALL13);
+    expect(g.permissions.map((p) => p.key)).toEqual(ALL14);
     expect(g.permissions.find((p) => p.key === "depot:stock_adjust")?.label).toBe("স্টক সমন্বয় (ডিপো)");
-    expect(DEPOT_PERMISSIONS).toEqual(ALL13);
+    expect(g.permissions.find((p) => p.key === "depot:expense_manage")?.label).toBe("ডিপো খরচ এন্ট্রি ও তালিকা");
+    expect(DEPOT_PERMISSIONS).toEqual(ALL14);
     expect(depotOnly.every(isPermission)).toBe(true);
-    expect(depotOnly).toEqual(ALL13);
+    expect(depotOnly).toEqual(ALL14);
   });
 
   it("a list means any of; a blocked key stays blocked", () => {
@@ -42,20 +43,24 @@ describe("depot permissions (ডিপো ব্যবস্থাপনা)", (
   it("a depot-only role: no general accounting permission at all", () => {
     for (const p of ["dashboard:view", "accounts:view", "vouchers:view", "vouchers:create", "sales:view", "purchases:view", "reports:view", "business:manage", "roles:manage", "users:manage", "inventory:view", "stock:adjust"] as const)
       expect(hasPermission(depotOnly, p), p).toBe(false);
-    for (const k of Object.keys(DEPOT_ACCESS) as (keyof typeof DEPOT_ACCESS)[]) expect(hasPermission(depotOnly, DEPOT_ACCESS[k]), k).toBe(true);
+    // every depot screen opens — except the fund transfer, which moves the main (general) cash
+    for (const k of Object.keys(DEPOT_ACCESS) as (keyof typeof DEPOT_ACCESS)[]) expect(hasPermission(depotOnly, DEPOT_ACCESS[k]), k).toBe(k !== "fund");
   });
 
   it("sidebar: each depot item needs its own key; the full role sees the whole depot menu", () => {
     const s = sidebar(depotOnly, "DEPOT");
     expect(s.map((e) => e.key)).toEqual(["dashboard", "depot", "account"]); // account = own profile / password only
     expect(s[1].children).toEqual([
-      "/depot/deliveries", "/depot/deliveries/new", "/depot/dealers", "/depot/stock-in", "/depot/collections", "/depot/payments", "/depot/stock-adjust", "/depot/commission",
+      "/depot/deliveries", "/depot/deliveries/new", "/depot/dealers", "/depot/stock-in", "/depot/collections", "/depot/payments", "/depot/stock-adjust", "/depot/expenses", "/depot/commission",
       "/reports/depot-market-dues", "/reports/depot-commission", "/reports/depot-deliveries", "/reports/depot-free", "/reports/depot-company-ledger", "/reports/depot-profit-loss", "/reports/depot-cash-book",
     ]);
     // stock adjustment: only with depot:stock_adjust — a stock-in or general stock key does not open it
     expect(depotMenu(["depot:stock_in"])).not.toContain("/depot/stock-adjust");
     expect(depotMenu(["stock:adjust", "inventory:view"])).not.toContain("/depot/stock-adjust");
     expect(depotMenu(["depot:stock_adjust"])).toEqual(["/depot/stock-adjust"]);
+    // depot expenses: only with depot:expense_manage — a general voucher or depot payment key does not open it
+    expect(depotMenu(["depot:expense_manage"])).toEqual(["/depot/expenses"]);
+    expect(depotMenu(["vouchers:create", "vouchers:view", "depot:company_payment"])).not.toContain("/depot/expenses");
     // one key, one item
     expect(depotMenu(["depot:company_payment"])).toEqual(["/depot/payments"]);
     expect(depotMenu(["depot:dealers_manage"])).toEqual(["/depot/dealers"]);
@@ -89,8 +94,14 @@ describe("depot permissions (ডিপো ব্যবস্থাপনা)", (
 
   it("upgrade of roles made with the first set: every old key brings the screens it used to open", () => {
     const old = ["depot:view", "depot:delivery_manage", "depot:stock_in", "depot:collection_create", "depot:reports_view", "depot:scheme_manage"];
-    const upgraded = [...new Set([...old, ...old.flatMap((k) => DEPOT_PERMISSION_UPGRADE[k] ?? [])])].sort();
-    expect(upgraded).toEqual([...ALL13].sort());
+    // the migrations run in order (v2, then depot_expense), so the map applies until nothing new is added
+    let upgraded = old;
+    for (let next = upgraded; ; upgraded = next) {
+      next = [...new Set([...upgraded, ...upgraded.flatMap((k) => DEPOT_PERMISSION_UPGRADE[k] ?? [])])];
+      if (next.length === upgraded.length) break;
+    }
+    upgraded = upgraded.sort();
+    expect(upgraded).toEqual([...ALL14].sort());
     for (const k of Object.values(DEPOT_PERMISSION_UPGRADE).flat()) expect(isPermission(k), k).toBe(true);
   });
 });

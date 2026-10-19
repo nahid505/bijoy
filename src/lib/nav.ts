@@ -58,6 +58,7 @@ export const NAV: NavEntry[] = [
       { href: "/depot/collections", label: "মার্কেট কালেকশন", permission: DEPOT_ACCESS.collectionView },
       { href: "/depot/payments", label: "কোম্পানিকে পেমেন্ট", permission: DEPOT_ACCESS.paymentView },
       { href: "/depot/stock-adjust", label: "স্টক সমন্বয় (ডিপো)", permission: DEPOT_ACCESS.stockAdjust },
+      { href: "/depot/expenses", label: "ডিপো খরচ", permission: DEPOT_ACCESS.expense },
       { href: "/depot/commission", label: "কোম্পানি কমিশন হিসাব", permission: DEPOT_ACCESS.commission },
       { href: "/reports/depot-market-dues", label: "রুটভিত্তিক মার্কেট বাকি", permission: DEPOT_ACCESS.reports },
       { href: "/reports/depot-commission", label: "কোম্পানি কমিশন রিপোর্ট", permission: DEPOT_ACCESS.reports },

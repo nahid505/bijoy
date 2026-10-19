@@ -360,6 +360,28 @@ export const commissionTransferSchema = z
   });
 export type CommissionTransferInput = z.infer<typeof commissionTransferSchema>;
 
+/** Depot expense: paid from the depot cash (default "ডিপো ক্যাশ") into a general expense head. */
+export const depotExpenseSchema = z.object({
+  date: dateField,
+  expenseAccountId: z.string().min(1, "খরচের খাত নির্বাচন করুন"),
+  cashAccountId: z.string().min(1, "পেমেন্ট মেথড (নগদ/ব্যাংক) নির্বাচন করুন"),
+  amount: positiveMoney,
+  reference: optionalText(100),
+  narration: optionalText(500),
+});
+export type DepotExpenseInput = z.infer<typeof depotExpenseSchema>;
+
+/** Fund transfer between the main cash / bank and "ডিপো ক্যাশ" — IN: main → depot, OUT: depot → main. */
+export const depotFundSchema = z.object({
+  date: dateField,
+  direction: z.enum(["IN", "OUT"], { errorMap: () => ({ message: "স্থানান্তরের দিক নির্বাচন করুন" }) }),
+  mainAccountId: z.string().min(1, "মূল নগদ/ব্যাংক হিসাব নির্বাচন করুন"),
+  amount: positiveMoney,
+  reference: optionalText(100),
+  narration: optionalText(500),
+});
+export type DepotFundInput = z.infer<typeof depotFundSchema>;
+
 export const paddyPurchaseSchema = z
   .object({
     ...voucherHeader,

@@ -12,7 +12,7 @@
 |---|---|---|---|
 | TypeScript, against the generated client | ✅ 0 errors | ✅ 0 errors | (same client as MySQL) |
 | Full test suite (25 files, 292 tests: accounting, inventory/FEFO, expiry, payroll, SMS, security/brute-force races, registration, tenant isolation, features, SaaS billing, backup/restore) | ✅ 292/292 | ✅ 292/292 | ✅ 292/292 |
-| Migrations from an empty database | ✅ 12 migrations | ✅ baseline | ✅ baseline |
+| Migrations from an empty database | ✅ 13 migrations | ✅ baseline | ✅ baseline |
 | Demo seed (~100 days of trading through the accounting engine), ledger balanced | ✅ | — | ✅ 61 vouchers, 0 unbalanced |
 | cPanel package on Linux (RHEL 9 + Node 22): `check-server`, `migrate.sh`, health, cron | ✅ | — | ✅ |
 | Browser: the full user journey (register → trial → expiry restriction → plan → payment → active → invoice → Super Admin) | ✅ 36/36 | — | ✅ 37/37 (Linux package) |

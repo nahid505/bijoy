@@ -11,7 +11,7 @@ import { assertPermission, getContext, requireUser, setBusinessCookie, setSessio
 import { revokeAllSessions } from "../services/sessions";
 import { audit } from "../audit";
 import { formToObject, guard, parseForm, toResult, UserError, type ActionState } from "../action-utils";
-import { createBusiness, ensureDepotRole } from "../services/bootstrap";
+import { createBusiness, ensureDepotCash, ensureDepotRole } from "../services/bootstrap";
 import { isRestricted, saveAssignments } from "../party-scope";
 import { assertUserSlot } from "../services/subscriptions";
 import { notifyBusiness } from "../services/billing-notify";
@@ -67,7 +67,11 @@ export async function saveBusinessAction(_prev: ActionState, fd: FormData): Prom
     }
     if (fd.get("removeLogo") === "on") logo = null;
     await prisma.business.update({ where: { id: ctx.business.id }, data: { ...input, ...(logo !== undefined ? { logo } : {}) } });
-    if (isDepot(input.businessType)) await ensureDepotRole(prisma, ctx.business.id); // switched to a depot business: offer the depot-only role
+    if (isDepot(input.businessType)) {
+      // switched to a depot business: offer the depot-only role and the depot cash box
+      await ensureDepotRole(prisma, ctx.business.id);
+      await ensureDepotCash(prisma, ctx.business.id);
+    }
     await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: "UPDATE", entity: "Business", entityId: ctx.business.id, details: { ...input, booksStartDate: input.booksStartDate.toISOString(), lockDate: input.lockDate?.toISOString() ?? null } });
   });
   revalidatePath("/", "layout");
