@@ -238,26 +238,43 @@ export async function saveProduct(ctx: Ctx, input: ProductInput, id?: string) {
     if (!unit) throw new UserError("ইউনিট পাওয়া যায়নি");
     if (input.categoryId && !(await tx.category.findFirst({ where: { id: input.categoryId, businessId: ctx.businessId } }))) throw new UserError("ক্যাটাগরি পাওয়া যায়নি");
     if (input.brandId && !(await tx.brand.findFirst({ where: { id: input.brandId, businessId: ctx.businessId } }))) throw new UserError("ব্র্যান্ড পাওয়া যায়নি");
+    // company / brand typed in (depot form): reuse one of that name, or create it
+    let brandId = input.brandId;
+    if (!brandId && input.newBrandName) {
+      brandId = (await tx.brand.findFirst({ where: { businessId: ctx.businessId, name: ciEquals(input.newBrandName) }, select: { id: true } }))?.id
+        ?? (await tx.brand.create({ data: { businessId: ctx.businessId, name: input.newBrandName } })).id;
+    }
+    const existing = id ? await tx.product.findFirst({ where: { id, businessId: ctx.businessId } }) : null;
+    if (id && !existing) throw new UserError("পণ্য পাওয়া যায়নি");
+    const depotProduct = input.isDepotProduct ?? existing?.isDepotProduct ?? false;
+    if (depotProduct) {
+      const b = await tx.business.findUnique({ where: { id: ctx.businessId }, select: { businessType: true } });
+      if (b?.businessType !== "DEPOT") throw new UserError("ডিপো পণ্য শুধু ডিপো ব্যবসায় রাখা যায়");
+    }
+    // a product with transactions stays in its book: depot stock never mixes with the general stock
+    if (existing && existing.isDepotProduct !== depotProduct && (await tx.voucherItem.count({ where: { productId: existing.id } })) > 0) {
+      throw new UserError(existing.isDepotProduct ? "লেনদেন হওয়া ডিপো পণ্যকে সাধারণ পণ্য করা যাবে না" : "লেনদেন হওয়া সাধারণ পণ্যকে ডিপো পণ্য করা যাবে না — ডিপোর জন্য নতুন পণ্য তৈরি করুন");
+    }
     const data = {
       name: input.name,
       code: input.code,
       barcode: input.barcode,
       categoryId: input.categoryId,
-      brandId: input.brandId,
+      brandId,
       unitId: input.unitId,
       purchasePrice: input.purchasePrice,
       salePrice: input.salePrice,
       wholesalePrice: input.wholesalePrice,
       ...(input.depotCommissionRate !== undefined ? { depotCommissionRate: input.depotCommissionRate } : {}),
+      ...(input.depotCommissionType !== undefined ? { depotCommissionType: input.depotCommissionType } : {}),
+      isDepotProduct: depotProduct,
       minStock: input.minStock,
       trackBatch: input.trackBatch,
       openingStock: input.openingStock,
       openingRate: input.openingRate || input.purchasePrice,
     };
     let productId: string;
-    if (id) {
-      const existing = await tx.product.findFirst({ where: { id, businessId: ctx.businessId } });
-      if (!existing) throw new UserError("পণ্য পাওয়া যায়নি");
+    if (existing && id) {
       if (existing.unitId !== input.unitId && (await tx.voucherItem.count({ where: { productId: id } })) > 0) {
         throw new UserError("লেনদেন হওয়া পণ্যের মূল ইউনিট পরিবর্তন করা যাবে না");
       }
@@ -266,7 +283,8 @@ export async function saveProduct(ctx: Ctx, input: ProductInput, id?: string) {
     } else {
       productId = (await tx.product.create({ data: { ...data, businessId: ctx.businessId } })).id;
     }
-    await setOpeningStock(tx, ctx, productId, input.openingStock, data.openingRate); // replays the stock timeline
+    // replays the stock timeline; a depot product's opening stock is in the depot book
+    await setOpeningStock(tx, ctx, productId, input.openingStock, data.openingRate, depotProduct ? "DEPOT" : "GENERAL");
     return productId;
   }, TX);
 }

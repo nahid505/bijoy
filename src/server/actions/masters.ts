@@ -142,39 +142,68 @@ export async function createAccountGroupAction(input: { name: string; nature: st
 
 // ───────────────────────── products ─────────────────────────
 
-export async function saveProductAction(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
+/** Products: a depot (dealership) product needs depot:products_manage (or inventory:manage), a general one inventory:manage. */
+const productPermission = (depotProduct: boolean) => (depotProduct ? DEPOT_ACCESS.products : ("inventory:manage" as const));
+const productBase = (depotProduct: boolean) => (depotProduct ? "/depot/products" : "/products");
+
+async function productFlag(businessId: string, id: string) {
+  const p = await prisma.product.findFirst({ where: { id, businessId }, select: { isDepotProduct: true } });
+  if (!p) throw new UserError("পণ্য পাওয়া যায়নি");
+  return p.isDepotProduct;
+}
+
+/** kind: the form it came from — "DEPOT" (/depot/products) creates depot products. */
+async function saveProductFrom(kind: "GENERAL" | "DEPOT", id: string | null, fd: FormData): Promise<ActionState> {
   const result = await guard(async () => {
-    const ctx = await assertPermission("inventory:manage");
-    const input = productSchema.parse({ ...formToObject(fd), trackBatch: fd.get("trackBatch") === "on" });
+    let ctx = await assertPermission([...DEPOT_ACCESS.products]);
+    // the switch is on the form only in depot businesses; absent = new depot-form product is a depot product, else unchanged
+    const flag = fd.get("depotFlag") ? fd.get("isDepotProduct") === "on" : !id && kind === "DEPOT" ? true : undefined;
+    const input = productSchema.parse({ ...formToObject(fd), trackBatch: fd.get("trackBatch") === "on", isDepotProduct: flag });
+    const before = id ? await productFlag(ctx.business.id, id) : kind === "DEPOT";
+    ctx = await assertPermission(productPermission(before)); // the product as it is now …
+    if (input.isDepotProduct !== undefined && input.isDepotProduct !== before) ctx = await assertPermission(productPermission(input.isDepotProduct)); // … and what it becomes
+    if (input.isDepotProduct && !isDepot(ctx.business.businessType)) throw new UserError("ডিপো পণ্য শুধু ডিপো ব্যবসায় রাখা যায়");
     const productId = await saveProduct(ctx.svc, input, id ?? undefined);
-    await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: id ? "UPDATE" : "CREATE", entity: "Product", entityId: productId, details: { name: input.name, openingStock: input.openingStock } });
-    return productId;
+    const after = input.isDepotProduct ?? before;
+    await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: id ? "UPDATE" : "CREATE", entity: "Product", entityId: productId, details: { name: input.name, openingStock: input.openingStock, ...(after ? { depotProduct: true } : {}), ...(after !== before ? { movedTo: after ? "DEPOT" : "GENERAL" } : {}) } });
+    return { productId, after };
   });
   if (!result.ok) return toResult(result);
-  await flash("পণ্য সংরক্ষণ হয়েছে");
-  revalidatePath("/products");
-  redirect(`/products/${result.data}`);
+  await flash(result.data.after ? "ডিপো পণ্য সংরক্ষণ হয়েছে" : "পণ্য সংরক্ষণ হয়েছে");
+  revalidatePath("/", "layout");
+  redirect(`${productBase(result.data.after)}/${result.data.productId}`);
+}
+
+export async function saveProductAction(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  return saveProductFrom("GENERAL", id, fd);
+}
+
+/** The depot product form's action (same rules; a new product is a depot product). */
+export async function saveDepotProductAction(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  return saveProductFrom("DEPOT", id, fd);
 }
 
 export async function deleteProductAction(id: string, _prev: ActionState, _fd: FormData): Promise<ActionState> {
+  let depotProduct = false;
   const result = await guard(async () => {
-    const ctx = await assertPermission("inventory:manage");
+    const pre = await assertPermission([...DEPOT_ACCESS.products]);
+    depotProduct = await productFlag(pre.business.id, id);
+    const ctx = await assertPermission(productPermission(depotProduct));
     const p = await deleteProduct(ctx.svc, id);
-    await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: "DELETE", entity: "Product", entityId: id, details: { name: p.name } });
+    await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: "DELETE", entity: "Product", entityId: id, details: { name: p.name, ...(depotProduct ? { depotProduct: true } : {}) } });
   });
   if (!result.ok) return toResult(result);
-  revalidatePath("/products");
-  redirect("/products");
+  revalidatePath("/", "layout");
+  redirect(productBase(depotProduct));
 }
 
 export async function toggleProductAction(id: string, active: boolean, _prev: ActionState, _fd: FormData): Promise<ActionState> {
   const result = await guard(async () => {
-    const ctx = await assertPermission("inventory:manage");
-    const p = await prisma.product.findFirst({ where: { id, businessId: ctx.business.id } });
-    if (!p) throw new UserError("পণ্য পাওয়া যায়নি");
+    const pre = await assertPermission([...DEPOT_ACCESS.products]);
+    await assertPermission(productPermission(await productFlag(pre.business.id, id)));
     await prisma.product.update({ where: { id }, data: { isActive: active } });
   });
-  revalidatePath(`/products/${id}`);
+  revalidatePath("/", "layout");
   return toResult(result);
 }
 

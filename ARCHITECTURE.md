@@ -530,10 +530,10 @@ The internal voucher print (commission) remains available as "অফিস ক�
 
 ## 6p. Depot permissions (RBAC)
 
-A permission group, **ডিপো ব্যবস্থাপনা**, in `PERMISSION_GROUPS`, marked `depotOnly`. It has 14 keys, in this order: `depot:view`, `depot:delivery_manage`, `depot:dealers_manage`, `depot:stock_in`, `depot:stock_adjust`, `depot:collection_create`, `depot:company_payment`, `depot:expense_manage`, `depot:reports_view`, `depot:register_view`, `depot:scheme_manage`, `depot:company_ledger`, `depot:profit_loss` and `depot:cashbook`.
+A permission group, **ডিপো ব্যবস্থাপনা**, in `PERMISSION_GROUPS`, marked `depotOnly`. It has 15 keys, in this order: `depot:view`, `depot:delivery_manage`, `depot:dealers_manage`, `depot:products_manage`, `depot:stock_in`, `depot:stock_adjust`, `depot:collection_create`, `depot:company_payment`, `depot:expense_manage`, `depot:reports_view`, `depot:register_view`, `depot:scheme_manage`, `depot:company_ledger`, `depot:profit_loss` and `depot:cashbook`.
 
 **Role form.** The group is shown only in a depot business, or on a role that already holds a depot key. It comes with:
-- a "🏬 শুধু ডিপো (ডিপো হিসাবরক্ষক)" preset that ticks exactly the 14 keys and nothing else;
+- a "🏬 শুধু ডিপো (ডিপো হিসাবরক্ষক)" preset that ticks exactly the 15 keys and nothing else;
 - a master checkbox, "ডিপো ব্যবস্থাপনার সব অনুমতি দিন (Select All)" (`GroupSelectAll`), that ticks or clears the whole group and shows half-ticked (indeterminate) when only some keys are on.
 
 **Upgrade.** Migration `20261018200000_depot_permissions_v2` gives roles made with the first six keys the new keys that used to be part of them (`DEPOT_PERMISSION_UPGRADE`), so no role loses a screen:
@@ -543,6 +543,8 @@ A permission group, **ডিপো ব্যবস্থাপনা**, in `PERM
 - `reports_view` → `register_view`, `profit_loss`, `cashbook`.
 
 Migration `20261019000000_depot_expense` then gives `depot:expense_manage` to every role holding `depot:company_payment` (whoever pays the company from the depot cash may also record depot expenses).
+
+Migration `20261022000000_depot_products` gives `depot:products_manage` to every role holding `depot:stock_in`, and to the default depot role.
 
 It only adds keys and runs once, so a key an admin removes later stays removed.
 
@@ -557,6 +559,7 @@ It only adds keys and runs once, so a key an admin removes later stays removed.
 | Depot dashboard, challan list, dealer copy | `depot:view` (or `depot:delivery_manage`) | `sales:view` |
 | Create / edit challan | `depot:delivery_manage` | `sales:create` / `sales:edit` |
 | Dealer list, profile, create / edit (`/depot/dealers`) | `depot:dealers_manage` | `customers:view` / `customers:manage` |
+| **Depot products** (`/depot/products`, new, profile, edit, deactivate / delete; "+ নতুন পণ্য" in depot pickers) | `depot:products_manage` | `inventory:view` / `inventory:manage` |
 | "+ নতুন ডিলার" inside a challan | `depot:dealers_manage` or `depot:delivery_manage` | `customers:manage` |
 | Stock in (`/depot/stock-in`) | `depot:stock_in` | `purchases:create` |
 | **Depot stock adjustment** (`/depot/stock-adjust` and sub-routes) | `depot:stock_adjust` **only** | — |
@@ -594,7 +597,7 @@ A GENERAL purchase / receipt / payment is never opened by a depot key. Editing o
 - **Other routes:** every other route, such as ledgers, general vouchers, reports, profit & loss, products, POS and settings, redirects to `/forbidden`. That page shows "403 — Forbidden", and APIs answer 403.
 - **Lookups:** `/api/lookup` accepts the depot keys for the dealer, company, product and cash pickers.
 
-**Default role.** `DEPOT_ROLE` is "ডিপো হিসাবরক্ষক (Depot Accountant)", holding all 14 keys. It is created:
+**Default role.** `DEPOT_ROLE` is "ডিপো হিসাবরক্ষক (Depot Accountant)", holding all 15 keys. It is created:
 - by `createBusiness` for a new depot business;
 - by `ensureDefaultRoles` (seed / restore) for existing depot businesses;
 - when the business type is switched to depot in business settings (`ensureDepotRole`).
@@ -804,6 +807,42 @@ A fund transfer is cash → cash. It is neither income nor expense, and the cash
 **Backups.** Backups keep the `depot-expense:` and `depot-fund:` sourceKeys unchanged (`RANDOM_SOURCE_PREFIXES`).
 
 **Tests:** `tests/integration/depot-cash.test.ts`.
+
+## 6u. Depot products (ডিপো পণ্য তালিকা)
+
+**Data.** Migration `20261022000000_depot_products` (PostgreSQL and MySQL) adds two columns to `Product`:
+- `isDepotProduct` (boolean, default false), indexed with businessId;
+- `depotCommissionType` (`FIXED` | `PERCENT`, default FIXED).
+
+`depotCommissionRate` holds taka per base unit (FIXED) or a percent of the company price / DP, which is `purchasePrice` (PERCENT). `commissionPerUnit` in `src/lib/depot.ts` turns either into taka per unit; the product pickers hand the challan that value.
+
+**Backfill** (existing depot businesses; it only sets flags, amounts and quantities are unchanged):
+- **Marked as depot product:** a product with a depot-book stock movement or a DO commission rate, that has no general-book movement other than its own opening stock and no recipe line.
+- **Opening stock:** such a product's opening-stock voucher and its entries are relabelled to the DEPOT book.
+- **Stays general:** a product used by both books. The integrity audit lists the vouchers that mix books, as `product-book`.
+
+**One product, one book.** `assertBookProducts` (`src/server/services/inventory.ts`):
+- A general-book voucher refuses a depot product: sale, POS, purchase, returns, stock journal, expiry write-off, production, paddy purchase.
+- A depot-book voucher refuses a general product: stock in, market sale, DO release, depot stock adjustment.
+- Lines already on an edited voucher stay valid.
+
+`saveProduct` changes the flag only while the product has no voucher lines. A depot product's opening stock posts in the DEPOT book (DOB-); moving an unused product re-posts it in the new book.
+
+**Pickers and lists.**
+- `searchProducts(…, { book })` and `/api/lookup/products?book=depot`: depot forms see only depot products; every other picker, `inventoryOptions` (POS tiles), `/products`, the stock and stock-valuation reports never see them.
+- A depot picker's "+ নতুন পণ্য" creates a depot product (`quickCreateProductAction({ depot: true })`, `DEPOT_ACCESS.products`).
+- The depot dashboard's stock value counts depot products only.
+
+**Screens.**
+- **`/depot/products`** (menu "ডিপো পণ্য তালিকা", after the dealers): code, name, company / brand, DP, dealer rate, commission and current depot stock; search, brand and status filters; active count and stock value.
+- **`/depot/products/new`** and **`/[id]/edit`**: name, code / barcode, company / brand (pick one, or type a new name — created on save), unit, company price / DP, dealer sale rate (the market-sale challan's default rate), commission type and value (the % shows its taka per unit), minimum stock, batch tracking and opening stock.
+- **`/depot/products/[id]`**: stock card.
+- A depot product opened at `/products/…` redirects to `/depot/products/…`, and the other way round.
+- In a depot business both product forms show a "ডিপো পণ্য" switch, disabled once the product has transactions.
+
+Backups carry both fields.
+
+**Tests:** `tests/integration/depot-products.test.ts`.
 
 ## 7b. UI runtime notes
 - Language: the `bl_lang` cookie selects Bangla or English. Bangla strings are the dictionary keys (`src/lib/i18n.ts`). Toasts after redirects travel in the short-lived `bl_flash` cookie.

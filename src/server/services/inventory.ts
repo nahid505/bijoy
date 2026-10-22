@@ -7,6 +7,24 @@ import { UserError } from "@/lib/errors";
 import { assertNotLocked, nextVoucherNo, systemAccounts, writeEntries, type Ctx, type Tx } from "./accounting";
 import { revalueProducts } from "./posting";
 import { rawRows, sql } from "@/lib/dialect";
+import type { BookKey } from "@/lib/book";
+
+/**
+ * Depot (dealership) products live only in the depot book, general products only in the general book: a general
+ * sale / purchase / POS / stock journal / production refuses a depot product and a depot voucher (stock in, challan,
+ * depot stock adjustment) a general one. keep: products already on the voucher being edited (old lines stay valid).
+ */
+export async function assertBookProducts(tx: Pick<Tx, "product">, businessId: string, book: BookKey, productIds: string[], keep: string[] = []) {
+  const ids = [...new Set(productIds.filter(Boolean))].filter((id) => !keep.includes(id));
+  if (!ids.length) return;
+  const bad = await tx.product.findFirst({ where: { businessId, id: { in: ids }, isDepotProduct: book === "GENERAL" }, select: { name: true } });
+  if (!bad) return;
+  throw new UserError(
+    book === "GENERAL"
+      ? `"${bad.name}" ডিপো পণ্য — সাধারণ বিক্রয়, ক্রয়, পস বা স্টকে ব্যবহার করা যাবে না`
+      : `"${bad.name}" ডিপো পণ্য নয় — ডিপোর লেনদেনে শুধু "ডিপো পণ্য তালিকা"-র পণ্য ব্যবহার করুন`,
+  );
+}
 
 /** Locks product rows (consistent order → no deadlocks) for the rest of the transaction. */
 export async function lockProducts(tx: Tx, productIds: string[]) {
@@ -95,10 +113,17 @@ export async function writeMovements(tx: Tx, ctx: Ctx, voucher: { id: string; da
 }
 
 /** Opening stock: one OPENING voucher per product (Dr Inventory / Cr Opening balance equity). */
-export async function setOpeningStock(tx: Tx, ctx: Ctx, productId: string, qty: number, rate: number) {
+export async function setOpeningStock(tx: Tx, ctx: Ctx, productId: string, qty: number, rate: number, book: BookKey = "GENERAL") {
   const business = await tx.business.findUniqueOrThrow({ where: { id: ctx.businessId } });
   const sourceKey = `opening:product:${productId}`;
-  const existing = await tx.voucher.findUnique({ where: { businessId_sourceKey: { businessId: ctx.businessId, sourceKey } } });
+  let existing = await tx.voucher.findUnique({ where: { businessId_sourceKey: { businessId: ctx.businessId, sourceKey } } });
+  if (existing && existing.book !== book) {
+    // the product moved book (no transactions yet): post its opening stock again in the new book
+    await assertNotLocked(tx, ctx.businessId, business.booksStartDate);
+    await tx.voucher.delete({ where: { id: existing.id } });
+    existing = null;
+    if (qty <= 0) return revalueProducts(tx, ctx.businessId, [productId]);
+  }
   const value = round2(qty * rate);
   const unchanged =
     existing &&
@@ -119,7 +144,8 @@ export async function setOpeningStock(tx: Tx, ctx: Ctx, productId: string, qty: 
           data: {
             businessId: ctx.businessId,
             type: "OPENING",
-            voucherNo: await nextVoucherNo(tx, ctx.businessId, "OPENING"),
+            book,
+            voucherNo: await nextVoucherNo(tx, ctx.businessId, "OPENING", undefined, book),
             date: business.booksStartDate,
             narration: "প্রারম্ভিক মজুদ",
             amount: value,

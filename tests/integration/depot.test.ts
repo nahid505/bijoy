@@ -57,7 +57,7 @@ run("depot management (ডিপো ব্যবসা)", () => {
     acc = await prisma.$transaction((tx) => systemAccounts(tx, ctx.businessId));
     warehouseId = (await prisma.warehouse.findFirstOrThrow({ where: { businessId: ctx.businessId } })).id;
     const pcs = await prisma.unit.findFirstOrThrow({ where: { businessId: ctx.businessId, name: "পিস" } });
-    cement = (await prisma.product.create({ data: { businessId: ctx.businessId, name: "সিমেন্ট (৫০ কেজি বস্তা)", unitId: pcs.id, salePrice: 480, depotCommissionRate: 10 } })).id;
+    cement = (await prisma.product.create({ data: { businessId: ctx.businessId, isDepotProduct: true, name: "সিমেন্ট (৫০ কেজি বস্তা)", unitId: pcs.id, salePrice: 480, depotCommissionRate: 10 } })).id;
     company = await saveParty(ctx, "SUPPLIER", party("এসিআই সিমেন্ট লিমিটেড"));
     rahim = await saveParty(ctx, "CUSTOMER", party("রহিম ট্রেডার্স", "রুট-১ বীরগঞ্জ"), undefined, { dealer: true });
     karim = await saveParty(ctx, "CUSTOMER", party("করিম স্টোর", "রুট-২ কাহারোল"), undefined, { dealer: true });

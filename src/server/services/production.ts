@@ -16,7 +16,7 @@ import { round2, round3, round4 } from "@/lib/calc";
 import type { ProductionInput, RecipeInput } from "@/lib/validation";
 import { assertAccounts, assertNotLocked, nextVoucherNo, type Ctx } from "./accounting";
 import { allocateSaleBatches, ensureInboundBatch } from "./batches";
-import { defaultWarehouseId, lockProducts, writeMovements, type MovementInput } from "./inventory";
+import { assertBookProducts, defaultWarehouseId, lockProducts, writeMovements, type MovementInput } from "./inventory";
 import { recostProduction, repostVoucher, revalueProducts } from "./posting";
 import { assertWarehouse, clearPostings, loadEditable, TX_OPTIONS } from "./voucher";
 
@@ -118,6 +118,7 @@ export async function saveProduction(ctx: Ctx, input: ProductionInput, editId?: 
     const removed = existing ? await clearPostings(tx, existing.id) : [];
     const inputIds = input.inputs.map((l) => l.productId);
     const outputIds = input.outputs.map((l) => l.productId);
+    await assertBookProducts(tx, ctx.businessId, "GENERAL", [...inputIds, ...outputIds], removed);
     await lockProducts(tx, [...inputIds, ...outputIds, ...removed]);
     const products = new Map((await tx.product.findMany({ where: { id: { in: [...inputIds, ...outputIds] }, businessId: ctx.businessId } })).map((p) => [p.id, p]));
     if (products.size !== new Set([...inputIds, ...outputIds]).size) throw new UserError("একটি পণ্য পাওয়া যায়নি");

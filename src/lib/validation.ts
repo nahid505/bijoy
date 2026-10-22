@@ -190,12 +190,15 @@ export const productSchema = z.object({
   purchasePrice: money,
   salePrice: money,
   wholesalePrice: money.default(0),
-  depotCommissionRate: money.optional(), // depot: commission per base unit (absent = unchanged)
+  depotCommissionRate: money.optional(), // depot: commission per base unit or percent (absent = unchanged)
+  depotCommissionType: z.enum(["FIXED", "PERCENT"]).optional(), // absent = unchanged
+  isDepotProduct: z.boolean().optional(), // absent = unchanged (new product: general)
+  newBrandName: optionalText(80).optional(), // depot form: company / brand typed in — created when not found
   minStock: nonNegQty.default(0),
   openingStock: nonNegQty.default(0),
   openingRate: money.default(0),
   trackBatch: z.boolean().default(false),
-});
+}).refine((p) => p.depotCommissionType !== "PERCENT" || (p.depotCommissionRate ?? 0) <= 100, { path: ["depotCommissionRate"], message: "শতাংশ ১০০-এর বেশি হতে পারে না" });
 export type ProductInput = z.infer<typeof productSchema>;
 
 export const nameSchema = z.object({ name: requiredText("নাম", 100) });

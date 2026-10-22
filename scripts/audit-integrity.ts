@@ -5,6 +5,7 @@
 //   • every voucher balances; GENERAL and DEPOT books each balance per business
 //   • JournalEntry.book = its voucher's book; DEPOT vouchers only in depot businesses; challans in the DEPOT book
 //   • depot dealers never in GENERAL vouchers; general customers never in DEPOT vouchers
+//   • depot products move only in DEPOT vouchers, general products only in GENERAL ones
 //   • product stock = Σ stock movements; free quantities never negative
 //   • user ↔ customer / supplier assignments stay inside one business
 // Prints every problem found and exits 1 if there is any (0 = clean).
@@ -80,6 +81,13 @@ async function stock() {
   const sum = new Map(moves.map((m) => [m.productId, n(m._sum.quantityIn) - n(m._sum.quantityOut)]));
   for (const p of await prisma.product.findMany({ select: { id: true, name: true, stock: true, businessId: true } }))
     if (Math.abs(n(p.stock) - (sum.get(p.id) ?? 0)) > 0.0005) fail("stock", `${p.name} (${p.businessId}): stock ${n(p.stock)} ≠ movements ${sum.get(p.id) ?? 0}`);
+  // depot products move only in depot-book vouchers, general products only in general ones (opening stock aside)
+  const mixed = await prisma.stockMovement.findMany({
+    where: { voucher: { type: { not: "OPENING" } }, OR: [{ product: { isDepotProduct: true }, voucher: { book: "GENERAL" } }, { product: { isDepotProduct: false }, voucher: { book: "DEPOT" } }] },
+    select: { product: { select: { name: true, isDepotProduct: true } }, voucher: { select: { voucherNo: true, book: true } } },
+    take: 50,
+  });
+  for (const m of mixed) fail("product-book", `${m.voucher!.voucherNo} (${m.voucher!.book}) moves ${m.product.isDepotProduct ? "depot" : "general"} product "${m.product.name}"`);
   const negativeFree = await prisma.voucherItem.count({ where: { freeQuantity: { lt: 0 } } });
   if (negativeFree) fail("free", `${negativeFree} voucher line(s) with a negative free quantity`);
   // a line's stock movement = paid + free quantity (in base units)

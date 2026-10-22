@@ -284,6 +284,7 @@ export function SearchSelect<T extends Item>({
         <QuickCreateDialog
           kind={kind}
           dealer={dealer}
+          depot={book === "depot"}
           initialName={creating}
           units={create ? create.units ?? [] : []}
           onCancel={() => {
@@ -302,7 +303,7 @@ export function SearchSelect<T extends Item>({
   );
 }
 
-function QuickCreateDialog({ kind, dealer = false, initialName, units, onCancel, onCreated }: { kind: LookupKind; dealer?: boolean; initialName: string; units: UnitOption[]; onCancel: () => void; onCreated: (item: Item) => void }) {
+function QuickCreateDialog({ kind, dealer = false, depot = false, initialName, units, onCancel, onCreated }: { kind: LookupKind; dealer?: boolean; depot?: boolean; initialName: string; units: UnitOption[]; onCancel: () => void; onCreated: (item: Item) => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -321,7 +322,7 @@ function QuickCreateDialog({ kind, dealer = false, initialName, units, onCancel,
     try {
       const r =
         kind === "products"
-          ? await quickCreateProductAction({ name: get("qcName"), code: get("qcCode"), barcode: get("qcBarcode"), unitId: get("qcUnit"), purchasePrice: get("qcPurchase"), salePrice: get("qcSale") })
+          ? await quickCreateProductAction({ name: get("qcName"), code: get("qcCode"), barcode: get("qcBarcode"), unitId: get("qcUnit"), purchasePrice: get("qcPurchase"), salePrice: get("qcSale"), depot })
           : await quickCreatePartyAction(kind === "customers" ? "CUSTOMER" : "SUPPLIER", { name: get("qcName"), mobile: get("qcMobile"), dealer });
       if (r.ok) onCreated(r.item);
       else {

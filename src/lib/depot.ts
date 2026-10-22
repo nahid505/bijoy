@@ -4,7 +4,7 @@
 //                     released goods. Line amount = quantity × commission rate (the depot's commission).
 //   DEPOT_COLLECTION  "ডিপো কালেকশন (মার্কেট সেলস)": the depot sells to the dealer for cash or on market
 //                     credit. Line amount = quantity × sale rate.
-import { round2, round3 } from "./calc";
+import { round2, round3, round4 } from "./calc";
 import type { Permission } from "./permissions";
 
 export const DEPOT = "DEPOT";
@@ -57,6 +57,9 @@ export const DEPOT_ACCESS = {
   /** dealer list / profile, and create / edit / delete */
   dealersView: ["depot:dealers_manage", "customers:view"],
   dealers: ["depot:dealers_manage", "customers:manage"],
+  /** depot (dealership) products: list / profile, and create / edit / delete (/depot/products) */
+  productsView: ["depot:products_manage", "inventory:view"],
+  products: ["depot:products_manage", "inventory:manage"],
   /** "+ নতুন ডিলার তৈরি করুন" inside a challan */
   dealerQuickCreate: ["depot:dealers_manage", "depot:delivery_manage", "customers:manage"],
   /** depot payment to the company */
@@ -78,7 +81,7 @@ export const DEPOT_ROLE = {
   name: "ডিপো হিসাবরক্ষক (Depot Accountant)",
   description: "শুধু ডিপো ব্যবস্থাপনা — চালান, স্টক ইন, মার্কেট কালেকশন, ডিপো খরচ ও ডিপো রিপোর্ট; সাধারণ হিসাব, লেজার ও সেটিং নয়",
   permissions: [
-    "depot:view", "depot:delivery_manage", "depot:dealers_manage", "depot:stock_in", "depot:stock_adjust", "depot:collection_create", "depot:company_payment", "depot:expense_manage",
+    "depot:view", "depot:delivery_manage", "depot:dealers_manage", "depot:products_manage", "depot:stock_in", "depot:stock_adjust", "depot:collection_create", "depot:company_payment", "depot:expense_manage",
     "depot:reports_view", "depot:register_view", "depot:scheme_manage", "depot:company_ledger", "depot:profit_loss", "depot:cashbook",
   ] as Permission[],
 };
@@ -91,7 +94,8 @@ export const DEPOT_ROLE = {
 export const DEPOT_PERMISSION_UPGRADE: Record<string, Permission[]> = {
   "depot:view": ["depot:register_view"],
   "depot:delivery_manage": ["depot:dealers_manage"],
-  "depot:stock_in": ["depot:stock_adjust", "depot:company_payment", "depot:company_ledger"],
+  // products_manage: 20261022000000_depot_products (whoever receives the company's goods keeps its product list)
+  "depot:stock_in": ["depot:stock_adjust", "depot:company_payment", "depot:company_ledger", "depot:products_manage"],
   "depot:reports_view": ["depot:register_view", "depot:profit_loss", "depot:cashbook"],
   // 20261019000000_depot_expense: whoever pays the company from the depot cash may also record depot expenses
   "depot:company_payment": ["depot:expense_manage"],
@@ -114,6 +118,18 @@ export const COMMISSION_RECEIVABLE_PREFIX = "DEPOT_COMMISSION_RECEIVABLE:";
 export const commissionReceivableKey = (companyAccountId: string) => `${COMMISSION_RECEIVABLE_PREFIX}${companyAccountId}`;
 
 export const isDepot = (businessType: string | null | undefined) => businessType === DEPOT;
+
+export type DepotCommissionType = "FIXED" | "PERCENT";
+export const COMMISSION_TYPE_LABELS: Record<DepotCommissionType, string> = { FIXED: "ফিক্সড (৳ প্রতি একক)", PERCENT: "শতাংশ (ডিপি-র %)" };
+/** A depot product's DO commission per base unit: FIXED taka, or PERCENT of the company price (DP = purchasePrice). */
+export function commissionPerUnit(p: { depotCommissionType?: string | null; depotCommissionRate: number; purchasePrice: number }): number {
+  return p.depotCommissionType === "PERCENT" ? round4(((Number(p.purchasePrice) || 0) * (Number(p.depotCommissionRate) || 0)) / 100) : Number(p.depotCommissionRate) || 0;
+}
+/** "৳ 10 / একক" or "2.5% (৳ 11.25 / একক)" */
+export function commissionText(p: { depotCommissionType?: string | null; depotCommissionRate: number; purchasePrice: number }, fmt: (n: number) => string): string {
+  const per = commissionPerUnit(p);
+  return p.depotCommissionType === "PERCENT" ? `${Number(p.depotCommissionRate)}% (${fmt(per)} / একক)` : `${fmt(per)} / একক`;
+}
 
 export interface DepotLine {
   quantity: number;

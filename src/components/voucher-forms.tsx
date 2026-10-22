@@ -270,6 +270,7 @@ export function TradeVoucherForm({
                         placeholder="পণ্য খুঁজুন — নাম, কোড/SKU, বারকোড"
                         disabled={lockedToInvoice}
                         create={lockedToInvoice ? false : { units }}
+                        book={book}
                         currency={currency}
                         unitName={(id) => unitMap.get(id)?.name ?? ""}
                         priceOf={baseRate}
@@ -591,6 +592,7 @@ export function StockJournalForm({
   defaults,
   currency,
   cancelHref,
+  book,
 }: {
   action: FormAction;
   products: ProductOption[];
@@ -598,6 +600,8 @@ export function StockJournalForm({
   warehouses: WarehouseOption[];
   batches: BatchOption[];
   defaults: StockJournalDefaults;
+  /** "depot": a depot stock adjustment — depot products only */
+  book?: "depot";
   currency: string;
   cancelHref: string;
 }) {
@@ -652,6 +656,7 @@ export function StockJournalForm({
                         }}
                         placeholder="পণ্য খুঁজুন — নাম, কোড/SKU, বারকোড"
                         create={{ units }}
+                        book={book}
                         currency={currency}
                         unitName={unitName}
                         priceOf={(x) => x.avgCost || x.purchasePrice}

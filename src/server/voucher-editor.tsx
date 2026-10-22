@@ -44,7 +44,8 @@ export async function accountOptions(businessId: string, where: Prisma.AccountWh
 export async function inventoryOptions(businessId: string, opts: { productIds?: string[] } = {}) {
   const today = new Date(`${toDateInput()}T00:00:00.000Z`);
   const [products, units, warehouses, batches] = await Promise.all([
-    prisma.product.findMany({ where: opts.productIds ? { businessId, id: { in: [...new Set(opts.productIds)] } } : { businessId, isActive: true }, orderBy: { name: "asc" } }),
+    // without ids (POS tiles): general products only — depot products are never sold at the POS
+    prisma.product.findMany({ where: opts.productIds ? { businessId, id: { in: [...new Set(opts.productIds)] } } : { businessId, isActive: true, isDepotProduct: false }, orderBy: { name: "asc" } }),
     prisma.unit.findMany({ where: { businessId }, orderBy: { name: "asc" } }),
     prisma.warehouse.findMany({ where: { businessId }, orderBy: [{ isDefault: "desc" }, { name: "asc" }] }),
     availableBatches(prisma, businessId),
@@ -214,6 +215,7 @@ export async function VoucherEditor({
   return (
     <StockJournalForm
       action={action}
+      book={pickerBook}
       {...warehousesFor(ctx, inv, existing?.items.map((i) => i.warehouseId ?? "") ?? [])}
       currency={currency}
       cancelHref={cancelHref}

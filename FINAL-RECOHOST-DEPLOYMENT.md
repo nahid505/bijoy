@@ -97,7 +97,7 @@ cPanel → **File Manager** → `/home/‹CPANEL_USER›/` (public_html-এর *
 | T3 | `node -e "for (const k of ['AUTH_SECRET','CRON_SECRET','BILLING_WEBHOOK_SECRET']) console.log(k+'='+require('crypto').randomBytes(36).toString('base64url'))"` | স্ক্রিন কেউ দেখছে না | ৩টি লাইন — `nano .env` দিয়ে বসান, সাথে `DATABASE_URL`, `APP_URL` ইত্যাদি (H টেবিল) |
 | T4 | `node check-server.cjs` | `.env` পূরণ হয়েছে | ✔ Node 22, ✔ Prisma engines (`rhel-openssl-…`), ✔ `MySQL 8…` / `MariaDB 10.…`, `! migrations not applied yet` (স্বাভাবিক)। ✖ থাকলে থামুন |
 | T5 | `sh migrate.sh` | ডেটাবেস খালি; সার্ভারে internet আছে (npx Prisma CLI নামাবে) | `Applying migration 20261007000000_mysql_baseline` … `✔ database is up to date` |
-| T6 | `node check-server.cjs` | — | ✔ `migrations 13/13` (baseline + production + paddy_purchase + account_group_tree + transaction_change_date + depot + free_quantity + challan_rate + user_party_assignment + depot_book + depot_permissions_v2 + user_account_assignment + depot_expense), ✔ `4 active subscription plans` |
+| T6 | `node check-server.cjs` | — | ✔ `migrations 14/14` (baseline + production + paddy_purchase + account_group_tree + transaction_change_date + depot + free_quantity + challan_rate + user_party_assignment + depot_book + depot_permissions_v2 + user_account_assignment + depot_expense + depot_products), ✔ `4 active subscription plans` |
 | T7 | `mkdir -p tmp && touch tmp/restart.txt` (বা cPanel → **Start App**) | — | অ্যাপ চালু |
 | T8 | `curl -s https://‹DOMAIN›/api/health` | SSL হয়েছে | `{"status":"ok","database":"ok","config":"ok"}` |
 | T9 | ব্রাউজারে `https://‹DOMAIN›/register` → নিজের অ্যাকাউন্ট খুলুন → `node super-admin.cjs grant ‹YOUR_EMAIL›` | রেজিস্ট্রেশন সফল | `Granted Super Admin: …`; `https://‹DOMAIN›/admin` খোলে |

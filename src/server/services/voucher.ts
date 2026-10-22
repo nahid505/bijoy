@@ -12,7 +12,7 @@ import { formatMoney } from "@/lib/format";
 import { UserError } from "@/lib/errors";
 import type { CashVoucherInput, JournalVoucherInput, StockJournalInput, TradeVoucherInput } from "@/lib/validation";
 import { assertAccounts, assertBookAccounts, assertNotLocked, nextVoucherNo, writeEntries, type Ctx, type Tx } from "./accounting";
-import { defaultWarehouseId, lockProducts, writeMovements, type MovementInput } from "./inventory";
+import { assertBookProducts, defaultWarehouseId, lockProducts, writeMovements, type MovementInput } from "./inventory";
 import { repostVoucher, revalueProducts } from "./posting";
 import { allocateSaleBatches, ensureInboundBatch, expiryLossAccount, requireBatch, type BatchAllocation } from "./batches";
 import type { BookKey } from "@/lib/book";
@@ -117,6 +117,7 @@ export async function tradeVoucherTx(tx: Tx, ctx: Ctx, type: TradeType, input: T
 
     // ── products, units, batches
     const productIds = input.items.map((i) => i.productId);
+    await assertBookProducts(tx, ctx.businessId, vBook, productIds, removedProducts);
     await lockProducts(tx, [...productIds, ...removedProducts]);
     const products = await tx.product.findMany({ where: { id: { in: [...new Set(productIds)] }, businessId: ctx.businessId }, include: { unit: true } });
     if (products.length !== new Set(productIds).size) throw new UserError("একটি পণ্য পাওয়া যায়নি");
@@ -381,6 +382,7 @@ async function stockJournalTx(
     await assertNotLocked(tx, ctx.businessId, input.date, existing?.date);
     const removedProducts = existing ? await clearPostings(tx, existing.id) : [];
     const productIds = input.lines.map((l) => l.productId);
+    await assertBookProducts(tx, ctx.businessId, opts.book ?? "GENERAL", productIds, removedProducts);
     await lockProducts(tx, [...productIds, ...removedProducts]);
     const products = await tx.product.findMany({ where: { id: { in: [...new Set(productIds)] }, businessId: ctx.businessId } });
     if (products.length !== new Set(productIds).size) throw new UserError("একটি পণ্য পাওয়া যায়নি");

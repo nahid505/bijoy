@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { hasPermission, type Permission } from "@/lib/permissions";
+import { DEPOT_ACCESS } from "@/lib/depot";
 import { getContext } from "@/server/auth";
 import { accountScopeWhere } from "@/server/party-scope";
 import { ACCOUNT_SCOPES, searchAccounts, searchEmployees, searchParties, searchProducts, type AccountScope } from "@/server/lookup";
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 const ACCESS: Record<string, Permission[]> = {
   customers: ["customers:view", "sales:view", "sales:create", "vouchers:create", "reports:view", "users:manage", "depot:delivery_manage", "depot:collection_create", "depot:reports_view"],
   suppliers: ["suppliers:view", "purchases:view", "purchases:create", "vouchers:create", "reports:view", "users:manage", "depot:delivery_manage", "depot:stock_in", "depot:collection_create", "depot:reports_view"],
-  products: ["inventory:view", "sales:create", "purchases:create", "stock:adjust", "production:manage", "depot:delivery_manage", "depot:stock_in", "depot:scheme_manage"],
+  products: ["inventory:view", "sales:create", "purchases:create", "stock:adjust", "production:manage", "depot:delivery_manage", "depot:stock_in", "depot:scheme_manage", "depot:stock_adjust", "depot:products_manage"],
   employees: ["payroll:view", "payroll:attendance"],
   accounts: ["accounts:view", "users:manage", "vouchers:create", "vouchers:view", "reports:view", "sales:create", "purchases:create", "production:manage", "depot:delivery_manage", "depot:stock_in", "depot:collection_create", "depot:expense_manage"],
 };
@@ -33,7 +34,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ kind: st
   const url = new URL(req.url);
   const q = (url.searchParams.get("q") ?? "").slice(0, 100);
   const ids = url.searchParams.get("ids")?.split(",").filter(Boolean).slice(0, 50);
-  const canCreate = hasPermission(ctx.permissions, CREATE[kind]);
+  // a depot picker creates depot products (depot:products_manage or inventory:manage)
+  const canCreate = kind === "products" && url.searchParams.get("book") === "depot" ? hasPermission(ctx.permissions, DEPOT_ACCESS.products) : hasPermission(ctx.permissions, CREATE[kind]);
   // ?book=depot: the depot forms — dealers (not general customers), depot ledgers and depot-book balances
   const depot = url.searchParams.get("book") === "depot";
   if (kind === "accounts") {
@@ -50,7 +52,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ kind: st
   }
   const items =
     kind === "products"
-      ? await searchProducts(ctx.business.id, q, { ids, batchOnly: url.searchParams.get("batchOnly") === "1" })
+      ? await searchProducts(ctx.business.id, q, { ids, batchOnly: url.searchParams.get("batchOnly") === "1", book: depot ? "DEPOT" : "GENERAL" })
       : await searchParties(ctx.business.id, kind === "customers" ? "CUSTOMER" : "SUPPLIER", q, { accountIds: ids, allowed: kind === "customers" ? ctx.partyScope.customers : ctx.partyScope.suppliers, dealer: kind === "customers" && depot, book: depot ? "DEPOT" : "GENERAL" });
   return NextResponse.json({ items, canCreate }, { headers: { "cache-control": "no-store" } });
 }

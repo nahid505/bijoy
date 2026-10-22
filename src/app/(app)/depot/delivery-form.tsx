@@ -45,9 +45,11 @@ export interface DepotDefaults {
 const n = (v: string) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 let seq = 1000;
 const blankLine = (): DepotLineState => ({ key: ++seq, product: null, quantity: "", freeQuantity: "", rate: "", challanRate: "" });
-/** the delivery rate is the product's latest purchase price (what the depot pays the company) */
+/** the challan rate is the product's company price / DP (what the depot pays the company) */
 const purchaseRate = (p: ProductOption | null) => (p && p.purchasePrice > 0 ? String(p.purchasePrice) : "");
-const rateFor = (mode: DepotMode, p: ProductOption | null) => (p ? (mode === "COMPANY_PAID" ? String(p.depotCommissionRate ?? 0) : purchaseRate(p)) : "");
+/** DO release: the commission per unit; market sale: the depot product's dealer rate (else its DP) */
+const rateFor = (mode: DepotMode, p: ProductOption | null) =>
+  p ? (mode === "COMPANY_PAID" ? String(p.depotCommissionRate ?? 0) : p.salePrice > 0 ? String(p.salePrice) : purchaseRate(p)) : "";
 
 export function DepotDeliveryForm({ action, defaults, warehouses, cashAccounts, multiWarehouse, currency, dateLocked, lockMode, cancelHref }: {
   action: FormAction;
@@ -154,7 +156,7 @@ export function DepotDeliveryForm({ action, defaults, warehouses, cashAccounts, 
               {f.lines.map((l, i) => (
                 <tr key={l.key}>
                   <td>
-                    <SearchSelect kind="products" id={`line-${i}`} value={l.product} onChange={(p) => setLine(l.key, { product: p, rate: rateFor(f.mode, p), challanRate: purchaseRate(p) })} placeholder="পণ্য খুঁজুন" currency={currency} />
+                    <SearchSelect kind="products" book="depot" id={`line-${i}`} value={l.product} onChange={(p) => setLine(l.key, { product: p, rate: rateFor(f.mode, p), challanRate: purchaseRate(p) })} placeholder="পণ্য খুঁজুন" currency={currency} />
                     <FieldError name={`lines.${i}.productId`} />
                     {l.product && <span className="mt-0.5 block text-[11px] text-slate-500">স্টক: {formatQty(l.product.stock)}{n(l.freeQuantity) > 0 && <> · স্টক থেকে বের হবে: {formatQty(n(l.quantity) + n(l.freeQuantity))}</>}</span>}
                   </td>

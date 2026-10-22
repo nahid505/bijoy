@@ -335,7 +335,7 @@ export const EXTRA_REPORTS: ReportDef[] = [
       const cur = ctx.business.currencySymbol;
       const q = p.q?.trim();
       const products = await prisma.product.findMany({
-        where: { businessId: ctx.business.id, isActive: true, ...(q ? { name: ci(q) } : {}) },
+        where: { businessId: ctx.business.id, isActive: true, isDepotProduct: false, ...(q ? { name: ci(q) } : {}) }, // general stock only
         include: { category: { select: { name: true } }, unit: { select: { name: true } } },
         orderBy: [{ category: { name: "asc" } }, { name: "asc" }],
       });

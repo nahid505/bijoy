@@ -50,7 +50,7 @@ run("depot integration audit", () => {
     ctx = { businessId: business.id, userId: user.id };
     warehouseId = (await prisma.warehouse.findFirstOrThrow({ where: { businessId: ctx.businessId } })).id;
     const pcs = await prisma.unit.findFirstOrThrow({ where: { businessId: ctx.businessId, name: "পিস" } });
-    cement = (await prisma.product.create({ data: { businessId: ctx.businessId, name: "সিমেন্ট", unitId: pcs.id, salePrice: 480, depotCommissionRate: 10 } })).id;
+    cement = (await prisma.product.create({ data: { businessId: ctx.businessId, isDepotProduct: true, name: "সিমেন্ট", unitId: pcs.id, salePrice: 480, depotCommissionRate: 10 } })).id;
     company = await saveParty(ctx, "SUPPLIER", party("এসিআই"));
     dealer = await saveParty(ctx, "CUSTOMER", party("রহিম ডিলার"), undefined, { dealer: true });
   });
@@ -58,27 +58,27 @@ run("depot integration audit", () => {
     await prisma.$disconnect();
   });
 
-  it("stock in with free (depot) + a general purchase with free: stock counts both, the free scheme report only the depot's", async () => {
+  it("stock in with free (depot); a general purchase of the depot product is refused — the free scheme report counts the depot's", async () => {
     await purchase([line(1000, 450, 50)], "DEPOT");
-    await purchase([line(100, 450, 5)], "GENERAL");
-    expect(await stock()).toEqual({ cache: 1155, movements: 1155 });
+    await expect(purchase([line(100, 450, 5)], "GENERAL")).rejects.toThrow(/ডিপো পণ্য/); // depot products never enter the general stock
+    expect(await stock()).toEqual({ cache: 1050, movements: 1050 });
     expect(await free()).toMatchObject({ received: 50, given: 0, balance: 50 });
   });
 
   it("DO release and market sale move paid + free; the report counts the free given", async () => {
     doId = (await saveDepotDelivery(ctx, delivery({ mode: "COMPANY_PAID", companyAccountId: company.accountId, dealerAccountId: dealer.accountId, lines: [{ productId: cement, quantity: 200, freeQuantity: 20, rate: 10 }] }))).id;
     saleId = (await saveDepotDelivery(ctx, delivery({ mode: "DEPOT_COLLECTION", dealerAccountId: dealer.accountId, lines: [{ productId: cement, quantity: 100, freeQuantity: 10, rate: 480 }] }))).id;
-    expect(await stock()).toEqual({ cache: 1155 - 220 - 110, movements: 1155 - 220 - 110 });
+    expect(await stock()).toEqual({ cache: 1050 - 220 - 110, movements: 1050 - 220 - 110 });
     expect(await free()).toMatchObject({ received: 50, given: 30, balance: 20 });
     expect((await depotDashboard(ctx.businessId, "2026-10-10")).today.quantity).toBe(300); // paid quantity
   });
 
   it("editing a challan's free quantity and deleting a challan keep stock, movements and the report in step", async () => {
     await saveDepotDelivery(ctx, delivery({ mode: "COMPANY_PAID", companyAccountId: company.accountId, dealerAccountId: dealer.accountId, lines: [{ productId: cement, quantity: 200, freeQuantity: 40, rate: 10 }] }), doId);
-    expect(await stock()).toEqual({ cache: 1155 - 240 - 110, movements: 1155 - 240 - 110 });
+    expect(await stock()).toEqual({ cache: 1050 - 240 - 110, movements: 1050 - 240 - 110 });
     expect(await free()).toMatchObject({ received: 50, given: 50, balance: 0 });
     await deleteVoucher(ctx, saleId);
-    expect(await stock()).toEqual({ cache: 1155 - 240, movements: 1155 - 240 });
+    expect(await stock()).toEqual({ cache: 1050 - 240, movements: 1050 - 240 });
     expect(await free()).toMatchObject({ received: 50, given: 40, balance: 10 });
     expect(await prisma.depotDelivery.count({ where: { voucherId: saleId } })).toBe(0); // the challan row goes with its voucher
     for (const b of ["GENERAL", "DEPOT"] as const) expect((await trialBalance(ctx.businessId, {}, b)).balanced, b).toBe(true);

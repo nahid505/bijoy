@@ -303,7 +303,7 @@ export async function restoreBackup(raw: unknown, userId: string): Promise<{ bus
       await tx.product.createMany({
         data: data.products.map((p) => ({
           id: must(p.id), businessId, name: String(p.name), code: (p.code as string) ?? null, barcode: (p.barcode as string) ?? null, categoryId: id(p.categoryId), brandId: id(p.brandId), unitId: must(p.unitId),
-          purchasePrice: Number(p.purchasePrice), salePrice: Number(p.salePrice), wholesalePrice: Number(p.wholesalePrice ?? 0), depotCommissionRate: Number(p.depotCommissionRate ?? 0), minStock: Number(p.minStock ?? 0),
+          purchasePrice: Number(p.purchasePrice), salePrice: Number(p.salePrice), wholesalePrice: Number(p.wholesalePrice ?? 0), depotCommissionRate: Number(p.depotCommissionRate ?? 0), depotCommissionType: p.depotCommissionType === "PERCENT" ? "PERCENT" : "FIXED", isDepotProduct: p.isDepotProduct === true, minStock: Number(p.minStock ?? 0),
           openingStock: Number(p.openingStock ?? 0), openingRate: Number(p.openingRate ?? 0), stock: 0, avgCost: 0, trackBatch: Boolean(p.trackBatch), isActive: Boolean(p.isActive),
         })),
       });

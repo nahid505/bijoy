@@ -31,15 +31,17 @@ export async function quickCreatePartyAction(kind: "CUSTOMER" | "SUPPLIER", inpu
 }
 
 /** "Create new" from a product picker: the essentials only (more can be added on the product page). */
-export async function quickCreateProductAction(input: { name: string; code: string; barcode: string; unitId: string; purchasePrice: string; salePrice: string }): Promise<Result<ProductOption>> {
+export async function quickCreateProductAction(input: { name: string; code: string; barcode: string; unitId: string; purchasePrice: string; salePrice: string; depot?: boolean }): Promise<Result<ProductOption>> {
   const r = await guard(async () => {
-    const ctx = await assertPermission("inventory:manage");
+    // from a depot form: a depot product (depot:products_manage), never a general one
+    const ctx = await assertPermission(input.depot ? DEPOT_ACCESS.products : "inventory:manage");
     const data = productSchema.parse({
       name: input.name, code: input.code, barcode: input.barcode, categoryId: "", brandId: "", unitId: input.unitId,
       purchasePrice: input.purchasePrice || 0, salePrice: input.salePrice || 0, wholesalePrice: 0, minStock: 0, openingStock: 0, openingRate: 0, trackBatch: false,
+      isDepotProduct: input.depot === true,
     });
     const id = await saveProduct(ctx.svc, data);
-    await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: "CREATE", entity: "Product", entityId: id, details: { name: data.name, via: "quick-create" } });
+    await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: "CREATE", entity: "Product", entityId: id, details: { name: data.name, via: "quick-create", ...(input.depot ? { depotProduct: true } : {}) } });
     const [item] = await searchProducts(ctx.business.id, "", { ids: [id] });
     return item;
   });

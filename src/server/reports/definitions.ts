@@ -401,7 +401,7 @@ export const REPORTS: ReportDef[] = [
       const q = p.q?.trim();
       const warehouseId = p.warehouseId || undefined;
       const products = await prisma.product.findMany({
-        where: { businessId: ctx.business.id, ...(q ? { OR: [{ name: ci(q) }, { code: ci(q) }, { barcode: { contains: q } }] } : {}) },
+        where: { businessId: ctx.business.id, isDepotProduct: false, ...(q ? { OR: [{ name: ci(q) }, { code: ci(q) }, { barcode: { contains: q } }] } : {}) }, // depot products: /depot/products
         orderBy: { name: "asc" },
         include: { unit: { select: { name: true } } },
       });

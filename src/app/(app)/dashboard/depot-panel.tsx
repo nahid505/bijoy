@@ -24,7 +24,7 @@ export async function DepotPanel({ ctx }: { ctx: AppContext }) {
     { label: "আজকের ডেলিভারি", value: `${toBnDigits(d.today.count)} টি চালান`, hint: `ডিও রিলিজ ${toBnDigits(d.today.doCount)} · মার্কেট সেলস ${toBnDigits(d.today.marketCount)} · মোট পরিমাণ ${formatQty(d.today.quantity)}`, href: "/depot/deliveries", ok: can(ctx, DEPOT_ACCESS.view), tone: "text-ink-900" },
     { label: "কোম্পানির কাছে মোট প্রাপ্য কমিশন", value: formatMoney(d.commissionReceivable, cur), hint: `আজ অর্জিত ${formatMoney(d.today.commission, cur)}`, href: "/depot/commission", ok: can(ctx, DEPOT_ACCESS.commission), tone: "text-debit" },
     { label: "ডিলারদের মোট মার্কেট বাকি", value: formatMoney(d.marketDue, cur), hint: `${toBnDigits(d.dealersWithDue)} জন ডিলারের কাছে`, href: "/reports/depot-market-dues", ok: can(ctx, DEPOT_ACCESS.reports), tone: "text-credit" },
-    { label: "বর্তমান ডিপো স্টক মূল্য", value: formatMoney(d.stockValue, cur), hint: "গড় ক্রয়মূল্যে", href: "/products", ok: can(ctx, "inventory:view"), tone: "text-brand-700" },
+    { label: "বর্তমান ডিপো স্টক মূল্য", value: formatMoney(d.stockValue, cur), hint: "ডিপো পণ্য — গড় ক্রয়মূল্যে", href: "/depot/products", ok: can(ctx, DEPOT_ACCESS.productsView), tone: "text-brand-700" },
     ...(showBox ? [{ label: `${DEPOT_CASH_NAME} — বর্তমান ব্যালেন্স`, value: formatMoney(box.balance, cur), hint: "জমা, খরচ ও ফান্ড স্থানান্তরের পর", href: "/reports/depot-cash-book", ok: can(ctx, DEPOT_ACCESS.cashbook), tone: box.balance < 0 ? "text-credit" : "text-debit" }] : []),
   ];
   return (

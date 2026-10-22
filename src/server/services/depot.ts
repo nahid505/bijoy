@@ -15,7 +15,7 @@ import { COMMISSION_INCOME_KEY, COMMISSION_RECEIVABLE_PREFIX, commissionReceivab
 import type { CommissionSettlementInput, CommissionTransferInput, DepotDeliveryInput } from "@/lib/validation";
 import { assertAccounts, assertNotLocked, nextVoucherNo, writeEntries, type Ctx, type Tx } from "./accounting";
 import { allocateSaleBatches } from "./batches";
-import { defaultWarehouseId, lockProducts, writeMovements, type MovementInput } from "./inventory";
+import { assertBookProducts, defaultWarehouseId, lockProducts, writeMovements, type MovementInput } from "./inventory";
 import { balancesBefore } from "./ledger";
 import { repostVoucher, revalueProducts } from "./posting";
 import { assertWarehouse, clearPostings, loadEditable, saveCashVoucher, saveJournalVoucher, tradeVoucherTx, TX_OPTIONS } from "./voucher";
@@ -88,6 +88,7 @@ async function saveDoRelease(tx: Tx, ctx: Ctx, input: DepotDeliveryInput, editId
 
   const removed = existing ? await clearPostings(tx, existing.id) : [];
   const ids = input.lines.map((l) => l.productId);
+  await assertBookProducts(tx, ctx.businessId, "DEPOT", ids, removed);
   await lockProducts(tx, [...ids, ...removed]);
   const products = new Map((await tx.product.findMany({ where: { id: { in: ids }, businessId: ctx.businessId } })).map((p) => [p.id, p]));
   if (products.size !== new Set(ids).size) throw new UserError("একটি পণ্য পাওয়া যায়নি");
@@ -156,7 +157,7 @@ export async function loadDepotDelivery(businessId: string, voucherId: string) {
       voucher: {
         include: {
           payments: { include: { account: { select: { id: true, name: true } } } },
-          items: { orderBy: { lineNo: "asc" }, include: { product: { select: { id: true, name: true, code: true, barcode: true, unitId: true, salePrice: true, wholesalePrice: true, purchasePrice: true, avgCost: true, stock: true, trackBatch: true, depotCommissionRate: true, unit: { select: { name: true } } } } } },
+          items: { orderBy: { lineNo: "asc" }, include: { product: { select: { id: true, name: true, code: true, barcode: true, unitId: true, salePrice: true, wholesalePrice: true, purchasePrice: true, avgCost: true, stock: true, trackBatch: true, depotCommissionRate: true, depotCommissionType: true, unit: { select: { name: true } } } } } },
         },
       },
     },
@@ -347,7 +348,7 @@ export async function depotDashboard(businessId: string, today: string) {
     prisma.depotDelivery.findMany({ where: { businessId, voucher: { date: { gte: day, lt: next } } }, select: { mode: true, commissionTotal: true, voucher: { select: { amount: true, items: { select: { quantity: true } } } } } }),
     commissionSummary(businessId),
     prisma.customer.findMany({ where: { businessId, isDepotDealer: true }, select: { accountId: true } }),
-    prisma.product.findMany({ where: { businessId }, select: { stock: true, avgCost: true } }),
+    prisma.product.findMany({ where: { businessId, isDepotProduct: true }, select: { stock: true, avgCost: true } }), // the depot stock only
   ]);
   const balances = await balancesBefore(businessId, undefined, dealerAccounts.map((d) => d.accountId), "DEPOT");
   const dues = [...balances.values()].filter((v) => v > 0);

@@ -1,6 +1,6 @@
 import "server-only";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
 import { prisma, num } from "@/lib/db";
 import { round2, round3 } from "@/lib/calc";
@@ -10,14 +10,14 @@ import { ActionButton } from "@/components/forms";
 import { Badge, EmptyState, FilterBar, FilterField, PageHeader, Pagination, SortHeader, TableWrap } from "@/components/ui";
 import { can, requirePermission } from "./auth";
 import { pageOf, readParams, totalPages, type SearchParams } from "./params";
-import { deleteProductAction, saveProductAction, toggleProductAction } from "./actions/masters";
+import { deleteProductAction, saveDepotProductAction, saveProductAction, toggleProductAction } from "./actions/masters";
 import { ProductForm } from "@/app/(app)/products/product-form";
 import { availableBatches } from "./services/inventory";
 import { businessToday } from "./services/notifications";
 import { expiryStatus } from "@/lib/expiry";
 import { ExpiryBadge } from "@/components/expiry-badge";
 import { ci, rawRows, sql } from "@/lib/dialect";
-import { isDepot } from "@/lib/depot";
+import { commissionText, DEPOT_ACCESS, isDepot } from "@/lib/depot";
 
 const MOVE_LABELS: Record<string, string> = {
   OPENING: "প্রারম্ভিক", PURCHASE: "ক্রয়", SALE: "বিক্রয়", SALES_RETURN: "বিক্রয় ফেরত", PURCHASE_RETURN: "ক্রয় ফেরত", ADJUSTMENT_IN: "সমন্বয় (আগমন)", ADJUSTMENT_OUT: "সমন্বয় (বাহির)",
@@ -32,10 +32,11 @@ export async function ProductListPage({ searchParams }: { searchParams: SearchPa
   const q = p.q?.trim();
   const businessId = ctx.business.id;
   const lowIds = p.low
-    ? (await rawRows<{ id: string }>(prisma, sql`SELECT "id" FROM "Product" WHERE "businessId" = ${businessId} AND ("stock" <= "minStock" OR "stock" <= 0)`)).map((r) => r.id)
+    ? (await rawRows<{ id: string }>(prisma, sql`SELECT "id" FROM "Product" WHERE "businessId" = ${businessId} AND "isDepotProduct" = false AND ("stock" <= "minStock" OR "stock" <= 0)`)).map((r) => r.id)
     : null;
   const where: Prisma.ProductWhereInput = {
     businessId,
+    isDepotProduct: false, // depot (dealership) products: /depot/products
     ...(q ? { OR: [{ name: ci(q) }, { code: ci(q) }, { barcode: { contains: q } }] } : {}),
     ...(p.category ? { categoryId: p.category } : {}),
     ...(p.brand ? { brandId: p.brand } : {}),
@@ -53,7 +54,7 @@ export async function ProductListPage({ searchParams }: { searchParams: SearchPa
     prisma.product.count({ where }),
     prisma.category.findMany({ where: { businessId }, orderBy: { name: "asc" } }),
     prisma.brand.findMany({ where: { businessId }, orderBy: { name: "asc" } }),
-    rawRows<{ v: string | null; n: bigint }>(prisma, sql`SELECT SUM("stock" * "avgCost")::text AS v, COUNT(*) AS n FROM "Product" WHERE "businessId" = ${businessId} AND "isActive" = true`),
+    rawRows<{ v: string | null; n: bigint }>(prisma, sql`SELECT SUM("stock" * "avgCost")::text AS v, COUNT(*) AS n FROM "Product" WHERE "businessId" = ${businessId} AND "isActive" = true AND "isDepotProduct" = false`),
   ]);
 
   // nearest expiry among in-stock batches of the products on this page
@@ -129,11 +130,15 @@ export async function ProductListPage({ searchParams }: { searchParams: SearchPa
   );
 }
 
-export async function ProductDetailPage({ id }: { id: string }) {
-  const ctx = await requirePermission("inventory:view");
+/** kind DEPOT: /depot/products/[id] — a depot product (the other kind redirects to its own address). */
+export async function ProductDetailPage({ id, kind = "GENERAL" }: { id: string; kind?: "GENERAL" | "DEPOT" }) {
+  const depot = kind === "DEPOT";
+  const ctx = await requirePermission(depot ? DEPOT_ACCESS.productsView : "inventory:view");
   const cur = ctx.business.currencySymbol;
   const pr = await prisma.product.findFirst({ where: { id, businessId: ctx.business.id }, include: { unit: true, category: true, brand: true } });
   if (!pr) notFound();
+  if (pr.isDepotProduct !== depot) redirect(`${pr.isDepotProduct ? "/depot/products" : "/products"}/${pr.id}`);
+  const base = depot ? "/depot/products" : "/products";
   const [moves, perWarehouse] = await Promise.all([
     prisma.stockMovement.findMany({
       where: { productId: pr.id },
@@ -150,18 +155,19 @@ export async function ProductDetailPage({ id }: { id: string }) {
     running = round3(running + num(m.quantityIn) - num(m.quantityOut));
     return { ...m, running };
   });
-  const manage = can(ctx, "inventory:manage");
+  const manage = can(ctx, depot ? DEPOT_ACCESS.products : "inventory:manage");
+  const prices = { depotCommissionType: pr.depotCommissionType, depotCommissionRate: num(pr.depotCommissionRate), purchasePrice: num(pr.purchasePrice) };
 
   return (
     <>
       <PageHeader
         title={pr.name}
         description={[pr.code && `কোড ${pr.code}`, pr.barcode && `বারকোড ${pr.barcode}`, pr.category?.name, pr.brand?.name].filter(Boolean).join(" · ") || "পণ্যের বিবরণ ও স্টক কার্ড"}
-        crumbs={[{ label: "পণ্য", href: "/products" }, { label: pr.name }]}
+        crumbs={depot ? [{ label: "ডিপো ব্যবস্থাপনা" }, { label: "ডিপো পণ্য তালিকা", href: base }, { label: pr.name }] : [{ label: "পণ্য", href: "/products" }, { label: pr.name }]}
         actions={
           manage && (
             <>
-              <Link prefetch={false} href={`/products/${pr.id}/edit`} className="btn-secondary">সম্পাদনা</Link>
+              <Link prefetch={false} href={`${base}/${pr.id}/edit`} className="btn-secondary">সম্পাদনা</Link>
               <ActionButton action={toggleProductAction.bind(null, pr.id, !pr.isActive)} label={pr.isActive ? "নিষ্ক্রিয়" : "সক্রিয়"} className="btn-secondary" />
               <ActionButton action={deleteProductAction.bind(null, pr.id)} label="মুছুন" className="btn-danger" confirmText="পণ্যটি মুছে ফেলতে চান?" />
             </>
@@ -170,14 +176,24 @@ export async function ProductDetailPage({ id }: { id: string }) {
       />
       <section className="panel mb-4">
         <div className="grid grid-cols-2 divide-x divide-y divide-rule sm:grid-cols-6 sm:divide-y-0">
-          {[
-            ["বর্তমান মজুদ", `${formatQty(num(pr.stock))} ${pr.unit.name}`],
-            ["গড় ক্রয়মূল্য", formatMoney(num(pr.avgCost), cur)],
-            ["মজুদ মূল্য", formatMoney(round2(num(pr.stock) * num(pr.avgCost)), cur)],
-            ["সর্বশেষ ক্রয়মূল্য", formatMoney(num(pr.purchasePrice), cur)],
-            ["বিক্রয় / পাইকারি", `${formatMoney(num(pr.salePrice), cur)} / ${formatMoney(num(pr.wholesalePrice), cur)}`],
-            ["ন্যূনতম মজুদ", `${formatQty(num(pr.minStock))} ${pr.unit.name}`],
-          ].map(([l, v]) => (
+          {(depot
+            ? [
+                ["বর্তমান ডিপো স্টক", `${formatQty(num(pr.stock))} ${pr.unit.name}`],
+                ["কোম্পানি ক্রয় মূল্য / ডিপি", formatMoney(num(pr.purchasePrice), cur)],
+                ["ডিলার বিক্রয় রেট", formatMoney(num(pr.salePrice), cur)],
+                ["কমিশন", commissionText(prices, (n) => formatMoney(n, cur))],
+                ["মজুদ মূল্য (গড় দরে)", formatMoney(round2(num(pr.stock) * num(pr.avgCost)), cur)],
+                ["ন্যূনতম মজুদ", `${formatQty(num(pr.minStock))} ${pr.unit.name}`],
+              ]
+            : [
+                ["বর্তমান মজুদ", `${formatQty(num(pr.stock))} ${pr.unit.name}`],
+                ["গড় ক্রয়মূল্য", formatMoney(num(pr.avgCost), cur)],
+                ["মজুদ মূল্য", formatMoney(round2(num(pr.stock) * num(pr.avgCost)), cur)],
+                ["সর্বশেষ ক্রয়মূল্য", formatMoney(num(pr.purchasePrice), cur)],
+                ["বিক্রয় / পাইকারি", `${formatMoney(num(pr.salePrice), cur)} / ${formatMoney(num(pr.wholesalePrice), cur)}`],
+                ["ন্যূনতম মজুদ", `${formatQty(num(pr.minStock))} ${pr.unit.name}`],
+              ]
+          ).map(([l, v]) => (
             <div key={l} className="px-4 py-3"><p className="text-[11px] text-slate-500">{l}</p><p className="text-sm font-bold tabular-nums text-ink-900">{v}</p></div>
           ))}
         </div>
@@ -236,8 +252,11 @@ export async function ProductDetailPage({ id }: { id: string }) {
   );
 }
 
-export async function ProductEditPage({ id }: { id: string | null }) {
-  const ctx = await requirePermission("inventory:manage");
+/** kind DEPOT: /depot/products/new and /depot/products/[id]/edit — the depot product form. */
+export async function ProductEditPage({ id, kind = "GENERAL" }: { id: string | null; kind?: "GENERAL" | "DEPOT" }) {
+  const depot = kind === "DEPOT";
+  const ctx = await requirePermission(depot ? DEPOT_ACCESS.products : "inventory:manage");
+  const base = depot ? "/depot/products" : "/products";
   const businessId = ctx.business.id;
   const [pr, categories, brands, units] = await Promise.all([
     id ? prisma.product.findFirst({ where: { id, businessId } }) : null,
@@ -246,24 +265,32 @@ export async function ProductEditPage({ id }: { id: string | null }) {
     prisma.unit.findMany({ where: { businessId, baseUnitId: null }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);
   if (id && !pr) notFound();
+  if (pr && pr.isDepotProduct !== depot) redirect(`${pr.isDepotProduct ? "/depot/products" : "/products"}/${pr.id}/edit`);
   const hasTransactions = pr ? (await prisma.voucherItem.count({ where: { productId: pr.id } })) > 0 : false;
   return (
     <>
-      <PageHeader title={pr ? `সম্পাদনা: ${pr.name}` : "নতুন পণ্য"} crumbs={[{ label: "পণ্য", href: "/products" }, { label: pr?.name ?? "নতুন" }]} />
+      <PageHeader
+        title={pr ? `সম্পাদনা: ${pr.name}` : depot ? "নতুন ডিপো পণ্য" : "নতুন পণ্য"}
+        description={depot ? "ডিলারি (ডিপো) পণ্য — শুধু ডিপোর স্টক ইন, ডেলিভারি চালান ও ডিপো স্টক সমন্বয়ে আসবে; সাধারণ বিক্রয় ও পসে আসবে না" : undefined}
+        crumbs={depot ? [{ label: "ডিপো ব্যবস্থাপনা" }, { label: "ডিপো পণ্য তালিকা", href: base }, { label: pr?.name ?? "নতুন" }] : [{ label: "পণ্য", href: "/products" }, { label: pr?.name ?? "নতুন" }]}
+      />
       <section className="panel max-w-4xl p-5">
         <ProductForm
-          action={saveProductAction.bind(null, id)}
+          action={(depot ? saveDepotProductAction : saveProductAction).bind(null, id)}
+          variant={depot ? "depot" : "general"}
+          currency={ctx.business.currencySymbol}
           categories={categories}
           brands={brands}
           units={units}
           hasTransactions={hasTransactions}
-          showDepotCommission={isDepot(ctx.business.businessType)}
-          cancelHref={pr ? `/products/${pr.id}` : "/products"}
+          showDepotFlag={isDepot(ctx.business.businessType)}
+          cancelHref={pr ? `${base}/${pr.id}` : base}
           defaults={
             pr
               ? {
                   name: pr.name, code: pr.code, barcode: pr.barcode, categoryId: pr.categoryId, brandId: pr.brandId, unitId: pr.unitId,
                   purchasePrice: num(pr.purchasePrice), salePrice: num(pr.salePrice), wholesalePrice: num(pr.wholesalePrice), depotCommissionRate: num(pr.depotCommissionRate),
+                  depotCommissionType: pr.depotCommissionType, isDepotProduct: pr.isDepotProduct,
                   minStock: num(pr.minStock), openingStock: num(pr.openingStock), openingRate: num(pr.openingRate), trackBatch: pr.trackBatch,
                 }
               : {}

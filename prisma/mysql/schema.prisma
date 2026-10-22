@@ -596,32 +596,36 @@ model Warehouse {
 }
 
 model Product {
-  id                  String    @id @default(cuid())
+  id                  String              @id @default(cuid())
   businessId          String
-  business            Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business            Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
   name                String
   code                String?
   barcode             String?
   categoryId          String?
-  category            Category? @relation(fields: [categoryId], references: [id])
+  category            Category?           @relation(fields: [categoryId], references: [id])
   brandId             String?
-  brand               Brand?    @relation(fields: [brandId], references: [id])
+  brand               Brand?              @relation(fields: [brandId], references: [id])
   unitId              String
-  unit                Unit      @relation(fields: [unitId], references: [id])
-  purchasePrice       Decimal   @default(0) @db.Decimal(14, 2) // last purchase rate (base unit)
-  salePrice           Decimal   @default(0) @db.Decimal(14, 2)
-  /// depot: commission the company pays per base unit delivered against its DO
-  depotCommissionRate Decimal   @default(0) @db.Decimal(14, 4)
-  wholesalePrice      Decimal   @default(0) @db.Decimal(14, 2)
-  minStock            Decimal   @default(0) @db.Decimal(14, 3)
-  openingStock        Decimal   @default(0) @db.Decimal(14, 3)
-  openingRate         Decimal   @default(0) @db.Decimal(14, 2)
-  stock               Decimal   @default(0) @db.Decimal(14, 3) // cached Σ movements (base unit)
-  avgCost             Decimal   @default(0) @db.Decimal(14, 4) // cached moving weighted-average cost
-  trackBatch          Boolean   @default(false) // batch / expiry tracking
-  isActive            Boolean   @default(true)
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  unit                Unit                @relation(fields: [unitId], references: [id])
+  purchasePrice       Decimal             @default(0) @db.Decimal(14, 2) // last purchase rate (base unit)
+  salePrice           Decimal             @default(0) @db.Decimal(14, 2)
+  /// depot: commission the company pays per base unit delivered against its DO (FIXED: taka per unit;
+  /// PERCENT: percent of the company price / DP, i.e. purchasePrice)
+  depotCommissionRate Decimal             @default(0) @db.Decimal(14, 4)
+  depotCommissionType DepotCommissionType @default(FIXED)
+  /// depot (dealership) product: only in depot-book vouchers and /depot/products; never in general sales, POS or stock
+  isDepotProduct      Boolean             @default(false)
+  wholesalePrice      Decimal             @default(0) @db.Decimal(14, 2)
+  minStock            Decimal             @default(0) @db.Decimal(14, 3)
+  openingStock        Decimal             @default(0) @db.Decimal(14, 3)
+  openingRate         Decimal             @default(0) @db.Decimal(14, 2)
+  stock               Decimal             @default(0) @db.Decimal(14, 3) // cached Σ movements (base unit)
+  avgCost             Decimal             @default(0) @db.Decimal(14, 4) // cached moving weighted-average cost
+  trackBatch          Boolean             @default(false) // batch / expiry tracking
+  isActive            Boolean             @default(true)
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
 
   stockMovements StockMovement[]
   voucherItems   VoucherItem[]
@@ -633,6 +637,12 @@ model Product {
   @@unique([businessId, barcode])
   @@index([businessId, name])
   @@index([businessId, categoryId])
+  @@index([businessId, isDepotProduct])
+}
+
+enum DepotCommissionType {
+  FIXED
+  PERCENT
 }
 
 model StockMovement {

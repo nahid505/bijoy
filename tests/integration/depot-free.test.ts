@@ -43,7 +43,7 @@ run("free / scheme goods (ফ্রি পণ্য)", () => {
     acc = await prisma.$transaction((tx) => systemAccounts(tx, ctx.businessId));
     warehouseId = (await prisma.warehouse.findFirstOrThrow({ where: { businessId: ctx.businessId } })).id;
     const pcs = await prisma.unit.findFirstOrThrow({ where: { businessId: ctx.businessId, name: "পিস" } });
-    cement = (await prisma.product.create({ data: { businessId: ctx.businessId, name: "সিমেন্ট", unitId: pcs.id, salePrice: 480, depotCommissionRate: 10 } })).id;
+    cement = (await prisma.product.create({ data: { businessId: ctx.businessId, isDepotProduct: true, name: "সিমেন্ট", unitId: pcs.id, salePrice: 480, depotCommissionRate: 10 } })).id;
     company = await saveParty(ctx, "SUPPLIER", party("এসিআই সিমেন্ট"));
     dealer = await saveParty(ctx, "CUSTOMER", party("রহিম ট্রেডার্স"), undefined, { dealer: true });
   });

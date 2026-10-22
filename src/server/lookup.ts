@@ -10,6 +10,7 @@ import { balancesBefore } from "./services/ledger";
 import { partyAging } from "./services/aging";
 import { bookAccountWhere } from "./services/accounting";
 import type { BookKey } from "@/lib/book";
+import { commissionPerUnit } from "@/lib/depot";
 import { ci, rawRows, sql } from "@/lib/dialect";
 
 export const LOOKUP_LIMIT = 20;
@@ -114,16 +115,20 @@ export async function searchParties(businessId: string, kind: PartyKind, q: stri
   }));
 }
 
-export function toProductOption(p: { id: string; name: string; code: string | null; barcode: string | null; unitId: string; trackBatch: boolean; salePrice: unknown; wholesalePrice: unknown; purchasePrice: unknown; avgCost: unknown; stock: unknown; depotCommissionRate?: unknown }): ProductOption {
+export function toProductOption(p: { id: string; name: string; code: string | null; barcode: string | null; unitId: string; trackBatch: boolean; salePrice: unknown; wholesalePrice: unknown; purchasePrice: unknown; avgCost: unknown; stock: unknown; depotCommissionRate?: unknown; depotCommissionType?: string | null }): ProductOption {
   return {
     id: p.id, name: p.name, code: p.code, barcode: p.barcode, unitId: p.unitId, trackBatch: p.trackBatch,
     salePrice: num(p.salePrice as never), wholesalePrice: num(p.wholesalePrice as never), purchasePrice: num(p.purchasePrice as never), avgCost: num(p.avgCost as never), stock: num(p.stock as never),
-    ...(p.depotCommissionRate !== undefined ? { depotCommissionRate: num(p.depotCommissionRate as never) } : {}),
+    // the challan's default commission: taka per base unit (a PERCENT product: its % of the DP)
+    ...(p.depotCommissionRate !== undefined
+      ? { depotCommissionRate: commissionPerUnit({ depotCommissionType: p.depotCommissionType, depotCommissionRate: num(p.depotCommissionRate as never), purchasePrice: num(p.purchasePrice as never) }) }
+      : {}),
   };
 }
 
 /** Products matching name, code / SKU, barcode or id (or exactly the given ids). */
-export async function searchProducts(businessId: string, q: string, opts: { ids?: string[]; take?: number; batchOnly?: boolean } = {}): Promise<ProductOption[]> {
+/** book: DEPOT = the depot (dealership) products only, GENERAL (default) = never them; ids: exactly those products. */
+export async function searchProducts(businessId: string, q: string, opts: { ids?: string[]; take?: number; batchOnly?: boolean; book?: BookKey } = {}): Promise<ProductOption[]> {
   const query = q.trim().slice(0, 100);
   const code = asciiDigits(query);
   const take = opts.take ?? LOOKUP_LIMIT;
@@ -132,6 +137,7 @@ export async function searchProducts(businessId: string, q: string, opts: { ids?
     : {
         businessId,
         isActive: true,
+        isDepotProduct: opts.book === "DEPOT",
         ...(opts.batchOnly ? { trackBatch: true } : {}),
         ...(query
           ? { OR: [{ name: ci(query) }, { code: ci(code) }, { barcode: { contains: code } }, { id: query }] }
