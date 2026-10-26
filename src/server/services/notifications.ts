@@ -127,7 +127,7 @@ export async function runDailyChecks(businessId: string, opts: { today?: Date; f
       // ── expiry (per batch that still has stock) — only while Product Expiry Management is on
       const batches = !expiryOn ? [] : await tx.productBatch.findMany({
         where: { businessId, quantity: { gt: 0 }, expiryDate: { not: null } },
-        include: { product: { select: { name: true, unit: { select: { name: true } } } } },
+        include: { product: { select: { name: true, isDepotProduct: true, unit: { select: { name: true } } } } },
       });
       const expiryAlerts: Alert[] = [];
       for (const b of batches) {
@@ -135,7 +135,7 @@ export async function runDailyChecks(businessId: string, opts: { today?: Date; f
         if (st.code !== "EXPIRED" && st.code !== "TODAY" && st.code !== "SOON") continue;
         const qty = round3(Number(b.quantity));
         const qtyText = `মজুদ ${formatQty(qty)} ${b.product.unit.name}`;
-        const base = { productId: b.productId, batchId: b.id, quantity: qty, dueOn: b.expiryDate, link: `/products/batches?product=${b.productId}` };
+        const base = { productId: b.productId, batchId: b.id, quantity: qty, dueOn: b.expiryDate, link: b.product.isDepotProduct ? `/depot/products/${b.productId}` : `/products/batches?product=${b.productId}` };
         if (st.code === "EXPIRED") {
           expiryAlerts.push({
             ...base, kind: "EXPIRED", severity: "CRITICAL", level: 0, dedupeKey: `expiry:${b.id}:expired`,
@@ -162,16 +162,16 @@ export async function runDailyChecks(businessId: string, opts: { today?: Date; f
       // ── low stock
       const products = await tx.product.findMany({
         where: { businessId, isActive: true, minStock: { gt: 0 } },
-        select: { id: true, name: true, stock: true, minStock: true, unit: { select: { name: true } } },
+        select: { id: true, name: true, stock: true, minStock: true, isDepotProduct: true, unit: { select: { name: true } } },
       });
       const day = toDateInput(today);
       const lowAlerts: Alert[] = products
         .filter((p) => Number(p.stock) <= Number(p.minStock))
         .map((p) => ({
           kind: "LOW_STOCK", severity: Number(p.stock) <= 0 ? "CRITICAL" : "WARNING", dedupeKey: `lowstock:${p.id}:${day}`,
-          title: Number(p.stock) <= 0 ? `স্টক শেষ: ${p.name}` : `কম স্টক: ${p.name}`,
+          title: `${p.isDepotProduct ? "ডিপো — " : ""}${Number(p.stock) <= 0 ? "স্টক শেষ" : "কম স্টক"}: ${p.name}`,
           message: `${p.name} — মজুদ ${formatQty(Number(p.stock))} ${p.unit.name}, সর্বনিম্ন সীমা ${formatQty(Number(p.minStock))} ${p.unit.name}।`,
-          link: `/products/${p.id}`, productId: p.id, quantity: round3(Number(p.stock)),
+          link: p.isDepotProduct ? `/depot/products/${p.id}` : `/products/${p.id}`, productId: p.id, quantity: round3(Number(p.stock)),
         }));
       await reconcile(tx, businessId, ["LOW_STOCK"], lowAlerts, (n) => n.productId ?? "", (a) => a.productId ?? "", now, result);
 

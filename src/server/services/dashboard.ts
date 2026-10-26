@@ -75,7 +75,7 @@ export async function dashboardData(businessId: string, fiscalStartMonth: number
     rawRows<{ id: string; name: string; stock: string; minStock: string; unit: string }>(prisma, sql`
       SELECT p."id", p."name", p."stock"::text, p."minStock"::text, u."name" AS unit
       FROM "Product" p JOIN "Unit" u ON u."id" = p."unitId"
-      WHERE p."businessId" = ${businessId} AND p."isActive" = true AND (p."stock" <= p."minStock" OR p."stock" <= 0)
+      WHERE p."businessId" = ${businessId} AND p."isActive" = true AND p."isDepotProduct" = false AND (p."stock" <= p."minStock" OR p."stock" <= 0)
       ORDER BY p."stock" ASC LIMIT 7`),
     partyAging(businessId, "CUSTOMER", todayDate),
     salesByDay(businessId, d30, todayRange.lt!),

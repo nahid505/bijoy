@@ -16,6 +16,8 @@ import { saveProduction } from "@/server/services/production";
 import { searchProducts } from "@/server/lookup";
 import { inventoryOptions } from "@/server/voucher-editor";
 import { REPORTS } from "@/server/reports/definitions";
+import { dashboardData } from "@/server/services/dashboard";
+import { listBatches } from "@/server/services/expiry";
 
 const run = process.env.TEST_DATABASE_URL || process.env.TEST_MYSQL_URL ? describe : describe.skip;
 const D = (s: string) => new Date(`${s}T00:00:00.000Z`);
@@ -98,6 +100,20 @@ run("depot products (ডিপো পণ্য তালিকা)", () => {
     const text = JSON.stringify(r.rows);
     expect(text).toContain("চাল");
     expect(text).not.toContain("সিমেন্ট");
+  });
+
+  it("general dashboard low stock and the batch / expiry list leave depot products out", async () => {
+    const pill = await saveProduct(ctx, product({ name: "ডিপো ওষুধ", code: "M-1", purchasePrice: 10, minStock: 5, trackBatch: true, isDepotProduct: true }));
+    const tab = await saveProduct(ctx, product({ name: "সাধারণ ওষুধ", code: "M-2", purchasePrice: 10, minStock: 5, trackBatch: true }));
+    const batchLine = (productId: string) => ({ ...line(productId, 2, 10), batchNo: "B-1", expiryDate: D("2027-01-31") });
+    await trade("PURCHASE", [batchLine(pill) as never], "DEPOT", company.accountId);
+    await trade("PURCHASE", [batchLine(tab) as never], "GENERAL", company.accountId);
+    const low = (await dashboardData(ctx.businessId, 7)).lowStock.map((r) => r.name);
+    expect(low).toContain("সাধারণ ওষুধ");
+    expect(low).not.toContain("ডিপো ওষুধ");
+    const today = D("2026-10-25");
+    expect((await listBatches(ctx.businessId, today)).map((b) => b.productName)).toEqual(["সাধারণ ওষুধ"]);
+    expect((await listBatches(ctx.businessId, today, { depot: true })).map((b) => b.productName)).toEqual(["ডিপো ওষুধ"]);
   });
 
   it("a product with transactions keeps its kind; an unused one may move, its opening stock moving book with it", async () => {

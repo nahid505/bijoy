@@ -53,8 +53,8 @@ export const NAV: NavEntry[] = [
     children: [
       { href: "/depot/deliveries", label: "ডেলিভারি চালান", permission: DEPOT_ACCESS.view },
       { href: "/depot/deliveries/new", label: "ডেলিভারি চালান তৈরি", permission: DEPOT_ACCESS.deliveryCreate },
-      { href: "/depot/dealers", label: "ডিলার তালিকা", permission: DEPOT_ACCESS.dealersView },
       { href: "/depot/products", label: "ডিপো পণ্য তালিকা", permission: DEPOT_ACCESS.productsView },
+      { href: "/depot/dealers", label: "ডিলার তালিকা", permission: DEPOT_ACCESS.dealersView },
       { href: "/depot/stock-in", label: "স্টক ইন (কোম্পানি থেকে প্রাপ্তি)", permission: DEPOT_ACCESS.stockInView },
       { href: "/depot/collections", label: "মার্কেট কালেকশন", permission: DEPOT_ACCESS.collectionView },
       { href: "/depot/payments", label: "কোম্পানিকে পেমেন্ট", permission: DEPOT_ACCESS.paymentView },

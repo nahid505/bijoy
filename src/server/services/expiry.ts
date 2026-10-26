@@ -31,6 +31,8 @@ export interface BatchQuery {
   q?: string;
   productId?: string;
   includeEmpty?: boolean; // include batches with no stock left
+  /** true: the depot products' batches; default: the general products' (depot stock never mixes in) */
+  depot?: boolean;
   sort?: BatchSort;
   dir?: "asc" | "desc";
 }
@@ -46,6 +48,7 @@ export async function listBatches(businessId: string, today: Date, query: BatchQ
   const rows = await prisma.productBatch.findMany({
     where: {
       businessId,
+      product: { isDepotProduct: query.depot === true },
       ...(query.includeEmpty ? {} : { quantity: { gt: 0 } }),
       ...(query.productId ? { productId: query.productId } : {}),
       ...(q

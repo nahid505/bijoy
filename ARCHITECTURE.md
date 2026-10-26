@@ -831,10 +831,11 @@ A fund transfer is cash → cash. It is neither income nor expense, and the cash
 **Pickers and lists.**
 - `searchProducts(…, { book })` and `/api/lookup/products?book=depot`: depot forms see only depot products; every other picker, `inventoryOptions` (POS tiles), `/products`, the stock and stock-valuation reports never see them.
 - A depot picker's "+ নতুন পণ্য" creates a depot product (`quickCreateProductAction({ depot: true })`, `DEPOT_ACCESS.products`).
-- The depot dashboard's stock value counts depot products only.
+- The depot dashboard's stock value counts depot products only. The general dashboard's low-stock list, the batch / expiry list and reports (`listBatches`, unless `depot: true`) count general products only.
+- Low-stock and expiry alerts for a depot product are marked "ডিপো —" (low stock) and open `/depot/products/[id]`.
 
 **Screens.**
-- **`/depot/products`** (menu "ডিপো পণ্য তালিকা", after the dealers): code, name, company / brand, DP, dealer rate, commission and current depot stock; search, brand and status filters; active count and stock value.
+- **`/depot/products`** (menu "ডিপো পণ্য তালিকা", just before "ডিলার তালিকা"): code, name, company / brand, DP, dealer rate, commission and current depot stock; search, brand and status filters; active count and stock value.
 - **`/depot/products/new`** and **`/[id]/edit`**: name, code / barcode, company / brand (pick one, or type a new name — created on save), unit, company price / DP, dealer sale rate (the market-sale challan's default rate), commission type and value (the % shows its taka per unit), minimum stock, batch tracking and opening stock.
 - **`/depot/products/[id]`**: stock card.
 - A depot product opened at `/products/…` redirects to `/depot/products/…`, and the other way round.

@@ -52,7 +52,7 @@ describe("depot permissions (ডিপো ব্যবস্থাপনা)", (
     const s = sidebar(depotOnly, "DEPOT");
     expect(s.map((e) => e.key)).toEqual(["dashboard", "depot", "account"]); // account = own profile / password only
     expect(s[1].children).toEqual([
-      "/depot/deliveries", "/depot/deliveries/new", "/depot/dealers", "/depot/products", "/depot/stock-in", "/depot/collections", "/depot/payments", "/depot/stock-adjust", "/depot/expenses", "/depot/commission",
+      "/depot/deliveries", "/depot/deliveries/new", "/depot/products", "/depot/dealers", "/depot/stock-in", "/depot/collections", "/depot/payments", "/depot/stock-adjust", "/depot/expenses", "/depot/commission",
       "/reports/depot-market-dues", "/reports/depot-commission", "/reports/depot-deliveries", "/reports/depot-free", "/reports/depot-company-ledger", "/reports/depot-profit-loss", "/reports/depot-cash-book",
     ]);
     // stock adjustment: only with depot:stock_adjust — a stock-in or general stock key does not open it
