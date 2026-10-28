@@ -11,8 +11,8 @@
 
 generator client {
   provider      = "prisma-client-js"
-  // native = this machine; musl = Docker (Alpine); rhel = CloudLinux / cPanel (8: OpenSSL 1.1, 9: OpenSSL 3); debian = most VPS
-  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "rhel-openssl-1.1.x", "rhel-openssl-3.0.x", "debian-openssl-3.0.x"]
+  // native = this machine; musl = Docker (Alpine); rhel = CloudLinux / cPanel (7: OpenSSL 1.0, 8: OpenSSL 1.1, 9: OpenSSL 3); debian = most VPS (old: OpenSSL 1.0)
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "rhel-openssl-1.0.x", "rhel-openssl-1.1.x", "rhel-openssl-3.0.x", "debian-openssl-1.0.x", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -120,7 +120,8 @@ enum NotificationSeverity {
 model Business {
   id                   String    @id @default(cuid())
   name                 String    @db.Text
-  businessType         String?   @db.Text // retail, wholesale, pharmacy … (registration)
+  businessType         String?   @db.Text // the primary type, derived from businessTypes: DEPOT when selected, else the first (existing depot checks read it)
+  businessTypes        Json      @default(dbgenerated("(json_array())")) // business types chosen in settings ("ব্যবসার ধরন ও মডিউল") — empty = general (all general modules)
   logo                 String?   @db.MediumText // small image as data URL
   address              String?   @db.Text
   mobile               String?   @db.Text
@@ -1632,21 +1633,27 @@ model DepotDelivery {
 /// The voucher line is in মণ (quantity = mon, rate = rate per mon → amount = total exactly) while the
 /// stock receives the exact net kg. bagCount is information for the slip only (no calculation).
 model PaddyPurchase {
-  id         String   @id @default(cuid())
-  businessId String
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  voucherId  String   @unique
-  voucher    Voucher  @relation(fields: [voucherId], references: [id], onDelete: Cascade)
-  bagCount   Int      @default(0) // bag_count — shown first on the slip, not used in any calculation
-  grossKg    Decimal  @db.Decimal(14, 3) // gross_scale
-  dhaltaKg   Decimal  @default(0) @db.Decimal(14, 3) // dhalta — manual deduction in kg
-  netKg      Decimal  @db.Decimal(14, 3) // net_scale = gross − dhalta
-  mon        Decimal  @db.Decimal(14, 2) // net ÷ 40
-  ratePerMon Decimal  @db.Decimal(14, 2) // rate_per_mon
-  totalPrice Decimal  @db.Decimal(14, 2) // mon × rate_per_mon
-  notes      String?  @db.Text // vehicle number, driver, remarks
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id             String   @id @default(cuid())
+  businessId     String
+  business       Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  voucherId      String   @unique
+  voucher        Voucher  @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  bagCount       Int      @default(0) // bag_count — shown first on the slip, not used in any calculation
+  variety        String?  @db.Text // ধানের জাত (মিনিকেট, নাজিরশাইল, ব্রি-২৮ …) — information for the slip and the mill reports
+  moisturePct    Decimal? @db.Decimal(5, 2) // আর্দ্রতা % — information only
+  vehicleGrossKg Decimal? @db.Decimal(14, 3) // weighbridge: loaded vehicle
+  vehicleTareKg  Decimal? @db.Decimal(14, 3) // weighbridge: empty vehicle (gross = loaded − empty)
+  /// unloading / handling labour paid at purchase — a linked PAYMENT voucher (sourceKey paddy-labour:<voucherId>)
+  labourCost     Decimal  @default(0) @db.Decimal(14, 2)
+  grossKg        Decimal  @db.Decimal(14, 3) // gross_scale
+  dhaltaKg       Decimal  @default(0) @db.Decimal(14, 3) // dhalta — manual deduction in kg
+  netKg          Decimal  @db.Decimal(14, 3) // net_scale = gross − dhalta
+  mon            Decimal  @db.Decimal(14, 2) // net ÷ 40
+  ratePerMon     Decimal  @db.Decimal(14, 2) // rate_per_mon
+  totalPrice     Decimal  @db.Decimal(14, 2) // mon × rate_per_mon
+  notes          String?  @db.Text // vehicle number, driver, remarks
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   @@index([businessId])
 }

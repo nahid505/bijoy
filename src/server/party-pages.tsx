@@ -15,7 +15,7 @@ import type { BookKey } from "@/lib/book";
 import { pageOf, readParams, totalPages, type SearchParams } from "./params";
 import { balancesBefore, statement } from "./services/ledger";
 import { reportPeriod } from "./period";
-import { amountInBanglaWords } from "@/lib/words";
+import { AmountInWords } from "@/components/amount-words";
 import { AGING_BUCKETS, partyAging } from "./services/aging";
 import { VOUCHER_TYPES } from "@/lib/accounting";
 import { partyOpening } from "./services/master";
@@ -23,6 +23,8 @@ import { deletePartyAction, saveDealerAction, savePartyAction, togglePartyAction
 import { ci, rawRows, sql } from "@/lib/dialect";
 import { canSeeParty, partyListWhere } from "./party-scope";
 import type { AppContext } from "./auth";
+import { digitVariants, toAsciiDigits } from "@/lib/digits";
+import { getT } from "./i18n";
 
 export type PartyKind = "CUSTOMER" | "SUPPLIER";
 /** DEALER = a depot dealer (Customer.isDepotDealer): own list / profile under the depot menu, DEPOT book */
@@ -84,6 +86,7 @@ export async function PartyListPage({ kind: pageKind, searchParams }: { kind: Pa
   const book = bookOf(pageKind);
   const dealer = pageKind === "DEALER";
   const ctx = await requirePermission(cfg.view);
+  const t = await getT();
   if (dealer && !isDepot(ctx.business.businessType)) notFound();
   const p = await readParams(searchParams);
   const { page, skip, take } = pageOf(p);
@@ -93,7 +96,7 @@ export async function PartyListPage({ kind: pageKind, searchParams }: { kind: Pa
     businessId: ctx.business.id,
     ...partyListWhere(ctx, kind),
     ...dealerWhere(pageKind), // general customers and depot dealers are separate lists
-    ...(q ? { OR: [{ name: ci(q) }, { mobile: { contains: q } }, { address: ci(q) }] } : {}),
+    ...(q ? { OR: [...digitVariants(q).flatMap((v) => [{ name: ci(v) }, { address: ci(v) }]), { mobile: { contains: toAsciiDigits(q) } }] } : {}),
     ...(p.status === "inactive" ? { isActive: false } : p.status === "all" ? {} : { isActive: true }),
     ...(kind === "CUSTOMER" && p.group ? { groupName: p.group } : {}),
   };
@@ -123,38 +126,38 @@ export async function PartyListPage({ kind: pageKind, searchParams }: { kind: Pa
         title={cfg.title}
         description={dealer ? "ডিপোর ডিলার — সাধারণ কাস্টমার তালিকা থেকে আলাদা; বাকি ও লেনদেন শুধু ডিপো হিসাবে" : `প্রতিটি ${cfg.title} এর নিজস্ব লেজার — ব্যালেন্স সরাসরি হিসাব থেকে`}
         crumbs={dealer ? [{ label: "ডিপো ব্যবস্থাপনা" }, { label: "ডিলার" }] : undefined}
-        actions={can(ctx, cfg.manage) && <Link prefetch={false} href={`${cfg.base}/new`} className="btn-primary">+ নতুন {cfg.title}</Link>}
+        actions={can(ctx, cfg.manage) && <Link prefetch={false} href={`${cfg.base}/new`} className="btn-primary">{t("+ নতুন {0}", { 0: t(cfg.title) })}</Link>}
       />
       <section className="panel">
         <FilterBar action={cfg.base}>
-          <FilterField label="খুঁজুন"><input name="q" defaultValue={q} placeholder="নাম, মোবাইল, ঠিকানা…" className="input w-60" /></FilterField>
+          <FilterField label="খুঁজুন"><input name="q" defaultValue={q} placeholder={t("নাম, মোবাইল, ঠিকানা…")} className="input w-60" /></FilterField>
           <FilterField label="অবস্থা">
             <select name="status" defaultValue={p.status ?? "active"} className="input w-32">
-              <option value="active">সক্রিয়</option><option value="inactive">নিষ্ক্রিয়</option><option value="all">সব</option>
+              <option value="active">{t("সক্রিয়")}</option><option value="inactive">{t("নিষ্ক্রিয়")}</option><option value="all">{t("সব")}</option>
             </select>
           </FilterField>
           {isCustomer && groups.length > 0 && (
             <FilterField label="গ্রুপ">
               <select name="group" defaultValue={p.group ?? ""} className="input w-36">
-                <option value="">সব গ্রুপ</option>
+                <option value="">{t("সব গ্রুপ")}</option>
                 {groups.map((g) => <option key={g} value={g}>{g}</option>)}
               </select>
             </FilterField>
           )}
         </FilterBar>
         {smsBulk && rows.length > 0 && <SmsSelectionBar />}
-        {smsBulk && p.group && <p className="no-print border-b border-rule px-3 py-2 text-xs"><Link prefetch={false} href={`/sms/compose?group=${encodeURIComponent(p.group)}`} className="font-semibold text-brand-700 hover:underline">✉ “{p.group}” গ্রুপের সবাইকে এসএমএস</Link></p>}
+        {smsBulk && p.group && <p className="no-print border-b border-rule px-3 py-2 text-xs"><Link prefetch={false} href={`/sms/compose?group=${encodeURIComponent(p.group)}`} className="font-semibold text-brand-700 hover:underline">✉ “{p.group}” {t("গ্রুপের সবাইকে এসএমএস")}</Link></p>}
         {rows.length === 0 ? <EmptyState /> : (
           <TableWrap>
             <table className="table">
-              <thead><tr>{smsBulk && <th className="w-8"><span className="sr-only">নির্বাচন</span></th>}<SortHeader basePath={cfg.base} params={p} field="name" label="নাম" /><th>মোবাইল</th>{isCustomer && <th>গ্রুপ</th>}{dealer && <th>রুট / এরিয়া</th>}<th>ঠিকানা</th><th className="num">{cfg.tradeLabel}</th><th className="num">বর্তমান ব্যালেন্স</th><th /></tr></thead>
+              <thead><tr>{smsBulk && <th className="w-8"><span className="sr-only">{t("নির্বাচন")}</span></th>}<SortHeader basePath={cfg.base} params={p} field="name" label="নাম" /><th>{t("মোবাইল")}</th>{isCustomer && <th>{t("গ্রুপ")}</th>}{dealer && <th>{t("রুট / এরিয়া")}</th>}<th>{t("ঠিকানা")}</th><th className="num">{t(cfg.tradeLabel)}</th><th className="num">{t("বর্তমান ব্যালেন্স")}</th><th /></tr></thead>
               <tbody>
                 {rows.map((r) => {
                   const b = bal.get(r.accountId) ?? 0;
                   return (
                     <tr key={r.id}>
                       {smsBulk && <td>{r.mobile && <input type="checkbox" name="sms-customer" value={r.id} aria-label={`${r.name} নির্বাচন`} />}</td>}
-                      <td><Link prefetch={false} href={`${cfg.base}/${r.id}`} className="font-semibold text-brand-700 hover:underline">{r.name}</Link>{!r.isActive && <> <Badge>নিষ্ক্রিয়</Badge></>}</td>
+                      <td><Link prefetch={false} href={`${cfg.base}/${r.id}`} className="font-semibold text-brand-700 hover:underline">{r.name}</Link>{!r.isActive && <> <Badge>{t("নিষ্ক্রিয়")}</Badge></>}</td>
                       <td>{r.mobile ?? "—"}</td>
                       {isCustomer && <td className="text-xs">{groupOf(r) ? <Link prefetch={false} href={`${cfg.base}?group=${encodeURIComponent(groupOf(r)!)}`} className="hover:underline">{groupOf(r)}</Link> : "—"}</td>}
                       {dealer && <td className="text-xs">{(r as { route?: string | null }).route ?? "—"}</td>}
@@ -162,8 +165,8 @@ export async function PartyListPage({ kind: pageKind, searchParams }: { kind: Pa
                       <td className="num">{formatMoney(tradeOf(r.accountId), cur)}</td>
                       <td className={`num font-semibold ${b > 0 ? "dr" : b < 0 ? "cr" : ""}`}>{formatDrCr(b, cur)}</td>
                       <td className="whitespace-nowrap text-right">
-                        {smsSingle && r.mobile && <Link prefetch={false} href={`/sms/compose?customers=${r.id}`} className="btn-ghost btn-sm" title="এসএমএস পাঠান">✉ এসএমএস</Link>}
-                        {!dealer && <Link prefetch={false} href={`/accounts/${r.accountId}`} className="btn-secondary btn-sm">লেজার</Link>}
+                        {smsSingle && r.mobile && <Link prefetch={false} href={`/sms/compose?customers=${r.id}`} className="btn-ghost btn-sm" title={t("এসএমএস পাঠান")}>✉ {t("এসএমএস")}</Link>}
+                        {!dealer && <Link prefetch={false} href={`/accounts/${r.accountId}`} className="btn-secondary btn-sm">{t("লেজার")}</Link>}
                       </td>
                     </tr>
                   );
@@ -193,6 +196,7 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
   const book = bookOf(pageKind);
   const dealer = pageKind === "DEALER";
   const ctx = await requirePermission(cfg.view);
+  const t = await getT();
   await redirectDealer(pageKind, ctx, id);
   const party = await findParty(pageKind, ctx, id);
   if (!party) notFound();
@@ -212,16 +216,16 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
     partyAging(ctx.business.id, kind, today, [party.accountId], book),
   ]);
   const aging = agingRows[0];
-  const t = (type: string) => byType.find((x) => x.type === type);
+  const byTypeRow = (type: string) => byType.find((x) => x.type === type);
   const totalDebit = round2(byType.filter((x) => x.type !== "OPENING").reduce((s, x) => s + num(x.debit), 0));
   const totalCredit = round2(byType.filter((x) => x.type !== "OPENING").reduce((s, x) => s + num(x.credit), 0));
   const balance = bal.get(party.accountId) ?? 0;
   const trade =
-    kind === "CUSTOMER" ? round2(num(t("SALES")?.debit) - num(t("SALES_RETURN")?.credit)) : round2(num(t("PURCHASE")?.credit) - num(t("PURCHASE_RETURN")?.debit));
+    kind === "CUSTOMER" ? round2(num(byTypeRow("SALES")?.debit) - num(byTypeRow("SALES_RETURN")?.credit)) : round2(num(byTypeRow("PURCHASE")?.credit) - num(byTypeRow("PURCHASE_RETURN")?.debit));
   const settled =
     kind === "CUSTOMER"
-      ? round2(num(t("SALES")?.credit) + num(t("RECEIPT")?.credit) + num(t("JOURNAL")?.credit))
-      : round2(num(t("PURCHASE")?.debit) + num(t("PAYMENT")?.debit) + num(t("JOURNAL")?.debit));
+      ? round2(num(byTypeRow("SALES")?.credit) + num(byTypeRow("RECEIPT")?.credit) + num(byTypeRow("JOURNAL")?.credit))
+      : round2(num(byTypeRow("PURCHASE")?.debit) + num(byTypeRow("PAYMENT")?.debit) + num(byTypeRow("JOURNAL")?.debit));
   const due = round2(cfg.sign * balance);
   const creditLimit = "creditLimit" in party ? num(party.creditLimit) : 0;
   const manage = can(ctx, cfg.manage);
@@ -237,25 +241,25 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
       <section className="panel mb-4">
         <div className="grid gap-0 lg:grid-cols-4">
           <dl className="space-y-1 border-b border-rule p-4 text-sm lg:border-b-0 lg:border-r">
-            <p className="text-base font-bold text-ink-900">{party.name} {!party.isActive && <Badge>নিষ্ক্রিয়</Badge>}</p>
+            <p className="text-base font-bold text-ink-900">{party.name} {!party.isActive && <Badge>{t("নিষ্ক্রিয়")}</Badge>}</p>
             {party.mobile && <p>📞 {party.mobile}</p>}
             {party.email && <p>✉ {party.email}</p>}
             {party.address && <p className="text-slate-600">{party.address}</p>}
             <p className="pt-1 text-xs text-slate-500">
-              {kind === "CUSTOMER" && <>ক্রেডিট সীমা: <b>{creditLimit ? formatMoney(creditLimit, cur) : "নেই"}</b> · </>}
-              পরিশোধের মেয়াদ: <b>{party.creditDays ? `${party.creditDays} দিন` : "তাৎক্ষণিক"}</b>
+              {kind === "CUSTOMER" && <>{t("ক্রেডিট সীমা:")} <b>{creditLimit ? formatMoney(creditLimit, cur) : t("নেই")}</b> · </>}
+              {t("পরিশোধের মেয়াদ:")} <b>{party.creditDays ? `${party.creditDays} ${t("দিন")}` : t("তাৎক্ষণিক")}</b>
             </p>
           </dl>
           <div className="grid grid-cols-2 divide-x divide-y divide-rule sm:grid-cols-4 lg:col-span-3">
-            <Fig label="প্রারম্ভিক ব্যালেন্স" value={formatMoney(opening, cur)} />
-            <Fig label={kind === "CUSTOMER" ? "মোট ইনভয়েস" : "মোট ক্রয় ইনভয়েস"} value={formatMoney(trade, cur)} />
-            <Fig label={cfg.settledLabel} value={formatMoney(settled, cur)} tone="text-brand-700" />
-            <Fig label={cfg.balanceLabel} value={due >= 0 ? formatMoney(due, cur) : `${formatMoney(-due, cur)} অগ্রিম`} tone={due > 0 ? "cr" : "text-brand-700"} big />
-            <Fig label="মোট ডেবিট" value={formatMoney(totalDebit, cur)} tone="dr" />
-            <Fig label="মোট ক্রেডিট" value={formatMoney(totalCredit, cur)} tone="cr" />
-            <Fig label="মেয়াদোত্তীর্ণ বকেয়া" value={formatMoney(aging?.overdue ?? 0, cur)} tone={(aging?.overdue ?? 0) > 0 ? "cr" : ""} big />
+            <Fig label={t("প্রারম্ভিক ব্যালেন্স")} value={formatMoney(opening, cur)} />
+            <Fig label={t(kind === "CUSTOMER" ? "মোট ইনভয়েস" : "মোট ক্রয় ইনভয়েস")} value={formatMoney(trade, cur)} />
+            <Fig label={t(cfg.settledLabel)} value={formatMoney(settled, cur)} tone="text-brand-700" />
+            <Fig label={t(cfg.balanceLabel)} value={due >= 0 ? formatMoney(due, cur) : `${formatMoney(-due, cur)} ${t("অগ্রিম")}`} tone={due > 0 ? "cr" : "text-brand-700"} big />
+            <Fig label={t("মোট ডেবিট")} value={formatMoney(totalDebit, cur)} tone="dr" />
+            <Fig label={t("মোট ক্রেডিট")} value={formatMoney(totalCredit, cur)} tone="cr" />
+            <Fig label={t("মেয়াদোত্তীর্ণ বকেয়া")} value={formatMoney(aging?.overdue ?? 0, cur)} tone={(aging?.overdue ?? 0) > 0 ? "cr" : ""} big />
             <Fig
-              label={kind === "CUSTOMER" && creditLimit ? "অবশিষ্ট ক্রেডিট" : "বয়স ০-৩০ / ৯০+ দিন"}
+              label={kind === "CUSTOMER" && creditLimit ? t("অবশিষ্ট ক্রেডিট") : t("বয়স ০-৩০ / ৯০+ দিন")}
               value={kind === "CUSTOMER" && creditLimit ? formatMoney(Math.max(creditLimit - due, 0), cur) : `${formatMoney(aging?.buckets["0-30"] ?? 0, cur)} / ${formatMoney(aging?.buckets["90+"] ?? 0, cur)}`}
             />
           </div>
@@ -264,7 +268,7 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
       <nav className="no-print mb-3 flex flex-wrap gap-1 border-b border-rule">
         {TABS.map((x) => (
           <Link prefetch={false} key={x.key} href={tabHref(x.key)} className={`-mb-px border-b-2 px-3 py-2 text-sm ${tab === x.key ? "border-brand-600 font-semibold text-brand-800" : "border-transparent text-slate-600 hover:text-ink-900"}`}>
-            {x.label}
+            {t(x.label)}
           </Link>
         ))}
       </nav>
@@ -273,13 +277,13 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
 
   const actions = (
     <>
-      {party.isActive && can(ctx, cfg.newTrade.perm) && <Link prefetch={false} href={pageKind === "CUSTOMER" ? "/pos" : dealer ? cfg.newTrade.href : `${cfg.newTrade.href}?party=${party.accountId}`} className="btn-primary">{cfg.newTrade.label}</Link>}
-      {can(ctx, dealer ? DEPOT_ACCESS.collection : "vouchers:create") && <Link prefetch={false} href={`${cfg.settle.href}?party=${party.accountId}`} className="btn-secondary">{cfg.settle.label}</Link>}
-      <Link prefetch={false} href={`${cfg.base}/${party.id}/statement`} className="btn-secondary">🖨 স্টেটমেন্ট</Link>
+      {party.isActive && can(ctx, cfg.newTrade.perm) && <Link prefetch={false} href={pageKind === "CUSTOMER" ? "/pos" : dealer ? cfg.newTrade.href : `${cfg.newTrade.href}?party=${party.accountId}`} className="btn-primary">{t(cfg.newTrade.label)}</Link>}
+      {can(ctx, dealer ? DEPOT_ACCESS.collection : "vouchers:create") && <Link prefetch={false} href={`${cfg.settle.href}?party=${party.accountId}`} className="btn-secondary">{t(cfg.settle.label)}</Link>}
+      <Link prefetch={false} href={`${cfg.base}/${party.id}/statement`} className="btn-secondary">{t("🖨 স্টেটমেন্ট")}</Link>
       <a href={waHref} target="_blank" rel="noopener noreferrer" className="btn-secondary">WhatsApp</a>
-      {manage && <Link prefetch={false} href={`${cfg.base}/${party.id}/edit`} className="btn-secondary">সম্পাদনা</Link>}
-      {manage && <ActionButton action={togglePartyAction.bind(null, pageKind, party.id, !party.isActive)} label={party.isActive ? "নিষ্ক্রিয়" : "সক্রিয়"} className="btn-secondary" />}
-      {manage && <ActionButton action={deletePartyAction.bind(null, pageKind, party.id)} label="মুছুন" className="btn-danger" confirmText={`${cfg.title} মুছে ফেলতে চান?`} />}
+      {manage && <Link prefetch={false} href={`${cfg.base}/${party.id}/edit`} className="btn-secondary">{t("সম্পাদনা")}</Link>}
+      {manage && <ActionButton action={togglePartyAction.bind(null, pageKind, party.id, !party.isActive)} label={party.isActive ? t("নিষ্ক্রিয়") : t("সক্রিয়")} className="btn-secondary" />}
+      {manage && <ActionButton action={deletePartyAction.bind(null, pageKind, party.id)} label={t("মুছুন")} className="btn-danger" confirmText={t("{0} মুছে ফেলতে চান?", { 0: t(cfg.title) })} />}
     </>
   );
 
@@ -291,7 +295,7 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
         basePath={`${cfg.base}/${party.id}`}
         omitFilters={["account"]}
         title={party.name}
-        description={`${cfg.title} প্রোফাইল ও হিসাব বিবরণী (স্টেটমেন্ট)`}
+        description={`${t(cfg.title)} ${t("প্রোফাইল ও হিসাব বিবরণী (স্টেটমেন্ট)")}`}
         crumbs={[...(dealer ? [{ label: "ডিপো ব্যবস্থাপনা" }] : []), { label: cfg.title, href: cfg.base }, { label: party.name }]}
         before={profile}
         extraActions={actions}
@@ -307,10 +311,10 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
       take: 200,
     });
     const openBy = new Map((aging?.openItems ?? []).map((o) => [o.voucherId, o]));
-    body = invoices.length === 0 ? <EmptyState message="কোনো ইনভয়েস নেই" /> : (
+    body = invoices.length === 0 ? <EmptyState message={t("কোনো ইনভয়েস নেই")} /> : (
       <TableWrap>
         <table className="table">
-          <thead><tr><th>তারিখ</th><th>ইনভয়েস</th><th>ধরন</th><th className="num">মোট</th><th className="num">তাৎক্ষণিক পরিশোধ</th><th className="num">এখনো বাকি</th><th>শেষ তারিখ</th><th>অবস্থা</th></tr></thead>
+          <thead><tr><th>{t("তারিখ")}</th><th>{t("ইনভয়েস")}</th><th>{t("ধরন")}</th><th className="num">{t("মোট")}</th><th className="num">{t("তাৎক্ষণিক পরিশোধ")}</th><th className="num">{t("এখনো বাকি")}</th><th>{t("শেষ তারিখ")}</th><th>{t("অবস্থা")}</th></tr></thead>
           <tbody>
             {invoices.map((v) => {
               const open = openBy.get(v.id);
@@ -319,13 +323,13 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
                 <tr key={v.id}>
                   <td className="whitespace-nowrap">{formatDate(v.date)}</td>
                   <td><Link prefetch={false} href={`/vouchers/v/${v.id}`} className="font-semibold text-brand-700 hover:underline">{v.voucherNo}</Link></td>
-                  <td>{VOUCHER_TYPES[v.type].label}</td>
+                  <td>{t(VOUCHER_TYPES[v.type].label)}</td>
                   <td className="num">{formatMoney(num(v.amount) * (isReturn ? -1 : 1), cur)}</td>
                   <td className="num">{formatMoney(num(v.paidAmount), cur)}</td>
                   <td className="num font-semibold">{open ? formatMoney(open.open, cur) : "—"}</td>
                   <td className="whitespace-nowrap">{open ? formatDate(open.dueDate) : v.dueDate ? formatDate(v.dueDate) : "—"}</td>
                   <td>
-                    {isReturn ? <Badge tone="blue">ফেরত</Badge> : open ? (open.overdueDays > 0 ? <Badge tone="red">মেয়াদোত্তীর্ণ {open.overdueDays} দিন</Badge> : <Badge tone="amber">বাকি</Badge>) : <Badge tone="green">পরিশোধিত</Badge>}
+                    {isReturn ? <Badge tone="blue">{t("ফেরত")}</Badge> : open ? (open.overdueDays > 0 ? <Badge tone="red">{t("মেয়াদোত্তীর্ণ {0} দিন", { 0: open.overdueDays })}</Badge> : <Badge tone="amber">{t("বাকি")}</Badge>) : <Badge tone="green">{t("পরিশোধিত")}</Badge>}
                   </td>
                 </tr>
               );
@@ -342,16 +346,16 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
       take: 300,
       include: { voucher: { select: { id: true, voucherNo: true, type: true, reference: true, payments: { include: { account: { select: { name: true } } } }, cashAccount: { select: { name: true } } } } },
     });
-    body = rows.length === 0 ? <EmptyState message="কোনো পেমেন্ট নেই" /> : (
+    body = rows.length === 0 ? <EmptyState message={t("কোনো পেমেন্ট নেই")} /> : (
       <TableWrap>
         <table className="table">
-          <thead><tr><th>তারিখ</th><th>ভাউচার</th><th>ধরন</th><th>মাধ্যম</th><th>রেফারেন্স</th><th className="num">টাকা</th></tr></thead>
+          <thead><tr><th>{t("তারিখ")}</th><th>{t("ভাউচার")}</th><th>{t("ধরন")}</th><th>{t("মাধ্যম")}</th><th>{t("রেফারেন্স")}</th><th className="num">{t("টাকা")}</th></tr></thead>
           <tbody>
             {rows.map((e) => (
               <tr key={e.id}>
                 <td className="whitespace-nowrap">{formatDate(e.date)}</td>
                 <td><Link prefetch={false} href={`/vouchers/v/${e.voucher.id}`} className="text-brand-700 hover:underline">{e.voucher.voucherNo}</Link></td>
-                <td>{e.voucher.type === "SALES" || e.voucher.type === "PURCHASE" ? "ইনভয়েসের সময় পরিশোধ" : VOUCHER_TYPES[e.voucher.type].label}</td>
+                <td>{e.voucher.type === "SALES" || e.voucher.type === "PURCHASE" ? t("ইনভয়েসের সময় পরিশোধ") : t(VOUCHER_TYPES[e.voucher.type].label)}</td>
                 <td className="text-xs">{e.voucher.payments.length ? e.voucher.payments.map((p) => p.account.name).join(", ") : e.voucher.cashAccount?.name ?? "—"}</td>
                 <td className="text-xs">{e.voucher.payments.map((p) => p.reference).filter(Boolean).join(", ") || e.voucher.reference || "—"}</td>
                 <td className="num font-semibold text-brand-700">{formatMoney(num(e.debit) + num(e.credit), cur)}</td>
@@ -362,14 +366,14 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
       </TableWrap>
     );
   } else {
-    body = !aging || aging.openItems.length === 0 ? <EmptyState message="কোনো বকেয়া নেই ✅" /> : (
+    body = !aging || aging.openItems.length === 0 ? <EmptyState message={t("কোনো বকেয়া নেই ✅")} /> : (
       <>
         <div className="grid grid-cols-2 divide-x divide-y divide-rule border-b border-rule sm:grid-cols-4 sm:divide-y-0">
-          {AGING_BUCKETS.map((b) => <Fig key={b} label={`${b} দিন`} value={formatMoney(aging.buckets[b], cur)} tone={b === "90+" && aging.buckets[b] > 0 ? "cr" : ""} />)}
+          {AGING_BUCKETS.map((b) => <Fig key={b} label={t("{0} দিন", { 0: b })} value={formatMoney(aging.buckets[b], cur)} tone={b === "90+" && aging.buckets[b] > 0 ? "cr" : ""} />)}
         </div>
         <TableWrap>
           <table className="table">
-            <thead><tr><th>তারিখ</th><th>ভাউচার</th><th>শেষ তারিখ</th><th className="num">বয়স (দিন)</th><th className="num">মূল টাকা</th><th className="num">বকেয়া</th><th>অবস্থা</th></tr></thead>
+            <thead><tr><th>{t("তারিখ")}</th><th>{t("ভাউচার")}</th><th>{t("শেষ তারিখ")}</th><th className="num">{t("বয়স (দিন)")}</th><th className="num">{t("মূল টাকা")}</th><th className="num">{t("বকেয়া")}</th><th>{t("অবস্থা")}</th></tr></thead>
             <tbody>
               {aging.openItems.map((o) => (
                 <tr key={`${o.voucherId}-${o.date.toISOString()}`}>
@@ -379,7 +383,7 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
                   <td className="num">{o.daysOld}</td>
                   <td className="num">{formatMoney(o.amount, cur)}</td>
                   <td className="num font-semibold">{formatMoney(o.open, cur)}</td>
-                  <td>{o.overdueDays > 0 ? <Badge tone="red">{o.overdueDays} দিন পার</Badge> : <Badge tone="amber">মেয়াদ আছে</Badge>}</td>
+                  <td>{o.overdueDays > 0 ? <Badge tone="red">{t("{0} দিন পার", { 0: o.overdueDays })}</Badge> : <Badge tone="amber">{t("মেয়াদ আছে")}</Badge>}</td>
                 </tr>
               ))}
             </tbody>
@@ -528,7 +532,7 @@ export async function PartyStatementPrint({ kind: pageKind, id, searchParams }: 
             {AGING_BUCKETS.map((k) => <div key={k} className="rounded border border-rule p-2"><p className="text-slate-500">{k} দিন</p><p className="font-bold tabular-nums">{formatMoney(aging.buckets[k], cur)}</p></div>)}
           </div>
         )}
-        <p className="mt-4 rounded border border-rule bg-ink-50 px-3 py-2"><b>কথায়:</b> {amountInBanglaWords(Math.abs(closingDue))}</p>
+        <p className="mt-4 rounded border border-rule bg-ink-50 px-3 py-2"><b>কথায়:</b> <AmountInWords amount={Math.abs(closingDue)} /></p>
         <footer className="mt-14 grid grid-cols-2 gap-10 text-center text-xs text-slate-600">
           <div className="border-t border-slate-500 pt-1">{cfg.title}ের স্বাক্ষর</div>
           <div className="border-t border-slate-500 pt-1">অনুমোদিত স্বাক্ষর</div>

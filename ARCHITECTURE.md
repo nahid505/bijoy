@@ -472,8 +472,8 @@ The payroll month-end posting date is not covered: an accrual must be dated at m
 **Tests.** The test database uses `connection_limit=5`, as production does (`vitest.config.ts`).
 
 ## 6n. Depot management (business type `DEPOT`)
-**Switching it on.** At registration the user picks "ডিপো ব্যবসা" (value `DEPOT`; "depot" in any case is accepted), or later in business settings. `ctx.business.businessType` then turns on:
-- the "ডিপো ব্যবস্থাপনা" sidebar group, which is highlighted and open by default (`NavEntry.businessTypes`, `highlight`);
+**Switching it on.** The owner ticks "ডিপো ব্যবসা" (value `DEPOT`) under business settings → "ব্যবসার ধরন ও মডিউল ব্যবস্থাপনা" (6v); registration no longer asks. The primary type `ctx.business.businessType` is then `DEPOT`, which turns on:
+- the "ডিপো ব্যবস্থাপনা" sidebar group, which is highlighted and open by default (`NavEntry.module: "DEPOT"`, `highlight`);
 - the dashboard depot panel;
 - the depot reports;
 - the route field on customers (dealers) and the commission-rate field on products.
@@ -600,7 +600,7 @@ A GENERAL purchase / receipt / payment is never opened by a depot key. Editing o
 **Default role.** `DEPOT_ROLE` is "ডিপো হিসাবরক্ষক (Depot Accountant)", holding all 15 keys. It is created:
 - by `createBusiness` for a new depot business;
 - by `ensureDefaultRoles` (seed / restore) for existing depot businesses;
-- when the business type is switched to depot in business settings (`ensureDepotRole`).
+- when the owner adds the depot type in business settings (`setBusinessTypes` → `ensureDepotRole`).
 
 No schema change: role permissions are stored as before.
 
@@ -769,7 +769,7 @@ The integrity audit checks that assignments stay inside one business and never h
 **The cash box.** Every depot business has one ledger "ডিপো ক্যাশ": kind CASH, group নগদ (`CASH_IN_HAND`), code 1002 when free, systemKey `GENERAL_DEPOT_CASH`, `isSystem`. It is not a `DEPOT_*` key, so both books may use it. `ensureDepotCash` (`src/server/services/bootstrap.ts`) creates it:
 - in `createBusiness` for a new depot business;
 - in `ensureDefaultRoles` (seed / restore);
-- when the business type is switched to depot;
+- when the owner adds the depot type in business settings (`setBusinessTypes`);
 - on first use (the expense pages, fund transfer) for existing depot businesses.
 
 No schema change and no data migration.
@@ -845,8 +845,114 @@ Backups carry both fields.
 
 **Tests:** `tests/integration/depot-products.test.ts`.
 
+## 6v. Business types and modules (ব্যবসার ধরন ও মডিউল)
+
+**Data.** Migration `20261028000000_business_types` (PostgreSQL and MySQL) adds `Business.businessTypes`: a list of `BUSINESS_TYPES` keys (PostgreSQL text array, MySQL JSON), default empty.
+- **Backfill:** a business's existing single type becomes its list (`["DEPOT"]`, …), so nothing changes for existing businesses.
+- **Primary type:** `businessType` stays as the primary type, derived by `primaryBusinessType`: `DEPOT` when chosen, else the first. Every depot check (`isDepot(ctx.business.businessType)`, `voucherAccess`, the depot services) reads it unchanged.
+
+**Registration** no longer asks for a type (form, `registrationSchema`, audit). A new business starts as a general business with no type.
+
+**Settings.** Business settings → "ব্যবসার ধরন ও মডিউল ব্যবস্থাপনা" (`#business-types-section`, `BusinessTypesForm`):
+- one checkbox per type (খুচরা দোকান, পাইকারি ব্যবসা, ডিপো ব্যবসা, ফার্মেসি, মুদি / সুপারশপ …), any number at once;
+- a live list of the modules they switch on;
+- save through `saveBusinessTypesAction`.
+
+**Who may change them:** the owner only (`ctx.isOwner`; a manager with `business:manage` sees the section locked).
+
+**Saving** (`setBusinessTypes` in `src/server/services/bootstrap.ts`) stores the list and the primary type. Adding DEPOT also creates the depot-only role and the ডিপো ক্যাশ ledger if missing. Removing a type deletes no data: its menus hide and come back with the type.
+
+**API.**
+- `GET /api/settings/company/business-types` returns `{ businessTypes, primary, modules }` (any signed-in user of the business).
+- `PUT` with `{ "businessTypes": [...] }`: owner only (403 otherwise), JSON only (415), same-origin only (the `Origin` host must match `X-Forwarded-Host` / `Host`, as for server actions), validated by `businessTypesSchema` (400 on an unknown type), audited.
+
+**Modules** (`businessModules` in `src/lib/business-types.ts`):
+
+| Module | On when | Menus (`NavEntry.module` / `NavLink.module`) |
+| --- | --- | --- |
+| `TRADING` | no type chosen, or any type other than DEPOT | পস বিক্রয় (and the mobile tab), the "পণ্য" group, and in "লেনদেন": বিক্রয়, ক্রয়, ধান ক্রয়, both returns, স্টক জার্নাল |
+| `DEPOT` | DEPOT chosen | the "ডিপো ব্যবস্থাপনা" group |
+| core | always | dashboard, receipt / payment / journal, হিসাব, customers, suppliers, বাকি, খরচ, reports, SMS, users, billing, settings, backup |
+
+The sidebar (`src/app/(app)/layout.tsx`) hides a menu whose module is off before the permission and feature checks; notifications stay on the header bell. Pages are still guarded by their permissions, as before.
+
+**Elsewhere.**
+- `ctx.business.businessTypes` carries the list.
+- Backups carry it; an older backup's single type becomes the list.
+- Billing and the super-admin company page show every type (`businessTypesText`).
+
+**Tests:** `tests/integration/business-types.test.ts`.
+
+## 6w. Auto rice mill (অটো রাইস মিল)
+
+**Switching it on.** The owner ticks "অটো রাইস মিল" (`AUTO_RICE_MILL`, the API also takes `auto_rice_mill`) under business types (6v). That turns on the `RICE_MILL` module, and the general sales / inventory module stays on.
+
+**Sidebar.** The "অটো রাইস মিল ব্যবস্থাপনা" group is highlighted:
+
+| Menu | Route | Permission |
+| --- | --- | --- |
+| ধান ক্রয় ও স্কেল | `/purchases/paddy` | `purchases:view` |
+| মিলিং ও প্রসেসিং | `/production` (PRODUCTION feature) | `production:view` |
+| চাল ও উপজাত স্টক | `/rice-mill/stock` | `inventory:view` |
+| চাল ও কুঁড়া/ভূসি বিক্রয় | `/rice-mill/sales` | `sales:view` |
+| মিল লাভ-ক্ষতি ও স্টক রিপোর্ট | `/reports/rice-mill` | `reports:view` |
+
+While the module is on, the "ধান ক্রয়" link under লেনদেন is hidden (`NavLink.hiddenWithModule`).
+
+**Built on what exists.**
+- **Paddy:** the paddy slip is a PURCHASE voucher plus a `PaddyPurchase` row (6h).
+- **Milling:** a PRODUCTION voucher (6g). The rice-mill recipe template gives ধান → চাল, খুদ, কুঁড়া, তুষ; the form shows yield % and process loss live.
+- **Sales:** sales of rice and by-products are ordinary sales vouchers, so the customer's ledger, cash and stock post as usual.
+
+No separate tables were added for milling or by-product sales.
+
+**Paddy slip additions** (migration `20261029000000_rice_mill`, columns only):
+- `variety` — ধানের জাত, with a suggestion list (`PADDY_VARIETIES`).
+- `moisturePct` — আর্দ্রতা %, information only.
+- `vehicleGrossKg` / `vehicleTareKg` — the weighbridge. Gross = loaded − empty vehicle (`weighbridgeGross`); both or neither; the empty vehicle must weigh less. The schema and the service both apply it, and a typed gross still works when the vehicle weights are empty.
+- `labourCost` — unloading / carrying labour. It is posted as a linked PAYMENT voucher (sourceKey `paddy-labour:<purchase voucher id>`): Dr "ধান ক্রয়ের লেবার খরচ" (`PADDY_LABOUR`, direct expense) / Cr the slip's cash / bank, which is required when there is labour.
+  - It is created, updated or removed (labour 0) with the slip, and deleted with it.
+  - On its own it can be neither edited nor deleted ("স্লিপ থেকে পরিবর্তন বা মুছুন").
+
+All slip number fields convert Bangla / mixed digits. The voucher page, the printed slip and backups show and carry the new fields.
+
+**Read models** (`src/server/services/rice-mill.ts`, no writes):
+- **`millProducts`:** paddy = slip products and production / recipe inputs; rice and by-products = production / recipe outputs.
+- **`millStock`:** stock, মণ, average cost and value.
+- **`millSales`:** general sales minus returns of the outputs. Revenue = line amounts; cost = the stock movements' value.
+- **`millSummary`:** purchases by variety, labour, milled vs produced with yield % and process loss (kg units), production extra cost.
+- **Report `rice-mill`** (`RICE_MILL_REPORT`) puts these together:
+  - purchases, milling and yield;
+  - sales per product with cost and margin;
+  - gross profit, and mill profit after labour;
+  - stock now.
+  It is business-wide (closed to party-restricted users) and listed under "অটো রাইস মিল" on the reports page only when the module is on.
+
+**Fix:** the production form's default date used UTC, so between midnight and 6 am in Bangladesh it was the previous day. It now uses `toDateInput()` (Asia/Dhaka) like every other form.
+
+**Tests:** `tests/integration/rice-mill.test.ts`.
+
 ## 7b. UI runtime notes
-- Language: the `bl_lang` cookie selects Bangla or English. Bangla strings are the dictionary keys (`src/lib/i18n.ts`). Toasts after redirects travel in the short-lived `bl_flash` cookie.
+- **Language** (`bl_lang` cookie, 1 year; default `bn`):
+  - The header switch (`#lang-switch`, "বাংলা | English") sets the cookie through `setLangAction`; server components read it with `getLang` / `getT`, client components with `useT`.
+  - Bangla strings are the dictionary keys: `src/locales/en.json` maps Bangla to English, `src/locales/bn.json` maps Bangla to the Bangla wording, and a missing key shows as written.
+  - `Field` labels and hints, `SubmitButton` / `ActionButton` / `PrintButton` text, confirm dialogs, `StatCard`, `EmptyState`, `FilterBar` / `FilterField`, `DetailRow`, `Pagination`, `PageHeader` and picker placeholders translate themselves.
+  - A unit test requires every sidebar label to have an English translation.
+  - **Client / server split:** `src/lib/i18n.ts` is client-safe and holds no dictionary (types, `translateWith`, `loadDict`). `src/lib/i18n-dict.ts` bundles both dictionaries for the server (`src/server/i18n.ts`, `server-only`) and tests. `<LangProvider>` loads only the current language's file, as its own chunk (`use(loadDict(lang))`), so a page never ships both dictionaries. `npm run check:client-imports` (and `tests/client-imports.test.ts`) fails when a `"use client"` file reaches `server-only`, `next/headers` or `@/server/*`, directly or through a shared module (Server Actions excepted).
+  - **Keys:** `npm run i18n:missing` (`scripts/i18n-extract.mjs`) lists every Bangla UI text in `src/` without an English translation. It scans string literals, template literals (`${…}` → `{0}`, `{1}`, nested ones too), JSX text (entities decoded) and the default data in `src/lib/business-defaults.json`. `npm run i18n:check` and `tests/screen-translate.test.ts` fail on any missing key. New translations go in `scripts/translations/*.mjs`; `node scripts/compile-final-locales.mjs` merges them into `en.json` and adds the keys to `bn.json` (Bangla rewording already in `bn.json` is kept).
+  - **English screen:** `EnglishScreen` (`src/components/digit-display.tsx`, with `src/lib/screen-translate.ts`) translates in place any Bangla UI text rendered without `t()`: text, placeholders, titles, aria-labels, button values, options and the tab title, kept up by a MutationObserver. It knows exact keys, keys inside marks ("+ …", "… *", "…:"), template keys, lists and lines built from pieces ("A, B · C"), numbers with a unit, and bilingual labels ("ফ্রি (Free)" → "Free"). Text it does not recognise — the business's own data (names, notes, renamed ledgers) — stays as written; a short key such as "{0} কেজি" only fills in numbers, dates or other UI text, so "মিনিকেট চাল ২৫ কেজি" is left alone. While its first pass runs an English page is hidden (`html[data-lang-pending]`, shown anyway after 1.5 s), so it does not flash Bangla. `data-keep-lang` excludes an element.
+  - **Default data and plans:** the ledgers, groups, units and roles every business starts with, and the seeded plans, have dictionary entries, so they read in English until the business renames them. Sidebar entries can have a menu-specific English name (`NAV_LABEL_EN` in `src/lib/nav.ts`: "Products", "Reports" …).
+  - **Amount in words:** `<AmountInWords>` (receipts, challans, payslips, invoices, daily reports) writes "One Lakh Twenty Thousand Taka Only" in English and the Bangla words otherwise (`src/lib/words.ts`).
+- **Digits** (`src/lib/digits.ts`, one utility for the browser and the server):
+  - **Number fields** are `<input type="text" inputMode="decimal" data-numeric>`. A `type="number"` field silently dropped Bangla digits: "১২451৩৩" became "451".
+  - `DigitInputs` (root layout) rewrites `data-numeric` and `type="tel"` fields on every input event, in the capture phase and through the prototype `value` setter, so controlled fields' `onChange` sees the corrected value. Typing or pasting "১২451৩৩" gives 1245133, and "১,২৫০.৫০ টাকা" gives 1250.50 (`sanitizeNumber`).
+  - **On the server**, `formToObject` / `parseJsonPayload` pass every value through `normalizeNumericInput`. A number in any digit script becomes plain English ("১,২৫,০০০" gives "125000"). A digits-and-separators value (a mobile list, a date) gets English digits. Any other text, such as "Miniket চাল ৫০kg", and passwords stay exactly as typed.
+  - **Search:** `digitVariants` matches names in both digit scripts, case-insensitively: `ci()` on PostgreSQL, and `utf8mb4_unicode_ci` on MySQL / MariaDB, which every table already uses. This applies to the customer, supplier, product and ledger pickers, the product, party and depot-product lists, the stock and party reports and the batch list.
+  - **Display:** amounts and dates are formatted with Bangla digits. In English, `EnglishScreen` (below) also rewrites the digits of rendered text and attributes, and the month names of dates (a month followed by a year, e.g. "২৮ অক্টোবর ২০২৬" → "28 October 2026"), after hydration and on every change (MutationObserver), skipping form fields and `[data-keep-digits]`.
+- **Placeholders:** `t(text, vars)` fills `{name}` placeholders after translating, e.g. `t("ফ্রি ট্রায়াল চলছে — আর {n} দিন বাকি।", { n })`.
+- **Dashboard:** every text of the dashboard and its panels goes through `t()`: account / subscription, the trial banner, the depot panel, today, position, expiry, charts, recent lists, cash & bank, and the assigned-only view. Plan, subscription-status and module names use their stored English names. `tests/dashboard-i18n.test.ts` fails on any Bangla text there without an English translation.
+- **Notifications** are stored in Bangla. `localizeNotification` (`src/lib/notification-text.ts`, through `notificationLocalizer`) shows the known shapes in English on the dashboard and the notifications page: stock, expiry, overdue dues, trial / subscription / payment. Names and amounts are kept, and plan names use their English names.
+- Toasts after redirects travel in the short-lived `bl_flash` cookie.
 - All `<Link>`s use `prefetch={false}`. Automatic prefetching fired many DB-heavy RSC renders at once and exhausted the connection pool. `src/lib/db.ts` also sets explicit pool limits.
 - There is intentionally **no route-group `loading.tsx`**. With a Suspense boundary at `(app)` level, Next.js 15.5 intermittently received a complete RSC payload but never committed the navigation. This affected about 80% of server-action redirects and about 5% of link clicks, and froze every later navigation. As a safety net for that upstream bug, `NavWatchdog` (`src/components/nav-watchdog.tsx`) watches router fetches and falls back to a full page load if the URL has not changed 3 s after the response finished.
 - **Customer, supplier and product pickers.** These are never static `<select>` lists. Every one uses `SearchSelect` (`src/components/search-select.tsx`), or `SearchSelectField` in plain GET filter forms: in sales/purchase/return vouchers, stock journal, POS, report party filters and the batch-list product filter.

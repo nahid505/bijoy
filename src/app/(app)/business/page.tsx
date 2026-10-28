@@ -6,6 +6,9 @@ import { NewBusinessForm } from "@/components/new-business-form";
 import { Badge, PageHeader } from "@/components/ui";
 import { requirePermission } from "@/server/auth";
 import { BusinessForm } from "./business-form";
+import { BusinessTypesForm } from "./business-types-form";
+import { saveBusinessTypesAction } from "@/server/actions/business";
+import { strList } from "@/lib/dialect";
 
 export const metadata: Metadata = { title: "ব্যবসা সেটিং" };
 
@@ -16,17 +19,24 @@ export default async function BusinessPage() {
     <>
       <PageHeader title="ব্যবসা সেটিং" description="প্রোফাইল, BIN/TIN, অর্থবছর, মুদ্রা ও ইনভয়েস সেটিং" />
       <div className="grid gap-4 xl:grid-cols-3">
-        <section className="panel p-5 xl:col-span-2">
-          <BusinessForm
-            d={{
-              name: b.name, logo: b.logo, address: b.address, mobile: b.mobile, email: b.email, binNumber: b.binNumber, tinNumber: b.tinNumber,
-              tradeLicense: b.tradeLicense, currency: b.currency, currencySymbol: b.currencySymbol, fiscalYearStartMonth: b.fiscalYearStartMonth,
-              booksStartDate: toDateInput(b.booksStartDate), invoicePrefix: b.invoicePrefix, defaultVatPercent: num(b.defaultVatPercent),
-              invoiceFooter: b.invoiceFooter, invoiceTerms: b.invoiceTerms, lockDate: b.lockDate ? toDateInput(b.lockDate) : "",
-              expiryWarningDays: normalizeThresholds(b.expiryWarningDays), allowExpiredSale: b.allowExpiredSale, businessType: b.businessType,
-            }}
-          />
-        </section>
+        <div className="space-y-4 xl:col-span-2">
+          <section className="panel p-5" id="business-types-section">
+            <h2 className="text-base font-semibold text-ink-900">ব্যবসার ধরন ও মডিউল ব্যবস্থাপনা</h2>
+            <p className="mb-3 mt-1 text-sm text-slate-600">আপনার ব্যবসায় যা যা আছে সব বাছাই করুন — একাধিক ধরন বাছাই করা যায়। বাছাই অনুযায়ী সাইডবারে মডিউল দেখাবে।</p>
+            <BusinessTypesForm action={saveBusinessTypesAction} selected={strList(b.businessTypes)} canEdit={ctx.isOwner} />
+          </section>
+          <section className="panel p-5">
+            <BusinessForm
+              d={{
+                name: b.name, logo: b.logo, address: b.address, mobile: b.mobile, email: b.email, binNumber: b.binNumber, tinNumber: b.tinNumber,
+                tradeLicense: b.tradeLicense, currency: b.currency, currencySymbol: b.currencySymbol, fiscalYearStartMonth: b.fiscalYearStartMonth,
+                booksStartDate: toDateInput(b.booksStartDate), invoicePrefix: b.invoicePrefix, defaultVatPercent: num(b.defaultVatPercent),
+                invoiceFooter: b.invoiceFooter, invoiceTerms: b.invoiceTerms, lockDate: b.lockDate ? toDateInput(b.lockDate) : "",
+                expiryWarningDays: normalizeThresholds(b.expiryWarningDays), allowExpiredSale: b.allowExpiredSale,
+              }}
+            />
+          </section>
+        </div>
         <div className="space-y-4">
           <section className="panel">
             <div className="panel-head"><h2 className="panel-title">আমার ব্যবসাসমূহ</h2></div>

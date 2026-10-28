@@ -29,7 +29,7 @@ export async function PageHeader({
           </nav>
         )}
         <h1 className="text-xl font-bold text-ink-900">{t(title)}</h1>
-        {description && <p className="mt-0.5 text-sm text-slate-500">{description}</p>}
+        {description && <p className="mt-0.5 text-sm text-slate-500">{t(description)}</p>}
       </div>
       {actions && <div className="no-print flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
@@ -40,16 +40,17 @@ export function Card({ children, className = "" }: { children: React.ReactNode; 
   return <section className={`panel ${className}`}>{children}</section>;
 }
 
-export function CardHeader({ title, actions }: { title: string; actions?: React.ReactNode }) {
+export async function CardHeader({ title, actions }: { title: string; actions?: React.ReactNode }) {
+  const t = await getT();
   return (
     <div className="panel-head">
-      <h2 className="panel-title">{title}</h2>
+      <h2 className="panel-title">{t(title)}</h2>
       {actions}
     </div>
   );
 }
 
-export function StatCard({
+export async function StatCard({
   label,
   value,
   hint,
@@ -61,11 +62,12 @@ export function StatCard({
   tone?: "slate" | "green" | "red" | "amber" | "blue";
 }) {
   const tones = { slate: "text-ink-900", green: "text-brand-700", red: "text-credit", amber: "text-amber-700", blue: "text-debit" };
+  const t = await getT();
   return (
     <div className="panel px-4 py-3">
-      <p className="text-xs font-medium text-slate-500">{label}</p>
+      <p className="text-xs font-medium text-slate-500">{t(label)}</p>
       <p className={`mt-1 text-lg font-bold tabular-nums ${tones[tone]}`}>{value}</p>
-      {hint && <p className="mt-0.5 text-xs text-slate-400">{hint}</p>}
+      {hint && <p className="mt-0.5 text-xs text-slate-400">{t(hint)}</p>}
     </div>
   );
 }
@@ -82,8 +84,9 @@ export function Badge({ children, tone = "slate" }: { children: React.ReactNode;
   return <span className={`inline-flex items-center whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${BADGE_TONES[tone]}`}>{children}</span>;
 }
 
-export function EmptyState({ message = "কোনো তথ্য পাওয়া যায়নি" }: { message?: string }) {
-  return <div className="px-6 py-10 text-center text-sm text-slate-400">{message}</div>;
+export async function EmptyState({ message = "কোনো তথ্য পাওয়া যায়নি" }: { message?: string }) {
+  const t = await getT();
+  return <div className="px-6 py-10 text-center text-sm text-slate-400">{t(message)}</div>;
 }
 
 export function TableWrap({ children }: { children: React.ReactNode }) {
@@ -99,50 +102,55 @@ export function buildQuery(params: Params, overrides: Params = {}): string {
   return s ? `?${s}` : "";
 }
 
-export function Pagination({ basePath, params, page, totalPages, total }: { basePath: string; params: Params; page: number; totalPages: number; total: number }) {
+export async function Pagination({ basePath, params, page, totalPages, total }: { basePath: string; params: Params; page: number; totalPages: number; total: number }) {
   if (total === 0) return null;
+  const t = await getT();
   return (
     <div className="no-print flex items-center justify-between border-t border-rule px-4 py-2.5 text-xs text-slate-500">
-      <span>মোট {toBnDigits(total)} টি · পৃষ্ঠা {toBnDigits(page)} / {toBnDigits(totalPages)}</span>
+      <span>{t("মোট")} {toBnDigits(total)} {t("টি")} · {t("পৃষ্ঠা")} {toBnDigits(page)} / {toBnDigits(totalPages)}</span>
       <div className="flex gap-2">
-        {page > 1 && <Link prefetch={false} className="btn-secondary btn-sm" href={`${basePath}${buildQuery(params, { page: String(page - 1) })}`}>← আগের</Link>}
-        {page < totalPages && <Link prefetch={false} className="btn-secondary btn-sm" href={`${basePath}${buildQuery(params, { page: String(page + 1) })}`}>পরের →</Link>}
+        {page > 1 && <Link prefetch={false} className="btn-secondary btn-sm" href={`${basePath}${buildQuery(params, { page: String(page - 1) })}`}>{t("← আগের")}</Link>}
+        {page < totalPages && <Link prefetch={false} className="btn-secondary btn-sm" href={`${basePath}${buildQuery(params, { page: String(page + 1) })}`}>{t("পরের →")}</Link>}
       </div>
     </div>
   );
 }
 
 /** GET search/filter bar — works without JavaScript. */
-export function FilterBar({ children, action }: { children: React.ReactNode; action: string }) {
+export async function FilterBar({ children, action }: { children: React.ReactNode; action: string }) {
+  const t = await getT();
   return (
     <form action={action} method="get" className="no-print flex flex-wrap items-end gap-2 border-b border-rule bg-white p-3">
       {children}
-      <button type="submit" className="btn-secondary">খুঁজুন</button>
-      <Link prefetch={false} href={action} className="btn-ghost">রিসেট</Link>
+      <button type="submit" className="btn-secondary">{t("খুঁজুন")}</button>
+      <Link prefetch={false} href={action} className="btn-ghost">{t("রিসেট")}</Link>
     </form>
   );
 }
 
-export function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
+export async function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
+  const t = await getT();
   return (
     <label className="block">
-      <span className="label">{label}</span>
+      <span className="label">{t(label)}</span>
       {children}
     </label>
   );
 }
 
-export function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
+export async function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
+  const t = await getT();
   return (
     <div className="flex justify-between gap-4 py-1.5 text-sm">
-      <dt className="text-slate-500">{label}</dt>
+      <dt className="text-slate-500">{t(label)}</dt>
       <dd className="text-right font-medium text-slate-800">{children}</dd>
     </div>
   );
 }
 
 /** Business letterhead shown on printed / PDF documents. */
-export function PrintHeader({ business, title, subtitle }: { business: { name: string; address: string | null; mobile: string | null; logo: string | null; binNumber?: string | null }; title: string; subtitle?: string }) {
+export async function PrintHeader({ business, title, subtitle }: { business: { name: string; address: string | null; mobile: string | null; logo: string | null; binNumber?: string | null }; title: string; subtitle?: string }) {
+  const t = await getT();
   return (
     <div className="print-only mb-4 border-b-2 border-ink-800 pb-2">
       <div className="flex items-center gap-3">
@@ -155,20 +163,21 @@ export function PrintHeader({ business, title, subtitle }: { business: { name: s
           <p className="text-[10px]">{[business.address, business.mobile, business.binNumber ? `BIN: ${business.binNumber}` : null].filter(Boolean).join(" · ")}</p>
         </div>
       </div>
-      <p className="mt-2 text-sm font-semibold">{title}{subtitle ? ` — ${subtitle}` : ""}</p>
+      <p className="mt-2 text-sm font-semibold">{t(title)}{subtitle ? ` — ${t(subtitle)}` : ""}</p>
     </div>
   );
 }
 
 /** Sortable column header link: toggles ?sort=field&dir=asc|desc, keeping other filters. */
-export function SortHeader({ basePath, params, field, label, className = "" }: { basePath: string; params: Params; field: string; label: string; className?: string }) {
+export async function SortHeader({ basePath, params, field, label, className = "" }: { basePath: string; params: Params; field: string; label: string; className?: string }) {
+  const t = await getT();
   const active = params.sort === field;
   const dir = active && params.dir === "asc" ? "desc" : "asc";
   const arrow = active ? (params.dir === "asc" ? "▲" : "▼") : "↕";
   return (
     <th className={className} aria-sort={active ? (params.dir === "asc" ? "ascending" : "descending") : "none"}>
       <Link prefetch={false} href={`${basePath}${buildQuery(params, { sort: field, dir, page: undefined })}`} className="inline-flex items-center gap-1 hover:text-brand-700">
-        {label} <span className="text-[10px] opacity-60">{arrow}</span>
+        {t(label)} <span className="text-[10px] opacity-60">{arrow}</span>
       </Link>
     </th>
   );

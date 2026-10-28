@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { ActionForm, Field, SubmitButton, type FormAction } from "./forms";
+import { useT } from "./lang";
 
 /** Inline add/edit form for category, brand, unit and warehouse lists. */
 export function CatalogForm({
@@ -19,6 +20,7 @@ export function CatalogForm({
   baseUnits?: { id: string; name: string }[];
   editing: boolean;
 }) {
+  const t = useT();
   return (
     <ActionForm action={action} className="flex flex-wrap items-end gap-3">
       <input type="hidden" name="returnTo" value={returnTo} />
@@ -27,18 +29,18 @@ export function CatalogForm({
         <>
           <Field label="মূল ইউনিট (বিকল্প ইউনিটের জন্য)" name="baseUnitId">
             <select id="baseUnitId" name="baseUnitId" defaultValue={defaults?.baseUnitId ?? ""} className="input w-48">
-              <option value="">— নিজেই মূল ইউনিট —</option>
+              <option value="">{t("— নিজেই মূল ইউনিট —")}</option>
               {baseUnits.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
           </Field>
           <Field label="রূপান্তর হার" name="factor" hint="১ এই ইউনিট = কত মূল ইউনিট">
-            <input id="factor" name="factor" type="number" min="0" step="0.000001" defaultValue={defaults?.factor ?? 1} className="input-num w-32" />
+            <input id="factor" name="factor" type="text" inputMode="decimal" data-numeric min="0" step="0.000001" defaultValue={defaults?.factor ?? 1} className="input-num w-32" />
           </Field>
         </>
       )}
       {kind === "warehouse" && <Field label="ঠিকানা" name="address"><input id="address" name="address" defaultValue={defaults?.address ?? ""} className="input w-64" /></Field>}
-      <SubmitButton>{editing ? "হালনাগাদ করুন" : "+ যোগ করুন"}</SubmitButton>
-      {editing && <Link prefetch={false} href={returnTo} className="btn-ghost">বাতিল</Link>}
+      <SubmitButton>{editing ? t("হালনাগাদ করুন") : t("+ যোগ করুন")}</SubmitButton>
+      {editing && <Link prefetch={false} href={returnTo} className="btn-ghost">{t("বাতিল")}</Link>}
     </ActionForm>
   );
 }

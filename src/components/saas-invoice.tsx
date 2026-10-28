@@ -1,7 +1,7 @@
 // Subscription invoice (A4 / "Save as PDF" from the browser print dialog). PDF architecture: the page is
 // print-ready HTML; a server-side renderer (e.g. a headless browser job) can print the same route.
 import { formatDate, formatMoney } from "@/lib/format";
-import { amountInBanglaWords } from "@/lib/words";
+import { AmountInWords } from "@/components/amount-words";
 import { CYCLE_LABELS } from "@/lib/subscription";
 
 export interface SaasInvoiceView {
@@ -70,7 +70,7 @@ export function SaasInvoice({ inv }: { inv: SaasInvoiceView }) {
           <tr className="border-t-2 border-ink-800 text-base font-bold"><td colSpan={2} className="py-2 text-right">মোট</td><td className="py-2 text-right tabular-nums">{formatMoney(inv.total, "৳")}</td></tr>
         </tfoot>
       </table>
-      <p className="mt-3 text-xs">কথায়: {amountInBanglaWords(inv.total)}</p>
+      <p className="mt-3 text-xs">কথায়: <AmountInWords amount={inv.total} /></p>
       <p className="mt-8 text-center text-xs text-slate-500">এটি কম্পিউটারে তৈরি ইনভয়েস — স্বাক্ষরের প্রয়োজন নেই।</p>
     </article>
   );

@@ -2,7 +2,8 @@ import Link from "next/link";
 import { BusinessSwitcher } from "@/components/business-switcher";
 import { MobileNav, Sidebar, type SidebarEntry } from "@/components/sidebar";
 import { formatDate, toBnDigits } from "@/lib/format";
-import { MOBILE_TABS, NAV } from "@/lib/nav";
+import { MOBILE_TABS, NAV, NAV_LABEL_EN } from "@/lib/nav";
+import { businessModules, type BusinessModule } from "@/lib/business-types";
 import { hasPermission } from "@/lib/permissions";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -10,7 +11,7 @@ import { featureForPath } from "@/lib/features";
 import { requireContext } from "@/server/auth";
 import { fiscalYearRange } from "@/server/period";
 import { logoutAction } from "@/server/actions/auth";
-import { getT } from "@/server/i18n";
+import { getLang, getT } from "@/server/i18n";
 import { LangToggle } from "@/components/lang";
 import { SubscriptionBanner } from "@/components/subscription-banner";
 import { unreadCount, visibleKinds } from "@/server/services/notifications";
@@ -28,6 +29,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const gate = featureForPath(path);
   if (gate && !ctx.features.includes(gate)) redirect(`/forbidden?feature=${gate}`);
   const t = await getT();
+  const en = (await getLang()) === "en";
+  const navLabel = (label: string) => (en && NAV_LABEL_EN[label]) || t(label);
   const featureOn = (href: string) => {
     const f = featureForPath(href);
     return !f || ctx.features.includes(f);
@@ -38,17 +41,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     const slug = reportSlugForPath(href);
     return !slug || reportOpenFor(ctx, slug);
   };
+  // modules the business's types switch on (settings → "ব্যবসার ধরন ও মডিউল"); core menus have no module
+  const modules = businessModules(ctx.business.businessTypes);
+  const moduleOn = (m?: BusinessModule) => !m || modules.has(m);
   const allowed = (p?: Parameters<typeof hasPermission>[1], href?: string) => (!p || hasPermission(ctx.permissions, p)) && (!href || (featureOn(href) && reportOk(href)));
 
   const entries: SidebarEntry[] = NAV.flatMap((e): SidebarEntry[] => {
-    if (e.businessTypes && !e.businessTypes.includes(ctx.business.businessType ?? "")) return [];
+    if (!moduleOn(e.module)) return [];
     if (e.children) {
-      const children = e.children.filter((c) => allowed(c.permission, c.href)).map(({ href, label }) => ({ href, label: t(label) }));
-      return children.length ? [{ key: e.key, label: t(e.label), icon: e.icon, children, highlight: e.highlight }] : [];
+      const children = e.children.filter((c) => moduleOn(c.module) && !(c.hiddenWithModule && modules.has(c.hiddenWithModule)) && allowed(c.permission, c.href)).map(({ href, label }) => ({ href, label: navLabel(label) }));
+      return children.length ? [{ key: e.key, label: navLabel(e.label), icon: e.icon, children, highlight: e.highlight }] : [];
     }
-    return allowed(e.permission, e.href) ? [{ key: e.key, label: t(e.label), icon: e.icon, href: e.href }] : [];
+    return allowed(e.permission, e.href) ? [{ key: e.key, label: navLabel(e.label), icon: e.icon, href: e.href }] : [];
   });
-  const tabs = MOBILE_TABS.filter((x) => allowed(x.permission, x.href)).map((x) => ({ ...x, label: t(x.label) }));
+  const tabs = MOBILE_TABS.filter((x) => moduleOn(x.module) && allowed(x.permission, x.href)).map((x) => ({ ...x, label: navLabel(x.label) }));
   const fy = fiscalYearRange(ctx.business.fiscalYearStartMonth);
   const alertKinds = visibleKinds((p) => allowed(p as Parameters<typeof hasPermission>[1]), ctx.features);
   const unread = alertKinds.length ? await unreadCount(ctx.business.id, ctx.user.id, alertKinds, notificationScopeWhere(ctx)) : 0;

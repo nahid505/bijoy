@@ -1,11 +1,16 @@
 import type { Permission } from "./permissions";
 import { DEPOT_ACCESS } from "./depot";
+import type { BusinessModule } from "./business-types";
 
 export interface NavLink {
   href: string;
   label: string;
   /** a list means "any of these" */
   permission: Permission | readonly Permission[];
+  /** shown only while the business's types switch this module on (businessModules) */
+  module?: BusinessModule;
+  /** hidden while this module is on (its own menu has the same screen) */
+  hiddenWithModule?: BusinessModule;
 }
 
 export interface NavEntry {
@@ -15,8 +20,8 @@ export interface NavEntry {
   href?: string;
   permission?: Permission | readonly Permission[];
   children?: NavLink[];
-  /** shown only for these business types (e.g. ["DEPOT"]) */
-  businessTypes?: string[];
+  /** shown only while the business's types switch this module on (businessModules in src/lib/business-types.ts) */
+  module?: BusinessModule;
   /** emphasised and open by default */
   highlight?: boolean;
 }
@@ -48,7 +53,7 @@ export const NAV: NavEntry[] = [
     key: "depot",
     label: "ডিপো ব্যবস্থাপনা",
     icon: I.truck,
-    businessTypes: ["DEPOT"],
+    module: "DEPOT",
     highlight: true,
     children: [
       { href: "/depot/deliveries", label: "ডেলিভারি চালান", permission: DEPOT_ACCESS.view },
@@ -70,7 +75,21 @@ export const NAV: NavEntry[] = [
       { href: "/reports/depot-cash-book", label: "ডিপো ক্যাশ বুক", permission: DEPOT_ACCESS.cashbook },
     ],
   },
-  { key: "pos", label: "পস বিক্রয়", icon: I.receipt, href: "/pos", permission: "sales:create" },
+  {
+    key: "rice-mill",
+    label: "অটো রাইস মিল ব্যবস্থাপনা",
+    icon: I.factory,
+    module: "RICE_MILL",
+    highlight: true,
+    children: [
+      { href: "/purchases/paddy", label: "ধান ক্রয় ও স্কেল", permission: "purchases:view" },
+      { href: "/production", label: "মিলিং ও প্রসেসিং", permission: "production:view" },
+      { href: "/rice-mill/stock", label: "চাল ও উপজাত স্টক", permission: "inventory:view" },
+      { href: "/rice-mill/sales", label: "চাল ও কুঁড়া/ভূসি বিক্রয়", permission: "sales:view" },
+      { href: "/reports/rice-mill", label: "মিল লাভ-ক্ষতি ও স্টক রিপোর্ট", permission: "reports:view" },
+    ],
+  },
+  { key: "pos", label: "পস বিক্রয়", icon: I.receipt, href: "/pos", permission: "sales:create", module: "TRADING" },
   {
     key: "transactions",
     label: "লেনদেন",
@@ -79,12 +98,12 @@ export const NAV: NavEntry[] = [
       { href: "/vouchers/receipt", label: "রিসিপ্ট", permission: "vouchers:view" },
       { href: "/vouchers/payment", label: "পেমেন্ট", permission: "vouchers:view" },
       { href: "/vouchers/journal", label: "জার্নাল", permission: "vouchers:view" },
-      { href: "/vouchers/sales", label: "বিক্রয়", permission: "sales:view" },
-      { href: "/vouchers/purchase", label: "ক্রয়", permission: "purchases:view" },
-      { href: "/purchases/paddy", label: "ধান ক্রয় (ওজন স্লিপ)", permission: "purchases:view" },
-      { href: "/vouchers/sales-return", label: "বিক্রয় ফেরত", permission: "sales:view" },
-      { href: "/vouchers/purchase-return", label: "ক্রয় ফেরত", permission: "purchases:view" },
-      { href: "/vouchers/stock-journal", label: "স্টক জার্নাল", permission: "inventory:view" },
+      { href: "/vouchers/sales", label: "বিক্রয়", permission: "sales:view", module: "TRADING" },
+      { href: "/vouchers/purchase", label: "ক্রয়", permission: "purchases:view", module: "TRADING" },
+      { href: "/purchases/paddy", label: "ধান ক্রয় (ওজন স্লিপ)", permission: "purchases:view", module: "TRADING", hiddenWithModule: "RICE_MILL" },
+      { href: "/vouchers/sales-return", label: "বিক্রয় ফেরত", permission: "sales:view", module: "TRADING" },
+      { href: "/vouchers/purchase-return", label: "ক্রয় ফেরত", permission: "purchases:view", module: "TRADING" },
+      { href: "/vouchers/stock-journal", label: "স্টক জার্নাল", permission: "inventory:view", module: "TRADING" },
     ],
   },
   {
@@ -103,13 +122,14 @@ export const NAV: NavEntry[] = [
     key: "products",
     label: "পণ্য",
     icon: I.box,
+    module: "TRADING", // notifications stay reachable from the header bell
     children: [
-      { href: "/products", label: "সকল পণ্য", permission: "inventory:view" },
-      { href: "/products/categories", label: "ক্যাটাগরি", permission: "inventory:view" },
-      { href: "/products/brands", label: "ব্র্যান্ড", permission: "inventory:view" },
-      { href: "/products/units", label: "ইউনিট", permission: "inventory:view" },
-      { href: "/products/stock", label: "স্টক", permission: "inventory:view" },
-      { href: "/products/batches", label: "ব্যাচ ও মেয়াদ", permission: "inventory:view" },
+      { href: "/products", label: "সকল পণ্য", permission: "inventory:view", module: "TRADING" },
+      { href: "/products/categories", label: "ক্যাটাগরি", permission: "inventory:view", module: "TRADING" },
+      { href: "/products/brands", label: "ব্র্যান্ড", permission: "inventory:view", module: "TRADING" },
+      { href: "/products/units", label: "ইউনিট", permission: "inventory:view", module: "TRADING" },
+      { href: "/products/stock", label: "স্টক", permission: "inventory:view", module: "TRADING" },
+      { href: "/products/batches", label: "ব্যাচ ও মেয়াদ", permission: "inventory:view", module: "TRADING" },
       { href: "/notifications", label: "নোটিফিকেশন", permission: "inventory:view" },
     ],
   },
@@ -209,9 +229,28 @@ export const NAV: NavEntry[] = [
 ];
 
 /** Mobile bottom bar — the most frequent destinations. */
+/** English menu names where the menu reads better than the shared dictionary word ("পণ্য" is "Product" as a column, "Products" as a menu). */
+export const NAV_LABEL_EN: Record<string, string> = {
+  পণ্য: "Products",
+  কাস্টমার: "Customers",
+  সরবরাহকারী: "Suppliers",
+  খরচ: "Expenses",
+  রিপোর্ট: "Reports",
+  ক্যাটাগরি: "Categories",
+  ব্র্যান্ড: "Brands",
+  ইউনিট: "Units",
+  লেজার: "Ledgers",
+  কর্মচারী: "Employees",
+  রিসিপ্ট: "Receipts",
+  পেমেন্ট: "Payments",
+  জার্নাল: "Journals",
+  ক্রয়: "Purchases",
+  বেতন: "Payroll",
+};
+
 export const MOBILE_TABS = [
   { href: "/dashboard", label: "হোম", icon: I.home, permission: ["dashboard:view", "depot:view"] as Permission | readonly Permission[] },
-  { href: "/pos", label: "বিক্রয়", icon: I.receipt, permission: "sales:create" as Permission },
+  { href: "/pos", label: "বিক্রয়", icon: I.receipt, permission: "sales:create" as Permission, module: "TRADING" as BusinessModule },
   { href: "/vouchers/receipt/new", label: "রিসিপ্ট", icon: I.book, permission: "vouchers:create" as Permission },
   { href: "/reports/day-book", label: "রিপোর্ট", icon: I.chart, permission: "reports:view" as Permission },
 ];

@@ -8,7 +8,8 @@ import { Badge, EmptyState } from "@/components/ui";
 import { can, requireContext, type AppContext } from "@/server/auth";
 import { isRestricted } from "@/server/party-scope";
 import { AssignedDashboard } from "./assigned-panel";
-import { getT } from "@/server/i18n";
+import { getLang, getT } from "@/server/i18n";
+import { MONTHS_EN } from "@/lib/i18n";
 import { dashboardData } from "@/server/services/dashboard";
 import { ensureDailyChecks } from "@/server/services/notifications";
 import { ExpiryBadge } from "@/components/expiry-badge";
@@ -17,7 +18,9 @@ import { FEATURES, type FeatureDef } from "@/lib/features";
 import { isDepot } from "@/lib/depot";
 import { DepotPanel } from "./depot-panel";
 
-export const metadata: Metadata = { title: "ড্যাশবোর্ড" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getT())("ড্যাশবোর্ড") };
+}
 
 // Validated (dataviz checker) CVD-safe pair: sales = green, collection = blue.
 const C = { a: "#0e8a5d", b: "#1d4f91" };
@@ -77,14 +80,16 @@ function QuickActions({ quick, label }: { quick: ReturnType<typeof quickActions>
 
 export default async function DashboardPage() {
   const ctx = await requireContext();
+  const t = await getT();
+  const lang = await getLang();
   if (!can(ctx, "dashboard:view")) {
     // depot-only role: the depot dashboard alone — no sales, profit, ledger or cash figures
     if (isDepot(ctx.business.businessType) && can(ctx, "depot:view")) {
       return (
         <>
           <div className="mb-4">
-            <h1 className="text-xl font-bold text-ink-900">ডিপো ড্যাশবোর্ড</h1>
-            <p className="text-sm text-slate-500">ডিপো ব্যবস্থাপনার সারসংক্ষেপ — {formatDate(new Date())}</p>
+            <h1 className="text-xl font-bold text-ink-900">{t("ডিপো ড্যাশবোর্ড")}</h1>
+            <p className="text-sm text-slate-500">{t("ডিপো ব্যবস্থাপনার সারসংক্ষেপ")} — {formatDate(new Date())}</p>
           </div>
           <DepotPanel ctx={ctx} />
         </>
@@ -94,14 +99,13 @@ export default async function DashboardPage() {
   }
   // trial / subscription over: whoever handles billing chooses first — renew, or continue on the free plan
   if (ctx.subscription?.status === "EXPIRED" && can(ctx, "billing:manage")) redirect("/billing?expired=1");
-  const t = await getT();
   // assigned-only role: no business-wide figures — their own customers / suppliers only
   if (isRestricted(ctx)) {
     return (
       <>
         <div className="mb-4">
           <h1 className="text-xl font-bold text-ink-900">{t("ড্যাশবোর্ড")}</h1>
-          <p className="text-sm text-slate-500">আমার কাস্টমার ও সরবরাহকারী — {formatDate(new Date())}</p>
+          <p className="text-sm text-slate-500">{t("আমার কাস্টমার ও সরবরাহকারী")} — {formatDate(new Date())}</p>
         </div>
         <QuickActions quick={quickActions(ctx).map((q) => ({ ...q, label: t(q.label) }))} label={t("দ্রুত কাজ")} />
         <AssignedDashboard ctx={ctx} />
@@ -151,7 +155,7 @@ export default async function DashboardPage() {
           <span className="text-xs font-medium text-slate-500">{t("চালু মডিউল")}:</span>
           {modules.map((m) => (
             <Link key={m.key} prefetch={false} href={m.home!.href} className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-medium text-ink-800 ring-1 ring-rule hover:bg-brand-50">
-              <span aria-hidden>{m.icon}</span>{m.nameBn}
+              <span aria-hidden>{m.icon}</span>{lang === "en" ? m.nameEn : m.nameBn}
             </Link>
           ))}
         </nav>
@@ -159,13 +163,13 @@ export default async function DashboardPage() {
 
       {/* Today */}
       <section className="panel mb-4">
-        <div className="panel-head"><h2 className="panel-title">আজকের লেনদেন</h2><span className="text-xs text-slate-500">{toBnDigits(f.salesCount)} টি বিক্রয়</span></div>
+        <div className="panel-head"><h2 className="panel-title">{t("আজকের লেনদেন")}</h2><span className="text-xs text-slate-500">{t("{n} টি বিক্রয়", { n: toBnDigits(f.salesCount) })}</span></div>
         <div className="grid grid-cols-2 divide-x divide-y divide-rule sm:grid-cols-5 sm:divide-y-0">
           <Figure label={t("আজকের বিক্রয়")} value={formatMoney(f.todaySales, cur)} tone="text-brand-700" href="/vouchers/sales" />
           <Figure label={t("আজকের ক্রয়")} value={formatMoney(f.todayPurchase, cur)} href="/vouchers/purchase" />
           <Figure label={t("আজকের আদায়")} value={formatMoney(f.todayCollection, cur)} tone="text-debit" href="/reports/collection" />
           <Figure label={t("আজকের খরচ")} value={formatMoney(f.todayExpense, cur)} tone="text-credit" href="/expenses" />
-          <Figure label={f.todayProfit >= 0 ? t("আজকের লাভ") : "আজকের ক্ষতি"} value={formatMoney(f.todayProfit, cur)} tone={f.todayProfit >= 0 ? "text-brand-700" : "text-credit"} href="/reports/daily-summary" />
+          <Figure label={f.todayProfit >= 0 ? t("আজকের লাভ") : t("আজকের ক্ষতি")} value={formatMoney(f.todayProfit, cur)} tone={f.todayProfit >= 0 ? "text-brand-700" : "text-credit"} href="/reports/daily-summary" />
         </div>
       </section>
 
@@ -173,11 +177,11 @@ export default async function DashboardPage() {
       <section className="panel mb-4">
         <div className="grid grid-cols-2 divide-x divide-y divide-rule sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
           <Figure label={t("মোট পাওনা")} value={formatMoney(f.receivable, cur)} tone="text-debit" href="/dues/customers" />
-          <Figure label={t("মেয়াদোত্তীর্ণ বকেয়া")} value={formatMoney(f.overdueTotal, cur)} tone={f.overdueTotal > 0 ? "text-credit" : ""} hint={`${toBnDigits(f.overdueCount)} জন কাস্টমার`} href="/dues/customers?type=overdue" />
+          <Figure label={t("মেয়াদোত্তীর্ণ বকেয়া")} value={formatMoney(f.overdueTotal, cur)} tone={f.overdueTotal > 0 ? "text-credit" : ""} hint={t("{n} জন কাস্টমার", { n: toBnDigits(f.overdueCount) })} href="/dues/customers?type=overdue" />
           <Figure label={t("মোট দেনা")} value={formatMoney(f.payable, cur)} tone="text-credit" href="/dues/suppliers" />
           <Figure label={t("নগদ ব্যালেন্স")} value={formatMoney(f.cash, cur)} tone={f.cash < 0 ? "text-credit" : ""} href="/accounts/cash" />
           <Figure label={t("ব্যাংক ব্যালেন্স")} value={formatMoney(f.bank, cur)} href="/accounts/bank" />
-          <Figure label={t("মজুদ মূল্য")} value={formatMoney(f.stockValue, cur)} hint={f.expiringBatches ? `${toBnDigits(f.expiringBatches)} টি ব্যাচের মেয়াদ শেষ হচ্ছে` : undefined} href="/reports/stock-valuation" />
+          <Figure label={t("মজুদ মূল্য")} value={formatMoney(f.stockValue, cur)} hint={f.expiringBatches ? t("{n} টি ব্যাচের মেয়াদ শেষ হচ্ছে", { n: toBnDigits(f.expiringBatches) }) : undefined} href="/reports/stock-valuation" />
         </div>
       </section>
 
@@ -191,15 +195,15 @@ export default async function DashboardPage() {
             {d.expiry.cards.map((c) => (
               <Link prefetch={false} key={c.key} href={c.href} className={`figure hover:bg-brand-50/60 ${c.batches > 0 && c.tone === "red" ? "bg-red-50/60" : ""}`}>
                 <span className="figure-label">{c.tone === "red" ? "🔴" : "🟠"} {t(c.label)}</span>
-                <span className={`figure-value ${c.batches > 0 ? (c.tone === "red" ? "text-red-700" : "text-amber-700") : ""}`}>{toBnDigits(c.batches)} <span className="text-xs font-normal">টি ব্যাচ</span></span>
-                <span className="text-[11px] text-slate-500">{formatQty(c.quantity)} একক · {formatMoney(c.value, cur)}</span>
+                <span className={`figure-value ${c.batches > 0 ? (c.tone === "red" ? "text-red-700" : "text-amber-700") : ""}`}>{toBnDigits(c.batches)} <span className="text-xs font-normal">{t("টি ব্যাচ")}</span></span>
+                <span className="text-[11px] text-slate-500">{formatQty(c.quantity)} {t("একক")} · {formatMoney(c.value, cur)}</span>
               </Link>
             ))}
           </div>
           {d.expiry.attention.length > 0 && (
             <div className="overflow-x-auto border-t border-rule">
               <table className="table">
-                <thead><tr><th>পণ্য</th><th>ব্যাচ</th><th>মেয়াদ</th><th>অবস্থা</th><th className="num">মজুদ</th></tr></thead>
+                <thead><tr><th>{t("পণ্য")}</th><th>{t("ব্যাচ")}</th><th>{t("মেয়াদ")}</th><th>{t("অবস্থা")}</th><th className="num">{t("মজুদ")}</th></tr></thead>
                 <tbody>
                   {d.expiry.attention.map((b) => (
                     <tr key={b.id}>
@@ -226,15 +230,21 @@ export default async function DashboardPage() {
           colorA={C.a}
           colorB={C.b}
           currency={cur}
+          tableLabel={t("টেবিল আকারে দেখুন")}
+          timeLabel={t("সময়")}
+          totalLabel={t("মোট")}
         />
         <GroupedBars
           title={t("মাসিক বিক্রয় ও আদায় (চলতি অর্থবছর)")}
-          points={d.months.map((x) => ({ key: x.key, label: MONTH_NAMES[x.month].slice(0, 3), fullLabel: MONTH_NAMES[x.month], a: x.a, b: x.b }))}
+          points={d.months.map((x) => { const m = (lang === "en" ? MONTHS_EN : MONTH_NAMES)[x.month]; return { key: x.key, label: m.slice(0, 3), fullLabel: m, a: x.a, b: x.b }; })}
           labelA={t("বিক্রয়")}
           labelB={t("আদায়")}
           colorA={C.a}
           colorB={C.b}
           currency={cur}
+          tableLabel={t("টেবিল আকারে দেখুন")}
+          timeLabel={t("সময়")}
+          totalLabel={t("মোট")}
         />
       </div>
 
@@ -249,11 +259,11 @@ export default async function DashboardPage() {
                     <tr key={v.id}>
                       <td>
                         <Link prefetch={false} href={`/vouchers/v/${v.id}`} className="font-semibold text-brand-700 hover:underline">{v.voucherNo}</Link>
-                        <span className="block text-xs text-slate-500">{formatDate(v.date)} · {v.partyAccount?.name ?? "নগদ কাস্টমার"}</span>
+                        <span className="block text-xs text-slate-500">{formatDate(v.date)} · {v.partyAccount?.name ?? t("নগদ কাস্টমার")}</span>
                       </td>
                       <td className="num">
                         {formatMoney(num(v.amount), cur)}
-                        <span className="block">{due > 0 ? <Badge tone="amber">বাকি {formatMoney(due, cur)}</Badge> : <Badge tone="green">পরিশোধিত</Badge>}</span>
+                        <span className="block">{due > 0 ? <Badge tone="amber">{t("বাকি")} {formatMoney(due, cur)}</Badge> : <Badge tone="green">{t("পরিশোধিত")}</Badge>}</span>
                       </td>
                     </tr>
                   );
@@ -291,9 +301,9 @@ export default async function DashboardPage() {
                   <tr key={c.accountId}>
                     <td>
                       <Link prefetch={false} href={`/customers/${c.partyId}?tab=dues`} className="font-medium hover:text-brand-700">{c.name}</Link>
-                      <span className="block text-xs text-slate-500">{c.mobile ?? ""} · সবচেয়ে পুরনো {toBnDigits(Math.max(...c.openItems.map((o) => o.overdueDays)))} দিন পার</span>
+                      <span className="block text-xs text-slate-500">{c.mobile ?? ""} · {t("সবচেয়ে পুরনো {n} দিন পার", { n: toBnDigits(Math.max(...c.openItems.map((o) => o.overdueDays))) })}</span>
                     </td>
-                    <td className="num font-semibold text-credit">{formatMoney(c.overdue, cur)}<span className="block text-[11px] font-normal text-slate-500">মোট {formatMoney(c.balance, cur)}</span></td>
+                    <td className="num font-semibold text-credit">{formatMoney(c.overdue, cur)}<span className="block text-[11px] font-normal text-slate-500">{t("মোট")} {formatMoney(c.balance, cur)}</span></td>
                   </tr>
                 ))}
               </tbody>
@@ -309,7 +319,7 @@ export default async function DashboardPage() {
               <tbody>
                 {d.lowStock.map((p) => (
                   <tr key={p.id}>
-                    <td><Link prefetch={false} href={`/products/${p.id}`} className="hover:text-brand-700">{p.name}</Link><span className="block text-xs text-slate-500">ন্যূনতম {formatQty(p.minStock)} {p.unit}</span></td>
+                    <td><Link prefetch={false} href={`/products/${p.id}`} className="hover:text-brand-700">{p.name}</Link><span className="block text-xs text-slate-500">{t("ন্যূনতম")} {formatQty(p.minStock)} {p.unit}</span></td>
                     <td className="num"><Badge tone={Number(p.stock) <= 0 ? "red" : "amber"}>{formatQty(p.stock)} {p.unit}</Badge></td>
                   </tr>
                 ))}
@@ -318,27 +328,27 @@ export default async function DashboardPage() {
           )}
         </Panel>
 
-        <Panel title="নগদ ও ব্যাংক হিসাব" href="/accounts/cash" linkLabel="ক্যাশ বুক">
+        <Panel title={t("নগদ ও ব্যাংক হিসাব")} href="/accounts/cash" linkLabel={t("ক্যাশ বুক")}>
           <table className="table">
             <tbody>
               {d.cashBank.map((a) => (
                 <tr key={a.id}>
-                  <td><Link prefetch={false} href={`/accounts/${a.id}`} className="hover:text-brand-700">{a.name}</Link> <Badge tone={a.kind === "CASH" ? "green" : "blue"}>{a.kind === "CASH" ? "নগদ" : "ব্যাংক"}</Badge></td>
+                  <td><Link prefetch={false} href={`/accounts/${a.id}`} className="hover:text-brand-700">{a.name}</Link> <Badge tone={a.kind === "CASH" ? "green" : "blue"}>{a.kind === "CASH" ? t("নগদ") : t("ব্যাংক")}</Badge></td>
                   <td className={`num font-semibold ${a.balance < 0 ? "cr" : ""}`}>{formatMoney(a.balance, cur)}</td>
                 </tr>
               ))}
             </tbody>
-            <tfoot><tr><td>মোট</td><td className="num">{formatMoney(f.cash + f.bank, cur)}</td></tr></tfoot>
+            <tfoot><tr><td>{t("মোট")}</td><td className="num">{formatMoney(f.cash + f.bank, cur)}</td></tr></tfoot>
           </table>
         </Panel>
 
-        <Panel title="আজকের অন্যান্য হিসাব" href="/reports/daily-summary" linkLabel={t("দৈনিক সারসংক্ষেপ")}>
+        <Panel title={t("আজকের অন্যান্য হিসাব")} href="/reports/daily-summary" linkLabel={t("দৈনিক সারসংক্ষেপ")}>
           <table className="table">
             <tbody>
-              <tr><td>অন্যান্য আয়</td><td className="num">{formatMoney(f.todayIncome, cur)}</td></tr>
-              <tr><td>পরিচালন খরচ</td><td className="num cr">{formatMoney(f.todayExpense, cur)}</td></tr>
-              <tr><td>নিট বিক্রয়</td><td className="num">{formatMoney(f.todaySales, cur)}</td></tr>
-              <tr><td>আদায়</td><td className="num dr">{formatMoney(f.todayCollection, cur)}</td></tr>
+              <tr><td>{t("অন্যান্য আয়")}</td><td className="num">{formatMoney(f.todayIncome, cur)}</td></tr>
+              <tr><td>{t("পরিচালন খরচ")}</td><td className="num cr">{formatMoney(f.todayExpense, cur)}</td></tr>
+              <tr><td>{t("নিট বিক্রয়")}</td><td className="num">{formatMoney(f.todaySales, cur)}</td></tr>
+              <tr><td>{t("আদায়")}</td><td className="num dr">{formatMoney(f.todayCollection, cur)}</td></tr>
             </tbody>
           </table>
         </Panel>

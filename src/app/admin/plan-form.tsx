@@ -30,10 +30,10 @@ export function PlanForm({ action, defaults, features }: { action: FormAction; d
         <Field label="কোড *" name="code" hint="যেমন BUSINESS"><input id="code" className="input font-mono uppercase" value={f.code} onChange={(e) => set("code", e.target.value.toUpperCase())} /></Field>
         <Field label="নাম (বাংলা) *" name="nameBn"><input id="nameBn" className="input" value={f.nameBn} onChange={(e) => set("nameBn", e.target.value)} /></Field>
         <Field label="নাম (English) *" name="nameEn"><input id="nameEn" className="input" value={f.nameEn} onChange={(e) => set("nameEn", e.target.value)} /></Field>
-        <Field label="ক্রম" name="sortOrder"><input id="sortOrder" type="number" min="0" className="input-num" value={f.sortOrder} onChange={(e) => set("sortOrder", Number(e.target.value))} /></Field>
-        <Field label="মাসিক মূল্য (৳)" name="priceMonthly"><input id="priceMonthly" type="number" min="0" step="1" className="input-num" value={f.priceMonthly} onChange={(e) => set("priceMonthly", Number(e.target.value))} /></Field>
-        <Field label="বার্ষিক মূল্য (৳)" name="priceYearly"><input id="priceYearly" type="number" min="0" step="1" className="input-num" value={f.priceYearly} onChange={(e) => set("priceYearly", Number(e.target.value))} /></Field>
-        <Field label="ব্যবহারকারী সীমা" name="userLimit" hint="ফাঁকা = সীমাহীন"><input id="userLimit" type="number" min="1" className="input-num" value={f.userLimit} onChange={(e) => set("userLimit", e.target.value)} /></Field>
+        <Field label="ক্রম" name="sortOrder"><input id="sortOrder" type="text" inputMode="decimal" data-numeric min="0" className="input-num" value={f.sortOrder} onChange={(e) => set("sortOrder", Number(e.target.value))} /></Field>
+        <Field label="মাসিক মূল্য (৳)" name="priceMonthly"><input id="priceMonthly" type="text" inputMode="decimal" data-numeric min="0" step="1" className="input-num" value={f.priceMonthly} onChange={(e) => set("priceMonthly", Number(e.target.value))} /></Field>
+        <Field label="বার্ষিক মূল্য (৳)" name="priceYearly"><input id="priceYearly" type="text" inputMode="decimal" data-numeric min="0" step="1" className="input-num" value={f.priceYearly} onChange={(e) => set("priceYearly", Number(e.target.value))} /></Field>
+        <Field label="ব্যবহারকারী সীমা" name="userLimit" hint="ফাঁকা = সীমাহীন"><input id="userLimit" type="text" inputMode="decimal" data-numeric min="1" className="input-num" value={f.userLimit} onChange={(e) => set("userLimit", e.target.value)} /></Field>
         <div className="flex items-end gap-4 text-sm">
           <label className="flex items-center gap-2"><input type="checkbox" checked={f.isActive} onChange={(e) => set("isActive", e.target.checked)} /> সক্রিয়</label>
           <label className="flex items-center gap-2"><input type="checkbox" checked={f.isPublic} onChange={(e) => set("isPublic", e.target.checked)} /> প্রাইসিং পাতায় দেখান</label>

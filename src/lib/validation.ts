@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { toAsciiDigits } from "./digits";
+import { weighbridgeGross } from "./paddy";
 import { round2 } from "./calc";
 import { looksLikeEmail, normalizeBdMobile } from "./mobile";
 
@@ -80,7 +82,7 @@ export const mobileSchema = z
   });
 
 /** Business types offered at sign-up (key → label in src/lib/business-types.ts). */
-export const BUSINESS_TYPES = ["RETAIL", "WHOLESALE", "PHARMACY", "GROCERY", "ELECTRONICS", "CLOTHING", "RESTAURANT", "MANUFACTURING", "SERVICE", "DISTRIBUTION", "DEPOT", "OTHER"] as const;
+export const BUSINESS_TYPES = ["RETAIL", "WHOLESALE", "PHARMACY", "GROCERY", "ELECTRONICS", "CLOTHING", "RESTAURANT", "MANUFACTURING", "AUTO_RICE_MILL", "SERVICE", "DISTRIBUTION", "DEPOT", "OTHER"] as const;
 
 /** Self-service sign-up: a new owner with a new business. */
 export const registrationSchema = z
@@ -89,7 +91,6 @@ export const registrationSchema = z
     ownerName: requiredText("মালিকের নাম", 100),
     mobile: mobileSchema,
     email: optionalEmail,
-    businessType: z.preprocess((v) => (typeof v === "string" ? v.trim().toUpperCase() : v), z.enum(BUSINESS_TYPES).optional().nullable()).catch(null).transform((v) => v ?? null),
     address: optionalText(300),
     plan: z.string().trim().max(30).regex(/^[A-Z0-9_]*$/).optional().nullable().catch(null).transform((v) => (v ? v : null)),
     password: passwordSchema,
@@ -393,18 +394,31 @@ export const paddyPurchaseSchema = z
     warehouseId: optionalId,
     batchNo: optionalText(60),
     bagCount: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).int("বস্তার সংখ্যা পূর্ণসংখ্যা হবে").min(0, "ঋণাত্মক হতে পারবে না").max(1_000_000).default(0),
-    grossKg: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).positive("মোট ওজন দিন").max(100_000_000, "ওজন খুব বড়"),
+    // typed directly, or (weighbridge) loaded − empty vehicle — see the transform below
+    grossKg: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).min(0, "ঋণাত্মক হতে পারবে না").max(100_000_000, "ওজন খুব বড়").default(0),
     dhaltaKg: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).min(0, "ঋণাত্মক হতে পারবে না").max(100_000_000).default(0),
     ratePerMon: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).positive("প্রতি মণের দর দিন").max(10_000_000, "দর খুব বড়"),
     paidAmount: money.default(0),
     cashAccountId: optionalId,
     notes: optionalText(500),
+    // auto rice mill: variety, moisture, weighbridge (loaded − empty vehicle = gross) and unloading labour
+    variety: optionalText(60),
+    moisturePct: z.preprocess((v) => (v === "" || v === null || v === undefined ? null : v), z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).min(0, "ঋণাত্মক হতে পারবে না").max(100, "সর্বোচ্চ ১০০%").nullable()).default(null),
+    vehicleGrossKg: z.preprocess((v) => (v === "" || v === null || v === undefined || v === 0 || v === "0" ? null : v), z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).positive().max(100_000_000).nullable()).default(null),
+    vehicleTareKg: z.preprocess((v) => (v === "" || v === null || v === undefined || v === 0 || v === "0" ? null : v), z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).positive().max(100_000_000).nullable()).default(null),
+    labourCost: money.default(0),
   })
   .superRefine((v, ctx) => {
-    if (v.dhaltaKg >= v.grossKg) ctx.addIssue({ code: "custom", path: ["dhaltaKg"], message: "ঢলতা মোট ওজনের চেয়ে কম হতে হবে" });
+    if ((v.vehicleGrossKg === null) !== (v.vehicleTareKg === null)) ctx.addIssue({ code: "custom", path: [v.vehicleGrossKg === null ? "vehicleGrossKg" : "vehicleTareKg"], message: "গাড়িসহ ও খালি গাড়ির — দুটো ওজনই দিন (অথবা কোনোটিই নয়)" });
+    if (v.vehicleGrossKg !== null && v.vehicleTareKg !== null && v.vehicleTareKg >= v.vehicleGrossKg) ctx.addIssue({ code: "custom", path: ["vehicleTareKg"], message: "খালি গাড়ির ওজন গাড়িসহ ওজনের চেয়ে কম হতে হবে" });
+    if (v.labourCost > 0 && !v.cashAccountId) ctx.addIssue({ code: "custom", path: ["cashAccountId"], message: "লেবার খরচ কোন নগদ/ব্যাংক থেকে দেওয়া হলো তা নির্বাচন করুন" });
+    const gross = weighbridgeGross(v.vehicleGrossKg, v.vehicleTareKg) ?? v.grossKg;
+    if (!(gross > 0)) ctx.addIssue({ code: "custom", path: ["grossKg"], message: "মোট ওজন দিন (অথবা গাড়িসহ ও খালি গাড়ির ওজন)" });
+    else if (v.dhaltaKg >= gross) ctx.addIssue({ code: "custom", path: ["dhaltaKg"], message: "ঢলতা মোট ওজনের চেয়ে কম হতে হবে" });
     if (v.paidAmount > 0 && !v.cashAccountId) ctx.addIssue({ code: "custom", path: ["cashAccountId"], message: "পরিশোধের নগদ/ব্যাংক হিসাব নির্বাচন করুন" });
     if (!v.partyAccountId && !v.cashAccountId) ctx.addIssue({ code: "custom", path: ["cashAccountId"], message: "সরবরাহকারী ছাড়া নগদ ক্রয়ে নগদ/ব্যাংক হিসাব নির্বাচন করুন" });
-  });
+  })
+  .transform((v) => ({ ...v, grossKg: weighbridgeGross(v.vehicleGrossKg, v.vehicleTareKg) ?? v.grossKg }));
 export type PaddyPurchaseInput = z.infer<typeof paddyPurchaseSchema>;
 
 // ───────────────────────── production (BOM) ─────────────────────────
@@ -481,9 +495,19 @@ export const businessSchema = z.object({
     .max(8)
     .transform((v) => [...new Set(v)].sort((a, b) => b - a)),
   allowExpiredSale: z.boolean().default(false),
-  // "" = not set; missing = unchanged. DEPOT turns on the depot dashboard, menus and reports.
-  businessType: z.preprocess((v) => (v === "" ? null : typeof v === "string" ? v.trim().toUpperCase() : v), z.enum(BUSINESS_TYPES).nullable().optional()),
 });
+
+/**
+ * The business types an owner picks in settings ("ব্যবসার ধরন ও মডিউল ব্যবস্থাপনা"): any number of BUSINESS_TYPES, none = a
+ * general business. DEPOT turns on depot management; the others the general sales / POS / purchase / inventory menus.
+ */
+export const businessTypesSchema = z.object({
+  businessTypes: z
+    .array(z.string({ invalid_type_error: "ব্যবসার ধরন সঠিক নয়" }).trim().toUpperCase().pipe(z.enum(BUSINESS_TYPES, { errorMap: () => ({ message: "অজানা ব্যবসার ধরন" }) })), { invalid_type_error: "ব্যবসার ধরনের তালিকা দিন" })
+    .max(BUSINESS_TYPES.length)
+    .transform((v) => BUSINESS_TYPES.filter((t) => v.includes(t))), // distinct, in the list's own order
+});
+export type BusinessTypesInput = z.infer<typeof businessTypesSchema>;
 
 export const newBusinessSchema = z.object({
   name: requiredText("ব্যবসার নাম"),
@@ -508,7 +532,6 @@ export const roleSchema = z.object({
 
 // ───────────────────────── payroll ─────────────────────────
 
-const asciiDigits = (v: string) => v.replace(/[০-৯]/g, (d) => String("০১২৩৪৫৬৭৮৯".indexOf(d)));
 const optionalMobile = z
   .string()
   .trim()
@@ -542,7 +565,7 @@ export const employeeSchema = z
       .trim()
       .optional()
       .nullable()
-      .transform((v) => (v ? asciiDigits(v).replace(/\s/g, "") : null))
+      .transform((v) => (v ? toAsciiDigits(v).replace(/\s/g, "") : null))
       .refine((v) => v === null || /^(\d{10}|\d{13}|\d{17})$/.test(v), "জাতীয় পরিচয়পত্র নম্বর ১০, ১৩ বা ১৭ অঙ্কের হতে হবে"),
     tin: optionalText(30),
     departmentId: optionalId,

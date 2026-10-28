@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { ActionForm, Field, SubmitButton } from "@/components/forms";
 import { useToast } from "@/components/toaster";
-import { BUSINESS_TYPE_LABELS } from "@/lib/business-types";
 import { registerAction, requestRegistrationOtpAction } from "@/server/actions/auth";
 
 const rules = (pw: string) => [
@@ -59,12 +58,6 @@ export function RegisterForm({ otpRequired = false, plan = null }: { otpRequired
       )}
       <Field label="ব্যবসার/প্রতিষ্ঠানের নাম *" name="businessName">
         <input id="businessName" name="businessName" required maxLength={120} autoComplete="organization" className="input" placeholder="যেমন: রহমান এন্টারপ্রাইজ" />
-      </Field>
-      <Field label="ব্যবসার ধরন" name="businessType">
-        <select id="businessType" name="businessType" defaultValue="" className="input">
-          <option value="">— নির্বাচন করুন —</option>
-          {Object.entries(BUSINESS_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
       </Field>
       <Field label="মালিকের নাম *" name="ownerName">
         <input id="ownerName" name="ownerName" required maxLength={100} autoComplete="name" className="input" />

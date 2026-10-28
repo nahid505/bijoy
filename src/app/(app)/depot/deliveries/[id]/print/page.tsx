@@ -9,7 +9,7 @@ import { num } from "@/lib/db";
 import { round2, round3 } from "@/lib/calc";
 import { DEPOT_ACCESS, isDepot } from "@/lib/depot";
 import { formatDate, formatMoney, formatQty, toBnDigits } from "@/lib/format";
-import { amountInBanglaWords } from "@/lib/words";
+import { AmountInWords } from "@/components/amount-words";
 import { PrintButton } from "@/components/forms";
 import { can, requirePermission } from "@/server/auth";
 import { readParams, type SearchParams } from "@/server/params";
@@ -17,6 +17,7 @@ import { challanLineRate, loadDepotDelivery } from "@/server/services/depot";
 import { DepotOnlyNotice } from "../../../depot-ui";
 import { PosPageSize } from "./pos-page-size";
 import { canSeeVoucher } from "@/server/party-scope";
+import { getT } from "@/server/i18n";
 
 export const metadata: Metadata = { title: "ডেলিভারি চালান — ডিলার কপি" };
 
@@ -26,6 +27,7 @@ export default async function DealerChallanPrintPage({ params, searchParams }: {
   if (!isDepot(ctx.business.businessType)) return <DepotOnlyNotice canManage={can(ctx, "business:manage")} />;
   const d = await loadDepotDelivery(ctx.business.id, id);
   if (!d || !(await canSeeVoucher(ctx, id))) notFound(); // assigned-only roles: their parties only
+  const t = await getT();
   const pos = (await readParams(searchParams)).format === "pos";
   const b = ctx.business;
   const cur = b.currencySymbol;
@@ -49,27 +51,27 @@ export default async function DealerChallanPrintPage({ params, searchParams }: {
 
   const toolbar = (
     <div className="no-print mb-4 flex flex-wrap items-center gap-2">
-      <PrintButton label="প্রিন্ট / PDF" />
-      <span className="inline-flex overflow-hidden rounded-md border border-rule text-sm" role="group" aria-label="প্রিন্ট ফরম্যাট">
+      <PrintButton label={t("প্রিন্ট / PDF")} />
+      <span className="inline-flex overflow-hidden rounded-md border border-rule text-sm" role="group" aria-label={t("প্রিন্ট ফরম্যাট")}>
         <Link prefetch={false} href={`/depot/deliveries/${v.id}/print`} aria-current={!pos ? "page" : undefined} className={`px-3 py-1.5 ${!pos ? "bg-brand-600 font-semibold text-white" : "bg-white hover:bg-brand-50"}`}>A4</Link>
-        <Link prefetch={false} href={`/depot/deliveries/${v.id}/print?format=pos`} aria-current={pos ? "page" : undefined} className={`border-l border-rule px-3 py-1.5 ${pos ? "bg-brand-600 font-semibold text-white" : "bg-white hover:bg-brand-50"}`}>POS স্লিপ (৮০ মিমি)</Link>
+        <Link prefetch={false} href={`/depot/deliveries/${v.id}/print?format=pos`} aria-current={pos ? "page" : undefined} className={`border-l border-rule px-3 py-1.5 ${pos ? "bg-brand-600 font-semibold text-white" : "bg-white hover:bg-brand-50"}`}>{t("POS স্লিপ (৮০ মিমি)")}</Link>
       </span>
-      <Link prefetch={false} href={`/vouchers/v/${v.id}`} className="btn-secondary">← চালানে ফিরুন</Link>
-      <span className="text-xs text-slate-500">ডিলার কপিতে কমিশন বা অভ্যন্তরীণ কোনো হিসাব থাকে না</span>
+      <Link prefetch={false} href={`/vouchers/v/${v.id}`} className="btn-secondary">{t("← চালানে ফিরুন")}</Link>
+      <span className="text-xs text-slate-500">{t("ডিলার কপিতে কমিশন বা অভ্যন্তরীণ কোনো হিসাব থাকে না")}</span>
     </div>
   );
 
   const meta = (
     <>
-      <p>চালান নং: <b>{v.voucherNo}</b></p>
-      <p>তারিখ: {formatDate(v.date)}</p>
-      {d.doNumber && <p>{doRelease ? "ডিও নং" : "রেফারেন্স"}: <b>{d.doNumber}</b></p>}
+      <p>{t("চালান নং")}: <b>{v.voucherNo}</b></p>
+      <p>{t("তারিখ")}: {formatDate(v.date)}</p>
+      {d.doNumber && <p>{doRelease ? t("ডিও নং") : t("রেফারেন্স")}: <b>{d.doNumber}</b></p>}
     </>
   );
   const footerInfo = (
     <>
-      {d.notes && <p><b>নোট:</b> {d.notes}</p>}
-      {(d.driverName || d.vehicleNo) && <p>{d.driverName && <>ড্রাইভার: <b>{d.driverName}</b></>}{d.driverName && d.vehicleNo && " · "}{d.vehicleNo && <>গাড়ি নম্বর: <b>{d.vehicleNo}</b></>}</p>}
+      {d.notes && <p><b>{t("নোট")}:</b> {d.notes}</p>}
+      {(d.driverName || d.vehicleNo) && <p>{d.driverName && <>{t("ড্রাইভার")}: <b>{d.driverName}</b></>}{d.driverName && d.vehicleNo && " · "}{d.vehicleNo && <>{t("গাড়ি নম্বর")}: <b>{d.vehicleNo}</b></>}</p>}
     </>
   );
 
@@ -83,43 +85,43 @@ export default async function DealerChallanPrintPage({ params, searchParams }: {
             <p className="text-sm font-bold">{b.name}</p>
             {b.address && <p className="text-[10px]">{b.address}</p>}
             {b.mobile && <p className="text-[10px]">{b.mobile}</p>}
-            <p className="mt-1 text-[12px] font-bold">ডেলিভারি চালান (ডিলার কপি)</p>
+            <p className="mt-1 text-[12px] font-bold">{t("ডেলিভারি চালান (ডিলার কপি)")}</p>
           </header>
           <div className="border-b border-dashed border-black py-1">
             {meta}
-            <p>ডিলার: <b>{dealer?.name ?? "নগদ বিক্রয়"}</b>{route ? ` (${route})` : ""}</p>
-            {dealer?.customer?.mobile && <p>মোবাইল: {dealer.customer.mobile}</p>}
+            <p>{t("ডিলার")}: <b>{dealer?.name ?? t("নগদ বিক্রয়")}</b>{route ? ` (${route})` : ""}</p>
+            {dealer?.customer?.mobile && <p>{t("মোবাইল")}: {dealer.customer.mobile}</p>}
           </div>
           <ol className="divide-y divide-dashed divide-black">
             {lines.map((l, i) => (
               <li key={l.id} className="py-1">
                 <p className="font-semibold">{toBnDigits(i + 1)}. {l.name}{l.code && <span className="font-normal"> ({l.code})</span>}</p>
                 <p className="flex justify-between gap-2">
-                  <span>সরবরাহ {formatQty(l.supplied)}{l.free > 0 && <> + <b className="rounded-sm bg-black px-0.5 text-white">ফ্রি {formatQty(l.free)}</b></>} = <b>{formatQty(l.total)} {l.unit}</b></span>
+                  <span>{t("সরবরাহ")} {formatQty(l.supplied)}{l.free > 0 && <> + <b className="rounded-sm bg-black px-0.5 text-white">{t("ফ্রি")} {formatQty(l.free)}</b></>} = <b>{formatQty(l.total)} {l.unit}</b></span>
                 </p>
-                <p className="flex justify-between gap-2"><span>দর {priceCell(l.rate)}</span><b className="tabular-nums">{priceCell(l.amount)}</b></p>
+                <p className="flex justify-between gap-2"><span>{t("দর")} {priceCell(l.rate)}</span><b className="tabular-nums">{priceCell(l.amount)}</b></p>
               </li>
             ))}
           </ol>
           <div className="space-y-0.5 border-y border-black py-1">
-            <p className="flex justify-between"><span>মোট সরবরাহ</span><b>{qtyTotal("supplied")}</b></p>
-            <p className="flex justify-between"><span>মোট ফ্রি</span><b>{qtyTotal("free")}</b></p>
-            <p className="flex justify-between"><span>মোট পরিমাণ</span><b>{qtyTotal("total")}</b></p>
-            <p className="flex justify-between text-[12px]"><span className="font-bold">মোট টাকা</span><b className="tabular-nums">{money(amount)}</b></p>
+            <p className="flex justify-between"><span>{t("মোট সরবরাহ")}</span><b>{qtyTotal("supplied")}</b></p>
+            <p className="flex justify-between"><span>{t("মোট ফ্রি")}</span><b>{qtyTotal("free")}</b></p>
+            <p className="flex justify-between"><span>{t("মোট পরিমাণ")}</span><b>{qtyTotal("total")}</b></p>
+            <p className="flex justify-between text-[12px]"><span className="font-bold">{t("মোট টাকা")}</span><b className="tabular-nums">{money(amount)}</b></p>
             {doRelease ? (
-              <p className="pt-0.5 text-[10px]">মূল্য কোম্পানির ডিও অনুযায়ী কোম্পানিতে পরিশোধিত</p>
+              <p className="pt-0.5 text-[10px]">{t("মূল্য কোম্পানির ডিও অনুযায়ী কোম্পানিতে পরিশোধিত")}</p>
             ) : (
               <>
-                <p className="flex justify-between"><span>আজ পরিশোধ</span><span className="tabular-nums">{money(paid)}</span></p>
-                <p className="flex justify-between"><span>বাকি</span><b className="tabular-nums">{money(round2(amount - paid))}</b></p>
+                <p className="flex justify-between"><span>{t("আজ পরিশোধ")}</span><span className="tabular-nums">{money(paid)}</span></p>
+                <p className="flex justify-between"><span>{t("বাকি")}</span><b className="tabular-nums">{money(round2(amount - paid))}</b></p>
               </>
             )}
           </div>
-          <p className="py-1 text-[10px]"><b>কথায়:</b> {amountInBanglaWords(amount)}</p>
+          <p className="py-1 text-[10px]"><b>{t("কথায়")}:</b> <AmountInWords amount={amount} /></p>
           <div className="py-1 text-[10px]">{footerInfo}</div>
           <div className="mt-6 grid grid-cols-2 gap-3 text-center text-[10px]">
-            <p className="border-t border-black pt-0.5">ডিপো প্রতিনিধি</p>
-            <p className="border-t border-black pt-0.5">ডিলারের স্বাক্ষর</p>
+            <p className="border-t border-black pt-0.5">{t("ডিপো প্রতিনিধি")}</p>
+            <p className="border-t border-black pt-0.5">{t("ডিলারের স্বাক্ষর")}</p>
           </div>
         </article>
       </>
@@ -143,24 +145,24 @@ export default async function DealerChallanPrintPage({ params, searchParams }: {
             </div>
           </div>
           <div className="text-right">
-            <p className="text-2xl font-bold text-ink-900">ডেলিভারি চালান</p>
-            <p className="text-xs font-semibold text-slate-500">ডিলার কপি</p>
+            <p className="text-2xl font-bold text-ink-900">{t("ডেলিভারি চালান")}</p>
+            <p className="text-xs font-semibold text-slate-500">{t("ডিলার কপি")}</p>
             <div className="mt-1">{meta}</div>
           </div>
         </header>
 
         <section className="grid gap-4 py-4 sm:grid-cols-2 print:grid-cols-2">
           <div>
-            <p className="text-xs font-semibold text-slate-500">ডিলার</p>
-            <p className="text-base font-semibold">{dealer?.name ?? "নগদ বিক্রয়"}</p>
-            {route && <p className="text-slate-600">রুট / এরিয়া: {route}</p>}
+            <p className="text-xs font-semibold text-slate-500">{t("ডিলার")}</p>
+            <p className="text-base font-semibold">{dealer?.name ?? t("নগদ বিক্রয়")}</p>
+            {route && <p className="text-slate-600">{t("রুট / এরিয়া")}: {route}</p>}
             {dealer?.customer?.mobile && <p className="text-slate-600">{dealer.customer.mobile}</p>}
           </div>
           {doRelease && (
             <div className="sm:text-right print:text-right">
-              <p className="text-xs font-semibold text-slate-500">সরবরাহের ভিত্তি</p>
-              <p className="font-semibold">কোম্পানির ডিও{d.companyAccount ? ` — ${d.companyAccount.name}` : ""}</p>
-              <p className="text-slate-600">মূল্য কোম্পানিতে পরিশোধিত</p>
+              <p className="text-xs font-semibold text-slate-500">{t("সরবরাহের ভিত্তি")}</p>
+              <p className="font-semibold">{t("কোম্পানির ডিও")}{d.companyAccount ? ` — ${d.companyAccount.name}` : ""}</p>
+              <p className="text-slate-600">{t("মূল্য কোম্পানিতে পরিশোধিত")}</p>
             </div>
           )}
         </section>
@@ -169,14 +171,14 @@ export default async function DealerChallanPrintPage({ params, searchParams }: {
         <table className="w-full min-w-[46rem] border-collapse print:min-w-0" id="dealer-lines">
           <thead>
             <tr className="border-y-2 border-ink-800 bg-ink-50 text-xs">
-              <th className="px-2 py-1.5 text-left">ক্রমিক নং</th>
-              <th className="px-2 py-1.5 text-left">পণ্যের কোড</th>
-              <th className="px-2 py-1.5 text-left">পণ্যের নাম</th>
-              <th className="px-2 py-1.5 text-right">সরবরাহ পরিমাণ</th>
-              <th className="bg-amber-100 px-2 py-1.5 text-right print:bg-amber-100">ফ্রি পরিমাণ</th>
-              <th className="px-2 py-1.5 text-right">মোট পরিমাণ</th>
-              <th className="px-2 py-1.5 text-right">দর / রেট</th>
-              <th className="px-2 py-1.5 text-right">মোট টাকা</th>
+              <th className="px-2 py-1.5 text-left">{t("ক্রমিক নং")}</th>
+              <th className="px-2 py-1.5 text-left">{t("পণ্যের কোড")}</th>
+              <th className="px-2 py-1.5 text-left">{t("পণ্যের নাম")}</th>
+              <th className="px-2 py-1.5 text-right">{t("সরবরাহ পরিমাণ")}</th>
+              <th className="bg-amber-100 px-2 py-1.5 text-right print:bg-amber-100">{t("ফ্রি পরিমাণ")}</th>
+              <th className="px-2 py-1.5 text-right">{t("মোট পরিমাণ")}</th>
+              <th className="px-2 py-1.5 text-right">{t("দর / রেট")}</th>
+              <th className="px-2 py-1.5 text-right">{t("মোট টাকা")}</th>
             </tr>
           </thead>
           <tbody>
@@ -195,7 +197,7 @@ export default async function DealerChallanPrintPage({ params, searchParams }: {
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-ink-800 font-bold" id="dealer-totals">
-              <td className="px-2 py-1.5" colSpan={3}>মোট</td>
+              <td className="px-2 py-1.5" colSpan={3}>{t("মোট")}</td>
               <td className="px-2 py-1.5 text-right tabular-nums">{qtyTotal("supplied")}</td>
               <td className="bg-amber-50 px-2 py-1.5 text-right tabular-nums text-amber-900 print:bg-amber-50">{qtyTotal("free")}</td>
               <td className="px-2 py-1.5 text-right tabular-nums">{qtyTotal("total")}</td>
@@ -208,23 +210,23 @@ export default async function DealerChallanPrintPage({ params, searchParams }: {
 
         <div className="mt-3 flex justify-end">
           <dl className="w-72 space-y-1">
-            <div className="flex justify-between font-bold"><dt>সর্বমোট টাকা</dt><dd className="tabular-nums">{money(amount)}</dd></div>
+            <div className="flex justify-between font-bold"><dt>{t("সর্বমোট টাকা")}</dt><dd className="tabular-nums">{money(amount)}</dd></div>
             {doRelease ? (
-              <div className="flex justify-between text-slate-600"><dt>পরিশোধ</dt><dd>কোম্পানির ডিও-তে</dd></div>
+              <div className="flex justify-between text-slate-600"><dt>{t("পরিশোধ")}</dt><dd>{t("কোম্পানির ডিও-তে")}</dd></div>
             ) : (
               <>
-                <div className="flex justify-between"><dt>আজ পরিশোধ</dt><dd className="tabular-nums">{money(paid)}</dd></div>
-                <div className="flex justify-between border-t border-ink-800 pt-1 font-bold"><dt>বাকি</dt><dd className="tabular-nums">{money(round2(amount - paid))}</dd></div>
+                <div className="flex justify-between"><dt>{t("আজ পরিশোধ")}</dt><dd className="tabular-nums">{money(paid)}</dd></div>
+                <div className="flex justify-between border-t border-ink-800 pt-1 font-bold"><dt>{t("বাকি")}</dt><dd className="tabular-nums">{money(round2(amount - paid))}</dd></div>
               </>
             )}
           </dl>
         </div>
-        <p className="mt-4 rounded border border-rule bg-ink-50 px-3 py-2 text-sm"><b>কথায়:</b> {amountInBanglaWords(amount)}</p>
+        <p className="mt-4 rounded border border-rule bg-ink-50 px-3 py-2 text-sm"><b>{t("কথায়")}:</b> <AmountInWords amount={amount} /></p>
         <div className="mt-3 space-y-1 text-sm">{footerInfo}</div>
 
         <footer className="mt-16 grid grid-cols-2 gap-16 text-center text-xs text-slate-600">
-          <div className="border-t border-slate-500 pt-1">ডিপো প্রতিনিধির স্বাক্ষর</div>
-          <div className="border-t border-slate-500 pt-1">ডিলারের স্বাক্ষর</div>
+          <div className="border-t border-slate-500 pt-1">{t("ডিপো প্রতিনিধির স্বাক্ষর")}</div>
+          <div className="border-t border-slate-500 pt-1">{t("ডিলারের স্বাক্ষর")}</div>
         </footer>
       </article>
     </>

@@ -4,6 +4,7 @@ import { prisma, num } from "@/lib/db";
 import { DEPOT_ACCESS, DEPOT_CASH_NAME, isDepot } from "@/lib/depot";
 import { formatDate, formatMoney, toBnDigits, toDateInput } from "@/lib/format";
 import { EmptyState, FilterBar, FilterField, PageHeader, StatCard, TableWrap } from "@/components/ui";
+import { getT } from "@/server/i18n";
 import { ActionButton } from "@/components/forms";
 import { can, requirePermission } from "@/server/auth";
 import { canChangeEntryDate } from "@/server/entry-date";
@@ -34,6 +35,7 @@ export default async function DepotExpensesPage({ searchParams }: { searchParams
     prisma.account.findMany({ where: { businessId: ctx.business.id, kind: { in: ["CASH", "BANK"] }, isActive: true, NOT: { id: depotCash ?? "" }, ...accountScopeWhere(ctx) }, orderBy: [{ kind: "asc" }, { name: "asc" }], select: { id: true, name: true } }),
   ]);
   const canFund = !isRestricted(ctx) && can(ctx, DEPOT_ACCESS.fund);
+  const t = await getT();
   return (
     <>
       <PageHeader
@@ -42,8 +44,8 @@ export default async function DepotExpensesPage({ searchParams }: { searchParams
         crumbs={[{ label: "ডিপো ব্যবস্থাপনা" }, { label: "ডিপো খরচ" }]}
         actions={
           <>
-            {can(ctx, DEPOT_ACCESS.cashbook) && <Link prefetch={false} href="/reports/depot-cash-book" className="btn-secondary">ডিপো ক্যাশ বুক</Link>}
-            <Link prefetch={false} href="/depot/expenses/new" className="btn-primary">+ নতুন খরচ</Link>
+            {can(ctx, DEPOT_ACCESS.cashbook) && <Link prefetch={false} href="/reports/depot-cash-book" className="btn-secondary">{t("ডিপো ক্যাশ বুক")}</Link>}
+            <Link prefetch={false} href="/depot/expenses/new" className="btn-primary">+ {t("নতুন খরচ")}</Link>
           </>
         }
       />
@@ -58,16 +60,16 @@ export default async function DepotExpensesPage({ searchParams }: { searchParams
           <FilterField label="শেষ"><input type="date" name="to" defaultValue={to} className="input w-40" /></FilterField>
           <FilterField label="খরচের খাত">
             <select name="head" defaultValue={head ?? ""} className="input w-48">
-              <option value="">সব খাত</option>
+              <option value="">{t("সব খাত")}</option>
               {expenseHeads.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
             </select>
           </FilterField>
-          <FilterField label="খুঁজুন"><input name="q" defaultValue={p.q ?? ""} className="input w-44" placeholder="ভাউচার / মেমো / বিবরণ" /></FilterField>
+          <FilterField label="খুঁজুন"><input name="q" defaultValue={p.q ?? ""} className="input w-44" placeholder={t("ভাউচার / মেমো / বিবরণ")} /></FilterField>
         </FilterBar>
         {list.rows.length === 0 ? <EmptyState message="এই সময়ে কোনো ডিপো খরচ নেই" /> : (
           <TableWrap>
             <table className="table" id="depot-expenses">
-              <thead><tr><th>তারিখ</th><th>ভাউচার</th><th>মেমো নং</th><th>খরচের খাত</th><th>পেমেন্ট মেথড</th><th>বিবরণ</th><th className="num">টাকা</th><th /></tr></thead>
+              <thead><tr><th>{t("তারিখ")}</th><th>{t("ভাউচার")}</th><th>{t("মেমো নং")}</th><th>{t("খরচের খাত")}</th><th>{t("পেমেন্ট মেথড")}</th><th>{t("বিবরণ")}</th><th className="num">{t("টাকা")}</th><th /></tr></thead>
               <tbody>
                 {list.rows.map((v) => (
                   <tr key={v.id}>
@@ -79,12 +81,12 @@ export default async function DepotExpensesPage({ searchParams }: { searchParams
                     <td className="text-sm text-slate-600">{v.narration ?? ""}</td>
                     <td className="num font-semibold">{formatMoney(num(v.amount), cur)}</td>
                     <td className="whitespace-nowrap text-right">
-                      <Link prefetch={false} href={`/depot/expenses/${v.id}/edit`} className="btn-secondary btn-sm">সম্পাদনা</Link>{" "}
-                      <ActionButton action={deleteDepotExpenseAction.bind(null, v.id)} label="মুছুন" confirmText={`খরচ ${v.voucherNo} মুছে ফেললে টাকা আবার ডিপো ক্যাশে ফিরে যাবে। নিশ্চিত?`} />
+                      <Link prefetch={false} href={`/depot/expenses/${v.id}/edit`} className="btn-secondary btn-sm">{t("সম্পাদনা")}</Link>{" "}
+                      <ActionButton action={deleteDepotExpenseAction.bind(null, v.id)} label="মুছুন" confirmText={t("খরচ {0} মুছে ফেললে টাকা আবার ডিপো ক্যাশে ফিরে যাবে। নিশ্চিত?", { 0: v.voucherNo })} />
                     </td>
                   </tr>
                 ))}
-                <tr className="font-bold"><td colSpan={6}>মোট</td><td className="num">{formatMoney(list.total, cur)}</td><td /></tr>
+                <tr className="font-bold"><td colSpan={6}>{t("মোট")}</td><td className="num">{formatMoney(list.total, cur)}</td><td /></tr>
               </tbody>
             </table>
           </TableWrap>
@@ -92,12 +94,12 @@ export default async function DepotExpensesPage({ searchParams }: { searchParams
       </section>
       {canFund && depotCash && (
         <section className="panel mt-4 p-5" id="depot-fund">
-          <h2 className="text-base font-semibold text-ink-900">ফান্ড স্থানান্তর — মূল ক্যাশ ⇄ {DEPOT_CASH_NAME}</h2>
-          <p className="mb-3 mt-1 text-sm text-slate-600">মূল নগদ বা ব্যাংক থেকে ডিপো ক্যাশে টাকা দিন (বা অতিরিক্ত টাকা ফেরত নিন)। এটি সাধারণ হিসাবে একটি জার্নাল — দুই নগদ হিসাবের মধ্যে স্থানান্তর, আয় বা খরচ নয়।</p>
+          <h2 className="text-base font-semibold text-ink-900">{t("ফান্ড স্থানান্তর — মূল ক্যাশ ⇄ {0}", { 0: t(DEPOT_CASH_NAME) })}</h2>
+          <p className="mb-3 mt-1 text-sm text-slate-600">{t("মূল নগদ বা ব্যাংক থেকে ডিপো ক্যাশে টাকা দিন (বা অতিরিক্ত টাকা ফেরত নিন)। এটি সাধারণ হিসাবে একটি জার্নাল — দুই নগদ হিসাবের মধ্যে স্থানান্তর, আয় বা খরচ নয়।")}</p>
           <DepotFundForm action={transferDepotFundAction} mainAccounts={mainCash.map((a) => ({ ...a, group: "" }))} today={toDateInput()} dateLocked={!canChangeEntryDate(ctx)} currency={cur} />
         </section>
       )}
-      {!showCash && depotCash && <p className="mt-3 text-sm text-slate-500">&quot;{DEPOT_CASH_NAME}&quot; হিসাবটি আপনাকে নির্ধারণ করা হয়নি — খরচ এন্ট্রিতে আপনার নির্ধারিত নগদ/ব্যাংক হিসাব ব্যবহার করুন।</p>}
+      {!showCash && depotCash && <p className="mt-3 text-sm text-slate-500">{t('"{0}" হিসাবটি আপনাকে নির্ধারণ করা হয়নি — খরচ এন্ট্রিতে আপনার নির্ধারিত নগদ/ব্যাংক হিসাব ব্যবহার করুন।', { 0: t(DEPOT_CASH_NAME) })}</p>}
     </>
   );
 }

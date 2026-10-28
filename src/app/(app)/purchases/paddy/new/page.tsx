@@ -32,6 +32,7 @@ export default async function NewPaddyPurchasePage() {
             date: toDateInput(), supplier: null, warehouseId: warehouses[0]?.id ?? null, batchNo: "",
             product: paddy ? { ...paddy, salePrice: num(paddy.salePrice), wholesalePrice: num(paddy.wholesalePrice), purchasePrice: num(paddy.purchasePrice), avgCost: num(paddy.avgCost), stock: num(paddy.stock) } : null,
             bagCount: "", grossKg: "", dhaltaKg: "", ratePerMon: "", paidAmount: "", cashAccountId: cash?.id ?? "", reference: "", notes: "",
+            variety: "", moisturePct: "", vehicleGrossKg: "", vehicleTareKg: "", labourCost: "",
           }}
         />
       </section>

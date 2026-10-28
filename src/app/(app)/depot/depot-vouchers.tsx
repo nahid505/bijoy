@@ -9,6 +9,7 @@ import { VOUCHER_TYPES } from "@/lib/accounting";
 import { DEPOT_ACCESS, isDepot } from "@/lib/depot";
 import { formatDate, formatMoney, toBnDigits } from "@/lib/format";
 import { EmptyState, FilterBar, FilterField, PageHeader, Pagination, StatCard, TableWrap } from "@/components/ui";
+import { getT } from "@/server/i18n";
 import { can, requireContext, type AppContext } from "@/server/auth";
 import { pageOf, readParams, totalPages, type SearchParams } from "@/server/params";
 import { reportPeriod } from "@/server/period";
@@ -60,13 +61,14 @@ export async function DepotVoucherListPage({ kind, searchParams }: { kind: Depot
     prisma.voucher.aggregate({ where, _sum: { amount: true } }),
   ]);
   const canNew = can(ctx, voucherAccess(cfg.type, "create", ctx.business.businessType, "DEPOT")) && kindAllowed(ctx, kind);
+  const t = await getT();
   return (
     <>
       <PageHeader
         title={cfg.title}
         description={`${cfg.description} — সাধারণ হিসাব থেকে সম্পূর্ণ আলাদা`}
         crumbs={[{ label: "ডিপো ব্যবস্থাপনা" }, { label: cfg.title }]}
-        actions={canNew ? <Link prefetch={false} href={`/depot/${kind}/new`} className="btn-primary">+ {cfg.newTitle}</Link> : undefined}
+        actions={canNew ? <Link prefetch={false} href={`/depot/${kind}/new`} className="btn-primary">+ {t(cfg.newTitle)}</Link> : undefined}
       />
       <div className="mb-4 grid gap-3 sm:grid-cols-2">
         <StatCard label="এই সময়ে ভাউচার" value={toBnDigits(total)} />
@@ -80,13 +82,13 @@ export async function DepotVoucherListPage({ kind, searchParams }: { kind: Depot
         {rows.length === 0 ? <EmptyState message="এই সময়ে কোনো এন্ট্রি নেই" /> : (
           <TableWrap>
             <table className="table" id="depot-vouchers">
-              <thead><tr><th>তারিখ</th><th>ভাউচার</th><th>ধরন</th><th>{cfg.party}</th><th>নগদ/ব্যাংক</th><th className="num">টাকা</th></tr></thead>
+              <thead><tr><th>{t("তারিখ")}</th><th>{t("ভাউচার")}</th><th>{t("ধরন")}</th><th>{t(cfg.party)}</th><th>{t("নগদ/ব্যাংক")}</th><th className="num">{t("টাকা")}</th></tr></thead>
               <tbody>
                 {rows.map((v) => (
                   <tr key={v.id}>
                     <td className="whitespace-nowrap">{formatDate(v.date)}</td>
                     <td><Link prefetch={false} href={`/vouchers/v/${v.id}`} className="font-semibold text-brand-700 hover:underline">{v.voucherNo}</Link></td>
-                    <td className="text-sm">{VOUCHER_TYPES[v.type].label}</td>
+                    <td className="text-sm">{t(VOUCHER_TYPES[v.type].label)}</td>
                     <td>{v.partyAccount?.name ?? "—"}</td>
                     <td className="text-sm">{v.cashAccount?.name ?? "—"}</td>
                     <td className="num font-semibold">{formatMoney(num(v.amount), cur)}</td>

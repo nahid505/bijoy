@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { featureForPath } from "@/lib/features";
 import { addDays, formatDate, formatMoney, formatQty, toBnDigits } from "@/lib/format";
-import { amountInBanglaWords } from "@/lib/words";
+import { AmountInWords } from "@/components/amount-words";
 import { PrintButton } from "@/components/forms";
 import { FilterField, PageHeader, PrintHeader } from "@/components/ui";
 import { requirePermission } from "@/server/auth";
@@ -177,7 +177,7 @@ export default async function DailyPurchasePage({ searchParams }: { searchParams
             <p>
               অন্যান্য ক্রয় <b className="tabular-nums">{money(d.otherNet)}</b> + ধান ক্রয় <b className="tabular-nums">{money(t.total)}</b> = <b>দিনের সর্বমোট ক্রয়: <span id="grand-total" className="tabular-nums">{money(d.grandTotal)}</span></b>
             </p>
-            <p className="mt-1"><b>কথায়:</b> {amountInBanglaWords(d.grandTotal)}</p>
+            <p className="mt-1"><b>কথায়:</b> <AmountInWords amount={d.grandTotal} /></p>
           </div>
 
           <div className="print-only pt-10">

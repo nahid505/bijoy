@@ -23,6 +23,9 @@ export const TX_OPTIONS = { timeout: 60_000, maxWait: 10_000 };
 /** Vouchers created by the payroll module (posting, salary payment, advance) are changed only there. */
 export const isPayrollVoucher = (sourceKey: string | null | undefined) => !!sourceKey?.startsWith("payroll:");
 export const PAYROLL_VOUCHER_MESSAGE = "এই ভাউচার বেতন (Payroll) মডিউল থেকে তৈরি — সেখান থেকে পরিবর্তন বা বাতিল করুন";
+/** a paddy slip's labour payment (sourceKey paddy-labour:<purchase voucher id>) — changed / deleted with the slip only */
+export const isPaddyLabourVoucher = (sourceKey: string | null | undefined) => !!sourceKey?.startsWith("paddy-labour:");
+const PADDY_LABOUR_MESSAGE = "এই ভাউচার ধান ক্রয়ের স্লিপের লেবার খরচ — স্লিপ থেকে পরিবর্তন বা মুছুন";
 
 export type TradeType = "SALES" | "PURCHASE" | "SALES_RETURN" | "PURCHASE_RETURN";
 
@@ -46,6 +49,7 @@ export async function loadEditable(tx: Tx, ctx: Ctx, id: string, type: VoucherTy
   if (!v) throw new UserError("ভাউচার পাওয়া যায়নি");
   if (v.type !== type) throw new UserError("ভাউচারের ধরন মিলছে না");
   if (isPayrollVoucher(v.sourceKey)) throw new UserError(PAYROLL_VOUCHER_MESSAGE);
+  if (isPaddyLabourVoucher(v.sourceKey)) throw new UserError(PADDY_LABOUR_MESSAGE);
   if (v.sourceKey?.startsWith(TRANSFER_SOURCE)) throw new UserError("ডিপো কমিশন স্থানান্তর সম্পাদনা করা যায় না — মুছে আবার স্থানান্তর করুন");
   return v;
 }
@@ -497,10 +501,13 @@ export async function deleteVoucher(ctx: Ctx, id: string) {
     if (!v) throw new UserError("ভাউচার পাওয়া যায়নি");
     if (v.type === "OPENING") throw new UserError("প্রারম্ভিক ব্যালেন্স সংশ্লিষ্ট হিসাব/পণ্য থেকে পরিবর্তন করুন");
     if (isPayrollVoucher(v.sourceKey)) throw new UserError(PAYROLL_VOUCHER_MESSAGE);
+    if (isPaddyLabourVoucher(v.sourceKey)) throw new UserError(PADDY_LABOUR_MESSAGE);
     await assertNotLocked(tx, ctx.businessId, v.date);
     if (v._count.returns > 0) throw new UserError("এই ইনভয়েসের বিপরীতে ফেরত ভাউচার আছে — আগে সেগুলো মুছুন");
     const products = await clearPostings(tx, v.id);
     await tx.voucher.delete({ where: { id: v.id } });
+    // a paddy slip takes its labour payment with it (its entries cascade)
+    await tx.voucher.deleteMany({ where: { businessId: ctx.businessId, sourceKey: `paddy-labour:${v.id}` } });
     // a depot commission transfer is two linked vouchers (depot + general): both go
     if (v.sourceKey?.startsWith(TRANSFER_SOURCE)) {
       const link = v.sourceKey.slice(0, v.sourceKey.lastIndexOf(":") + 1);

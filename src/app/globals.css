@@ -52,6 +52,18 @@ body {
   text-rendering: optimizeLegibility;
   font-optical-sizing: auto;
 }
+
+/* English UI: hidden until the screen translator's first pass (src/components/digit-display.tsx) — shown anyway after
+   1.5 s, so a slow or failed script never leaves a blank page */
+html[data-lang-pending] body {
+  opacity: 0;
+  animation: lang-reveal 0s linear 1.5s forwards;
+}
+@keyframes lang-reveal {
+  to {
+    opacity: 1;
+  }
+}
 @utility btn {
   @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3.5 py-2 text-sm font-medium transition
     focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1

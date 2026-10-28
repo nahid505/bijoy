@@ -18,6 +18,8 @@ import { expiryStatus } from "@/lib/expiry";
 import { ExpiryBadge } from "@/components/expiry-badge";
 import { ci, rawRows, sql } from "@/lib/dialect";
 import { commissionText, DEPOT_ACCESS, isDepot } from "@/lib/depot";
+import { digitVariants, toAsciiDigits } from "@/lib/digits";
+import { getT } from "./i18n";
 
 const MOVE_LABELS: Record<string, string> = {
   OPENING: "প্রারম্ভিক", PURCHASE: "ক্রয়", SALE: "বিক্রয়", SALES_RETURN: "বিক্রয় ফেরত", PURCHASE_RETURN: "ক্রয় ফেরত", ADJUSTMENT_IN: "সমন্বয় (আগমন)", ADJUSTMENT_OUT: "সমন্বয় (বাহির)",
@@ -26,6 +28,7 @@ const MOVE_LABELS: Record<string, string> = {
 
 export async function ProductListPage({ searchParams }: { searchParams: SearchParams }) {
   const ctx = await requirePermission("inventory:view");
+  const t = await getT();
   const p = await readParams(searchParams);
   const { page, skip, take } = pageOf(p);
   const cur = ctx.business.currencySymbol;
@@ -37,7 +40,7 @@ export async function ProductListPage({ searchParams }: { searchParams: SearchPa
   const where: Prisma.ProductWhereInput = {
     businessId,
     isDepotProduct: false, // depot (dealership) products: /depot/products
-    ...(q ? { OR: [{ name: ci(q) }, { code: ci(q) }, { barcode: { contains: q } }] } : {}),
+    ...(q ? { OR: [...digitVariants(q).map((v) => ({ name: ci(v) })), { code: ci(toAsciiDigits(q)) }, { barcode: { contains: toAsciiDigits(q) } }] } : {}),
     ...(p.category ? { categoryId: p.category } : {}),
     ...(p.brand ? { brandId: p.brand } : {}),
     ...(p.status === "inactive" ? { isActive: false } : p.status === "all" ? {} : { isActive: true }),
@@ -77,22 +80,22 @@ export async function ProductListPage({ searchParams }: { searchParams: SearchPa
       />
       <section className="panel">
         <FilterBar action="/products">
-          <FilterField label="খুঁজুন"><input name="q" defaultValue={q} placeholder="নাম, কোড, বারকোড…" className="input w-56" /></FilterField>
+          <FilterField label="খুঁজুন"><input name="q" defaultValue={q} placeholder={t("নাম, কোড, বারকোড…")} className="input w-56" /></FilterField>
           <FilterField label="ক্যাটাগরি">
-            <select name="category" defaultValue={p.category ?? ""} className="input w-40"><option value="">সব</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+            <select name="category" defaultValue={p.category ?? ""} className="input w-40"><option value="">{t("সব")}</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
           </FilterField>
           <FilterField label="ব্র্যান্ড">
-            <select name="brand" defaultValue={p.brand ?? ""} className="input w-36"><option value="">সব</option>{brands.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+            <select name="brand" defaultValue={p.brand ?? ""} className="input w-36"><option value="">{t("সব")}</option>{brands.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
           </FilterField>
           <FilterField label="অবস্থা">
-            <select name="status" defaultValue={p.status ?? "active"} className="input w-28"><option value="active">সক্রিয়</option><option value="inactive">নিষ্ক্রিয়</option><option value="all">সব</option></select>
+            <select name="status" defaultValue={p.status ?? "active"} className="input w-28"><option value="active">{t("সক্রিয়")}</option><option value="inactive">{t("নিষ্ক্রিয়")}</option><option value="all">{t("সব")}</option></select>
           </FilterField>
-          <label className="flex items-center gap-1.5 pb-2 text-sm"><input type="checkbox" name="low" value="1" defaultChecked={!!p.low} /> কম মজুদ</label>
+          <label className="flex items-center gap-1.5 pb-2 text-sm"><input type="checkbox" name="low" value="1" defaultChecked={!!p.low} /> {t("কম মজুদ")}</label>
         </FilterBar>
         {rows.length === 0 ? <EmptyState /> : (
           <TableWrap>
             <table className="table">
-              <thead><tr><SortHeader basePath="/products" params={p} field="name" label="পণ্য" /><th>ক্যাটাগরি / ব্র্যান্ড</th><th className="num">ক্রয়মূল্য (গড়)</th><SortHeader basePath="/products" params={p} field="price" label="বিক্রয়মূল্য" className="num" /><th className="num">পাইকারি</th><SortHeader basePath="/products" params={p} field="stock" label="মজুদ" className="num" /><th className="num">মজুদ মূল্য</th><th>মেয়াদ (নিকটতম ব্যাচ)</th></tr></thead>
+              <thead><tr><SortHeader basePath="/products" params={p} field="name" label="পণ্য" /><th>{t("ক্যাটাগরি / ব্র্যান্ড")}</th><th className="num">{t("ক্রয়মূল্য (গড়)")}</th><SortHeader basePath="/products" params={p} field="price" label="বিক্রয়মূল্য" className="num" /><th className="num">{t("পাইকারি")}</th><SortHeader basePath="/products" params={p} field="stock" label="মজুদ" className="num" /><th className="num">{t("মজুদ মূল্য")}</th><th>{t("মেয়াদ (নিকটতম ব্যাচ)")}</th></tr></thead>
               <tbody>
                 {rows.map((r) => {
                   const stock = num(r.stock);
@@ -134,6 +137,7 @@ export async function ProductListPage({ searchParams }: { searchParams: SearchPa
 export async function ProductDetailPage({ id, kind = "GENERAL" }: { id: string; kind?: "GENERAL" | "DEPOT" }) {
   const depot = kind === "DEPOT";
   const ctx = await requirePermission(depot ? DEPOT_ACCESS.productsView : "inventory:view");
+  const t = await getT();
   const cur = ctx.business.currencySymbol;
   const pr = await prisma.product.findFirst({ where: { id, businessId: ctx.business.id }, include: { unit: true, category: true, brand: true } });
   if (!pr) notFound();
@@ -162,14 +166,14 @@ export async function ProductDetailPage({ id, kind = "GENERAL" }: { id: string; 
     <>
       <PageHeader
         title={pr.name}
-        description={[pr.code && `কোড ${pr.code}`, pr.barcode && `বারকোড ${pr.barcode}`, pr.category?.name, pr.brand?.name].filter(Boolean).join(" · ") || "পণ্যের বিবরণ ও স্টক কার্ড"}
+        description={[pr.code && `${t("কোড")} ${pr.code}`, pr.barcode && `${t("বারকোড")} ${pr.barcode}`, pr.category?.name, pr.brand?.name].filter(Boolean).join(" · ") || t("পণ্যের বিবরণ ও স্টক কার্ড")}
         crumbs={depot ? [{ label: "ডিপো ব্যবস্থাপনা" }, { label: "ডিপো পণ্য তালিকা", href: base }, { label: pr.name }] : [{ label: "পণ্য", href: "/products" }, { label: pr.name }]}
         actions={
           manage && (
             <>
-              <Link prefetch={false} href={`${base}/${pr.id}/edit`} className="btn-secondary">সম্পাদনা</Link>
-              <ActionButton action={toggleProductAction.bind(null, pr.id, !pr.isActive)} label={pr.isActive ? "নিষ্ক্রিয়" : "সক্রিয়"} className="btn-secondary" />
-              <ActionButton action={deleteProductAction.bind(null, pr.id)} label="মুছুন" className="btn-danger" confirmText="পণ্যটি মুছে ফেলতে চান?" />
+              <Link prefetch={false} href={`${base}/${pr.id}/edit`} className="btn-secondary">{t("সম্পাদনা")}</Link>
+              <ActionButton action={toggleProductAction.bind(null, pr.id, !pr.isActive)} label={pr.isActive ? t("নিষ্ক্রিয়") : t("সক্রিয়")} className="btn-secondary" />
+              <ActionButton action={deleteProductAction.bind(null, pr.id)} label={t("মুছুন")} className="btn-danger" confirmText={t("পণ্যটি মুছে ফেলতে চান?")} />
             </>
           )
         }
@@ -178,20 +182,20 @@ export async function ProductDetailPage({ id, kind = "GENERAL" }: { id: string; 
         <div className="grid grid-cols-2 divide-x divide-y divide-rule sm:grid-cols-6 sm:divide-y-0">
           {(depot
             ? [
-                ["বর্তমান ডিপো স্টক", `${formatQty(num(pr.stock))} ${pr.unit.name}`],
-                ["কোম্পানি ক্রয় মূল্য / ডিপি", formatMoney(num(pr.purchasePrice), cur)],
-                ["ডিলার বিক্রয় রেট", formatMoney(num(pr.salePrice), cur)],
-                ["কমিশন", commissionText(prices, (n) => formatMoney(n, cur))],
-                ["মজুদ মূল্য (গড় দরে)", formatMoney(round2(num(pr.stock) * num(pr.avgCost)), cur)],
-                ["ন্যূনতম মজুদ", `${formatQty(num(pr.minStock))} ${pr.unit.name}`],
+                [t("বর্তমান ডিপো স্টক"), `${formatQty(num(pr.stock))} ${pr.unit.name}`],
+                [t("কোম্পানি ক্রয় মূল্য / ডিপি"), formatMoney(num(pr.purchasePrice), cur)],
+                [t("ডিলার বিক্রয় রেট"), formatMoney(num(pr.salePrice), cur)],
+                [t("কমিশন"), commissionText(prices, (n) => formatMoney(n, cur))],
+                [t("মজুদ মূল্য (গড় দরে)"), formatMoney(round2(num(pr.stock) * num(pr.avgCost)), cur)],
+                [t("ন্যূনতম মজুদ"), `${formatQty(num(pr.minStock))} ${pr.unit.name}`],
               ]
             : [
-                ["বর্তমান মজুদ", `${formatQty(num(pr.stock))} ${pr.unit.name}`],
-                ["গড় ক্রয়মূল্য", formatMoney(num(pr.avgCost), cur)],
-                ["মজুদ মূল্য", formatMoney(round2(num(pr.stock) * num(pr.avgCost)), cur)],
-                ["সর্বশেষ ক্রয়মূল্য", formatMoney(num(pr.purchasePrice), cur)],
-                ["বিক্রয় / পাইকারি", `${formatMoney(num(pr.salePrice), cur)} / ${formatMoney(num(pr.wholesalePrice), cur)}`],
-                ["ন্যূনতম মজুদ", `${formatQty(num(pr.minStock))} ${pr.unit.name}`],
+                [t("বর্তমান মজুদ"), `${formatQty(num(pr.stock))} ${pr.unit.name}`],
+                [t("গড় ক্রয়মূল্য"), formatMoney(num(pr.avgCost), cur)],
+                [t("মজুদ মূল্য"), formatMoney(round2(num(pr.stock) * num(pr.avgCost)), cur)],
+                [t("সর্বশেষ ক্রয়মূল্য"), formatMoney(num(pr.purchasePrice), cur)],
+                [t("বিক্রয় / পাইকারি"), `${formatMoney(num(pr.salePrice), cur)} / ${formatMoney(num(pr.wholesalePrice), cur)}`],
+                [t("ন্যূনতম মজুদ"), `${formatQty(num(pr.minStock))} ${pr.unit.name}`],
               ]
           ).map(([l, v]) => (
             <div key={l} className="px-4 py-3"><p className="text-[11px] text-slate-500">{l}</p><p className="text-sm font-bold tabular-nums text-ink-900">{v}</p></div>
@@ -200,7 +204,7 @@ export async function ProductDetailPage({ id, kind = "GENERAL" }: { id: string; 
       </section>
       <div className="grid gap-4 lg:grid-cols-4">
         <section className="panel">
-          <div className="panel-head"><h2 className="panel-title">গুদামভিত্তিক মজুদ</h2></div>
+          <div className="panel-head"><h2 className="panel-title">{t("গুদামভিত্তিক মজুদ")}</h2></div>
           <table className="table"><tbody>
             {warehouses.map((w) => {
               const s = perWarehouse.find((x) => x.warehouseId === w.id);
@@ -209,12 +213,12 @@ export async function ProductDetailPage({ id, kind = "GENERAL" }: { id: string; 
           </tbody></table>
           {pr.trackBatch && (
             <>
-              <div className="panel-head border-t border-rule"><h2 className="panel-title">ব্যাচ ও মেয়াদ</h2></div>
-              {batches.length === 0 ? <EmptyState message="কোনো ব্যাচ নেই" /> : (
+              <div className="panel-head border-t border-rule"><h2 className="panel-title">{t("ব্যাচ ও মেয়াদ")}</h2></div>
+              {batches.length === 0 ? <EmptyState message={t("কোনো ব্যাচ নেই")} /> : (
                 <table className="table"><tbody>
                   {batches.map((b) => (
                     <tr key={`${b.warehouseId}-${b.batchNo}`}>
-                      <td>{b.batchNo}<span className="block text-xs text-slate-500">{b.expiryDate ? `মেয়াদ ${formatDate(b.expiryDate)}` : "মেয়াদ নেই"}</span><ExpiryBadge status={expiryStatus(b.expiryDate, businessToday(), ctx.business.expiryWarningDays)} /></td>
+                      <td>{b.batchNo}<span className="block text-xs text-slate-500">{b.expiryDate ? `${t("মেয়াদ")} ${formatDate(b.expiryDate)}` : t("মেয়াদ নেই")}</span><ExpiryBadge status={expiryStatus(b.expiryDate, businessToday(), ctx.business.expiryWarningDays)} /></td>
                       <td className="num">{formatQty(b.quantity)} {pr.unit.name}</td>
                     </tr>
                   ))}
@@ -224,17 +228,17 @@ export async function ProductDetailPage({ id, kind = "GENERAL" }: { id: string; 
           )}
         </section>
         <section className="panel lg:col-span-3">
-          <div className="panel-head"><h2 className="panel-title">স্টক কার্ড (মজুদ খতিয়ান)</h2></div>
-          {card.length === 0 ? <EmptyState message="কোনো স্টক লেনদেন নেই" /> : (
+          <div className="panel-head"><h2 className="panel-title">{t("স্টক কার্ড (মজুদ খতিয়ান)")}</h2></div>
+          {card.length === 0 ? <EmptyState message={t("কোনো স্টক লেনদেন নেই")} /> : (
             <TableWrap>
               <table className="table">
-                <thead><tr><th>তারিখ</th><th>ভাউচার</th><th>ধরন</th><th>গুদাম / ব্যাচ</th><th className="num">আগমন</th><th className="num">নির্গমন</th><th className="num">দর</th><th className="num">ব্যালেন্স</th></tr></thead>
+                <thead><tr><th>{t("তারিখ")}</th><th>{t("ভাউচার")}</th><th>{t("ধরন")}</th><th>{t("গুদাম / ব্যাচ")}</th><th className="num">{t("আগমন")}</th><th className="num">{t("নির্গমন")}</th><th className="num">{t("দর")}</th><th className="num">{t("ব্যালেন্স")}</th></tr></thead>
                 <tbody>
                   {card.map((m) => (
                     <tr key={m.id}>
                       <td className="whitespace-nowrap">{formatDate(m.date)}</td>
                       <td>{m.voucher ? <Link prefetch={false} href={`/vouchers/v/${m.voucher.id}`} className="text-brand-700 hover:underline">{m.voucher.voucherNo}</Link> : "—"}</td>
-                      <td>{m.voucher ? VOUCHER_TYPES[m.voucher.type].label : MOVE_LABELS[m.type]}</td>
+                      <td>{m.voucher ? t(VOUCHER_TYPES[m.voucher.type].label) : t(MOVE_LABELS[m.type])}</td>
                       <td className="text-xs">{m.warehouse.name}{m.batchNo ? ` · ${m.batchNo}` : ""}</td>
                       <td className="num text-brand-700">{num(m.quantityIn) ? formatQty(num(m.quantityIn)) : ""}</td>
                       <td className="num text-credit">{num(m.quantityOut) ? formatQty(num(m.quantityOut)) : ""}</td>
@@ -256,6 +260,7 @@ export async function ProductDetailPage({ id, kind = "GENERAL" }: { id: string; 
 export async function ProductEditPage({ id, kind = "GENERAL" }: { id: string | null; kind?: "GENERAL" | "DEPOT" }) {
   const depot = kind === "DEPOT";
   const ctx = await requirePermission(depot ? DEPOT_ACCESS.products : "inventory:manage");
+  const t = await getT();
   const base = depot ? "/depot/products" : "/products";
   const businessId = ctx.business.id;
   const [pr, categories, brands, units] = await Promise.all([
@@ -270,8 +275,8 @@ export async function ProductEditPage({ id, kind = "GENERAL" }: { id: string | n
   return (
     <>
       <PageHeader
-        title={pr ? `সম্পাদনা: ${pr.name}` : depot ? "নতুন ডিপো পণ্য" : "নতুন পণ্য"}
-        description={depot ? "ডিলারি (ডিপো) পণ্য — শুধু ডিপোর স্টক ইন, ডেলিভারি চালান ও ডিপো স্টক সমন্বয়ে আসবে; সাধারণ বিক্রয় ও পসে আসবে না" : undefined}
+        title={pr ? `${t("সম্পাদনা:")} ${pr.name}` : depot ? t("নতুন ডিপো পণ্য") : t("নতুন পণ্য")}
+        description={depot ? t("ডিলারি (ডিপো) পণ্য — শুধু ডিপোর স্টক ইন, ডেলিভারি চালান ও ডিপো স্টক সমন্বয়ে আসবে; সাধারণ বিক্রয় ও পসে আসবে না") : undefined}
         crumbs={depot ? [{ label: "ডিপো ব্যবস্থাপনা" }, { label: "ডিপো পণ্য তালিকা", href: base }, { label: pr?.name ?? "নতুন" }] : [{ label: "পণ্য", href: "/products" }, { label: pr?.name ?? "নতুন" }]}
       />
       <section className="panel max-w-4xl p-5">

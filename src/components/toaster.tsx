@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { useT } from "./lang";
 
 type ToastType = "success" | "error" | "info";
 interface Toast {
@@ -48,6 +49,8 @@ export function Toaster({ children }: { children: React.ReactNode }) {
   const tone = { success: "border-brand-600 bg-white", error: "border-red-600 bg-white", info: "border-ink-600 bg-white" };
   const icon = { success: "✔", error: "✕", info: "ℹ" };
 
+  const t_ = useT();
+
   return (
     <ToastCtx.Provider value={push}>
       {children}
@@ -55,7 +58,7 @@ export function Toaster({ children }: { children: React.ReactNode }) {
         {toasts.map((t) => (
           <div key={t.id} role="status" className={`pointer-events-auto flex max-w-md items-start gap-2 rounded-md border-l-4 px-4 py-3 text-sm text-ink-900 shadow-lg ring-1 ring-black/5 ${tone[t.type]}`}>
             <span className={t.type === "error" ? "text-red-700" : t.type === "success" ? "text-brand-700" : "text-ink-600"}>{icon[t.type]}</span>
-            <span>{t.message}</span>
+            <span>{t_(t.message)}</span>
           </div>
         ))}
       </div>

@@ -6,7 +6,7 @@ import { TRADE_TYPES, VOUCHER_TYPES } from "@/lib/accounting";
 import { paymentStatus, PAYMENT_STATUS_LABELS, round2 } from "@/lib/calc";
 import { formatDate, formatDateTime, formatMoney, formatQty } from "@/lib/format";
 import { ActionButton } from "@/components/forms";
-import { PaddySlip } from "@/components/paddy-slip";
+import { PaddySlip, toPaddySlipData } from "@/components/paddy-slip";
 import { DepotChallan } from "@/components/depot-challan";
 import { Badge, DetailRow, PageHeader, TableWrap } from "@/components/ui";
 import { can, requireContext } from "@/server/auth";
@@ -17,12 +17,14 @@ import { redirect } from "next/navigation";
 import { isPayrollVoucher } from "@/server/services/voucher";
 import { DEPOT_ACCESS } from "@/lib/depot";
 import { canSeeVoucher } from "@/server/party-scope";
+import { getT } from "@/server/i18n";
 
 export const metadata: Metadata = { title: "ভাউচার" };
 
 export default async function VoucherDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const ctx = await requireContext();
+  const t = await getT();
   const v = await loadVoucher(ctx.business.id, id);
   if (!v) notFound();
   if (!can(ctx, voucherAccess(v.type, "view", ctx.business.businessType, v.book)) && !(v.type === "OPENING" && can(ctx, "accounts:view"))) redirect("/forbidden");
@@ -52,26 +54,26 @@ export default async function VoucherDetailPage({ params }: { params: Promise<{ 
   return (
     <>
       <PageHeader
-        title={`${meta.long} · ${v.voucherNo}${depotBook ? " (ডিপো হিসাব)" : ""}`}
+        title={`${t(meta.long)} · ${v.voucherNo}${depotBook ? ` (${t("ডিপো হিসাব")})` : ""}`}
         description={`${formatDate(v.date)}${v.partyAccount ? ` · ${v.partyAccount.name}` : ""}`}
         crumbs={depotBook ? [{ label: "ডিপো ব্যবস্থাপনা" }, { label: v.depotDelivery ? "ডেলিভারি চালান" : meta.label, href: depotList }, { label: v.voucherNo }] : [{ label: "লেনদেন" }, { label: meta.label, href: v.type === "PRODUCTION" ? "/production" : v.depotDelivery ? "/depot/deliveries" : editable ? `/vouchers/${meta.slug}` : undefined }, { label: v.voucherNo }]}
         actions={
           <>
             {v.depotDelivery ? (
               <>
-                <Link prefetch={false} href={`/depot/deliveries/${v.id}/print`} className="btn-primary">🖨 প্রিন্ট চালান (ডিলার কপি)</Link>
-                <Link prefetch={false} href={`/vouchers/v/${v.id}/print`} className="btn-secondary" title="কমিশন সহ — শুধু অফিসের জন্য">অফিস কপি</Link>
+                <Link prefetch={false} href={`/depot/deliveries/${v.id}/print`} className="btn-primary">{t("🖨 প্রিন্ট চালান (ডিলার কপি)")}</Link>
+                <Link prefetch={false} href={`/vouchers/v/${v.id}/print`} className="btn-secondary" title={t("কমিশন সহ — শুধু অফিসের জন্য")}>{t("অফিস কপি")}</Link>
               </>
             ) : (
-              <Link prefetch={false} href={`/vouchers/v/${v.id}/print`} className="btn-primary">{v.type === "SALES" ? "🧾 ইনভয়েস / প্রিন্ট" : "🖨 প্রিন্ট / PDF"}</Link>
+              <Link prefetch={false} href={`/vouchers/v/${v.id}/print`} className="btn-primary">{t(v.type === "SALES" ? "🧾 ইনভয়েস / প্রিন্ট" : "🖨 প্রিন্ট / PDF")}</Link>
             )}
-            {v.type === "SALES" && can(ctx, "sales:create") && <Link prefetch={false} href={`/vouchers/sales-return/new?from=${v.id}`} className="btn-secondary">↩ ফেরত নিন</Link>}
-            {v.type === "PURCHASE" && can(ctx, "purchases:create") && <Link prefetch={false} href={`/vouchers/purchase-return/new?from=${v.id}`} className="btn-secondary">↩ ফেরত দিন</Link>}
-            {v.type === "SALES" && v.partyAccountId && amount - paid > 0 && can(ctx, v.book === "DEPOT" ? DEPOT_ACCESS.collection : "vouchers:create") && <Link prefetch={false} href={v.book === "DEPOT" ? `/depot/collections/new?party=${v.partyAccountId}` : `/vouchers/receipt/new?party=${v.partyAccountId}`} className="btn-secondary">বাকি আদায়</Link>}
-            {payrollHref && can(ctx, "payroll:view") && <Link prefetch={false} href={payrollHref} className="btn-secondary">বেতন মডিউলে দেখুন</Link>}
-            {editable && can(ctx, voucherAccess(v.type, "edit", ctx.business.businessType, v.book)) && <Link prefetch={false} href={v.type === "PRODUCTION" ? `/production/${v.id}/edit` : v.paddyPurchase ? `/purchases/paddy/${v.id}/edit` : v.depotDelivery ? `/depot/deliveries/${v.id}/edit` : `/vouchers/v/${v.id}/edit`} className="btn-secondary">সম্পাদনা</Link>}
+            {v.type === "SALES" && can(ctx, "sales:create") && <Link prefetch={false} href={`/vouchers/sales-return/new?from=${v.id}`} className="btn-secondary">{t("↩ ফেরত নিন")}</Link>}
+            {v.type === "PURCHASE" && can(ctx, "purchases:create") && <Link prefetch={false} href={`/vouchers/purchase-return/new?from=${v.id}`} className="btn-secondary">{t("↩ ফেরত দিন")}</Link>}
+            {v.type === "SALES" && v.partyAccountId && amount - paid > 0 && can(ctx, v.book === "DEPOT" ? DEPOT_ACCESS.collection : "vouchers:create") && <Link prefetch={false} href={v.book === "DEPOT" ? `/depot/collections/new?party=${v.partyAccountId}` : `/vouchers/receipt/new?party=${v.partyAccountId}`} className="btn-secondary">{t("বাকি আদায়")}</Link>}
+            {payrollHref && can(ctx, "payroll:view") && <Link prefetch={false} href={payrollHref} className="btn-secondary">{t("বেতন মডিউলে দেখুন")}</Link>}
+            {editable && can(ctx, voucherAccess(v.type, "edit", ctx.business.businessType, v.book)) && <Link prefetch={false} href={v.type === "PRODUCTION" ? `/production/${v.id}/edit` : v.paddyPurchase ? `/purchases/paddy/${v.id}/edit` : v.depotDelivery ? `/depot/deliveries/${v.id}/edit` : `/vouchers/v/${v.id}/edit`} className="btn-secondary">{t("সম্পাদনা")}</Link>}
             {editable && can(ctx, voucherAccess(v.type, "delete", ctx.business.businessType, v.book)) && (
-              <ActionButton action={deleteVoucherAction.bind(null, v.id)} label="মুছুন" className="btn-danger" confirmText="ভাউচারটি মুছে ফেললে সংশ্লিষ্ট সব জার্নাল এন্ট্রি ও স্টক মুভমেন্ট বাতিল হবে। নিশ্চিত?" />
+              <ActionButton action={deleteVoucherAction.bind(null, v.id)} label={t("মুছুন")} className="btn-danger" confirmText={t("ভাউচারটি মুছে ফেললে সংশ্লিষ্ট সব জার্নাল এন্ট্রি ও স্টক মুভমেন্ট বাতিল হবে। নিশ্চিত?")} />
             )}
           </>
         }
@@ -81,12 +83,12 @@ export default async function VoucherDetailPage({ params }: { params: Promise<{ 
         {full && (
         <section className="panel lg:col-span-2">
           <div className="panel-head">
-            <h2 className="panel-title">জার্নাল এন্ট্রি</h2>
-            <Badge tone={dr === cr ? "green" : "red"}>{dr === cr ? "ডেবিট = ক্রেডিট ✔" : "অসমতা!"}</Badge>
+            <h2 className="panel-title">{t("জার্নাল এন্ট্রি")}</h2>
+            <Badge tone={dr === cr ? "green" : "red"}>{dr === cr ? t("ডেবিট = ক্রেডিট ✔") : t("অসমতা!")}</Badge>
           </div>
           <TableWrap>
             <table className="table">
-              <thead><tr><th>হিসাব (লেজার)</th><th>গ্রুপ</th><th className="num">ডেবিট</th><th className="num">ক্রেডিট</th></tr></thead>
+              <thead><tr><th>{t("হিসাব (লেজার)")}</th><th>{t("গ্রুপ")}</th><th className="num">{t("ডেবিট")}</th><th className="num">{t("ক্রেডিট")}</th></tr></thead>
               <tbody>
                 {v.entries.map((e) => (
                   <tr key={e.id}>
@@ -100,7 +102,7 @@ export default async function VoucherDetailPage({ params }: { params: Promise<{ 
                   </tr>
                 ))}
               </tbody>
-              <tfoot><tr><td colSpan={2}>মোট</td><td className="num">{formatMoney(dr, cur)}</td><td className="num">{formatMoney(cr, cur)}</td></tr></tfoot>
+              <tfoot><tr><td colSpan={2}>{t("মোট")}</td><td className="num">{formatMoney(dr, cur)}</td><td className="num">{formatMoney(cr, cur)}</td></tr></tfoot>
             </table>
           </TableWrap>
         </section>
@@ -134,23 +136,23 @@ export default async function VoucherDetailPage({ params }: { params: Promise<{ 
       </div>
 
       {v.depotDelivery && <div className="panel mt-4 px-4"><DepotChallan currency={cur} d={{ mode: v.depotDelivery.mode, doNumber: v.depotDelivery.doNumber, company: v.depotDelivery.companyAccount?.name ?? null, dealer: v.depotDelivery.dealerAccount?.name ?? null, route: v.depotDelivery.dealerAccount?.customer?.route ?? null, dealerMobile: v.depotDelivery.dealerAccount?.customer?.mobile ?? null, vehicleNo: v.depotDelivery.vehicleNo, driverName: v.depotDelivery.driverName, commission: num(v.depotDelivery.commissionTotal), notes: v.depotDelivery.notes }} /></div>}
-      {v.paddyPurchase && <div className="panel mt-4 px-4">{v.paddyPurchase && <PaddySlip currency={cur} d={{ bagCount: v.paddyPurchase.bagCount, grossKg: num(v.paddyPurchase.grossKg), dhaltaKg: num(v.paddyPurchase.dhaltaKg), netKg: num(v.paddyPurchase.netKg), mon: num(v.paddyPurchase.mon), ratePerMon: num(v.paddyPurchase.ratePerMon), totalPrice: num(v.paddyPurchase.totalPrice), notes: v.paddyPurchase.notes }} />}</div>}
+      {v.paddyPurchase && <div className="panel mt-4 px-4">{v.paddyPurchase && <PaddySlip currency={cur} d={toPaddySlipData(v.paddyPurchase)} />}</div>}
       {v.items.length > 0 && (
         <section className="panel mt-4">
-          <div className="panel-head"><h2 className="panel-title">পণ্যের বিবরণ</h2></div>
+          <div className="panel-head"><h2 className="panel-title">{t("পণ্যের বিবরণ")}</h2></div>
           <TableWrap>
             <table className="table">
               <thead>
                 <tr>
-                  <th>পণ্য</th>
-                  {v.type === "STOCK_JOURNAL" && <th>গুদাম</th>}
-                  {v.type === "STOCK_JOURNAL" && <th>দিক</th>}
-                  <th className="num">পরিমাণ</th>
-                  <th className="num">{v.type === "DEPOT_DELIVERY" ? "কমিশন হার" : "দর"}</th>
-                  {trade && <th className="num">ছাড়</th>}
-                  {hasBatches && <th>ব্যাচ / মেয়াদ</th>}
-                  <th className="num">{v.type === "DEPOT_DELIVERY" ? "কমিশন" : "টাকা"}</th>
-                  <th className="num">ক্রয়মূল্য (গড়)</th>
+                  <th>{t("পণ্য")}</th>
+                  {v.type === "STOCK_JOURNAL" && <th>{t("গুদাম")}</th>}
+                  {v.type === "STOCK_JOURNAL" && <th>{t("দিক")}</th>}
+                  <th className="num">{t("পরিমাণ")}</th>
+                  <th className="num">{t(v.type === "DEPOT_DELIVERY" ? "কমিশন হার" : "দর")}</th>
+                  {trade && <th className="num">{t("ছাড়")}</th>}
+                  {hasBatches && <th>{t("ব্যাচ / মেয়াদ")}</th>}
+                  <th className="num">{t(v.type === "DEPOT_DELIVERY" ? "কমিশন" : "টাকা")}</th>
+                  <th className="num">{t("ক্রয়মূল্য (গড়)")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -158,8 +160,8 @@ export default async function VoucherDetailPage({ params }: { params: Promise<{ 
                   <tr key={i.id}>
                     <td>{i.product.name}{i.product.code && <span className="block text-xs text-slate-400">{i.product.code}</span>}</td>
                     {v.type === "STOCK_JOURNAL" && <td>{i.warehouse?.name}</td>}
-                    {v.type === "STOCK_JOURNAL" && <td>{i.direction === 1 ? <Badge tone="green">আগমন</Badge> : <Badge tone="red">বাহির</Badge>}</td>}
-                    <td className="num">{formatQty(num(i.quantity))} {i.unit?.name}{num(i.freeQuantity) > 0 && <span className="block text-[11px] font-semibold text-amber-800">+ ফ্রি {formatQty(num(i.freeQuantity))}</span>}</td>
+                    {v.type === "STOCK_JOURNAL" && <td>{i.direction === 1 ? <Badge tone="green">{t("আগমন")}</Badge> : <Badge tone="red">{t("বাহির")}</Badge>}</td>}
+                    <td className="num">{formatQty(num(i.quantity))} {i.unit?.name}{num(i.freeQuantity) > 0 && <span className="block text-[11px] font-semibold text-amber-800">+ {t("ফ্রি")} {formatQty(num(i.freeQuantity))}</span>}</td>
                     <td className="num">{formatMoney(num(i.rate), cur)}</td>
                     {trade && <td className="num">{num(i.discount) ? formatMoney(num(i.discount), cur) : ""}</td>}
                     {hasBatches && <td className="text-xs">{batchesOfItem(i, formatDate, formatQty)}</td>}

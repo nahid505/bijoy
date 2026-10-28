@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { businessModules, type BusinessModule } from "@/lib/business-types";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui";
 import { can, requirePermission } from "@/server/auth";
@@ -8,7 +9,8 @@ import { isDepot } from "@/lib/depot";
 
 export const metadata: Metadata = { title: "রিপোর্ট" };
 
-const SECTIONS: { title: string; slugs: string[]; depotOnly?: boolean }[] = [
+const SECTIONS: { title: string; slugs: string[]; depotOnly?: boolean; module?: BusinessModule }[] = [
+  { title: "অটো রাইস মিল", slugs: ["rice-mill"], module: "RICE_MILL" },
   { title: "ডিপো ব্যবস্থাপনা", slugs: ["depot-deliveries", "depot-market-dues", "depot-commission", "depot-company-ledger", "depot-profit-loss", "depot-cash-book", "depot-free"], depotOnly: true },
   { title: "দৈনিক ও হিসাব বই", slugs: ["daily-cash", "daily-summary", "day-book", "ledger", "cash-book", "bank-book"] },
   { title: "আর্থিক বিবরণী", slugs: ["trial-balance", "profit-loss", "balance-sheet", "cash-flow", "income-expense", "expenses", "integrity"] },
@@ -22,7 +24,8 @@ export default async function ReportsIndex() {
   const ctx = await requirePermission("reports:view");
   // each report has its own permission (payroll reports need payroll:view)
   const depot = isDepot(ctx.business.businessType);
-  const sections = SECTIONS.filter((s) => !s.depotOnly || depot).map((s) => ({ ...s, slugs: s.slugs.filter((slug) => {
+  const modules = businessModules(ctx.business.businessTypes);
+  const sections = SECTIONS.filter((s) => (!s.depotOnly || depot) && (!s.module || modules.has(s.module))).map((s) => ({ ...s, slugs: s.slugs.filter((slug) => {
     const gate = featureForPath(`/reports/${slug}`);
     return can(ctx, REPORTS.find((x) => x.slug === slug)!.permission) && reportOpenFor(ctx, slug) && (!gate || ctx.features.includes(gate));
   }) })).filter((s) => s.slugs.length);

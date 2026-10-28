@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { ActionForm, Field, SubmitButton, type FormAction } from "@/components/forms";
 import { orderGroupTree } from "@/lib/account-groups";
 import { NewGroupDialog } from "./new-group-dialog";
+import { useT } from "@/components/lang";
 
 export interface GroupOption {
   id: string;
@@ -33,6 +34,7 @@ export function AccountForm({
   lockGroup?: boolean;
   cancelHref: string;
 }) {
+  const t = useT();
   const [groupList, setGroupList] = useState(groups);
   const [groupId, setGroupId] = useState(defaults?.groupId ?? "");
   const [creatingGroup, setCreatingGroup] = useState(false);
@@ -48,17 +50,17 @@ export function AccountForm({
         <Field label="গ্রুপ *" name="groupId">
           <div className="flex gap-2">
             <select ref={groupSelect} id="groupId" name="groupId" className="input min-w-0 flex-1" value={groupId} onChange={(e) => { setGroupId(e.target.value); setCreated(null); }} disabled={lockGroup}>
-              <option value="">— গ্রুপ নির্বাচন —</option>
+              <option value="">{t("— গ্রুপ নির্বাচন —")}</option>
               {groupList.map((g) => <option key={g.id} value={g.id}>{indent(g.depth)}{g.name}</option>)}
             </select>
             {!lockGroup && (
-              <button type="button" className="btn-secondary shrink-0 whitespace-nowrap" onClick={() => setCreatingGroup(true)} aria-haspopup="dialog" title="নতুন অ্যাকাউন্ট গ্রুপ তৈরি করুন">
-                + নতুন গ্রুপ
+              <button type="button" className="btn-secondary shrink-0 whitespace-nowrap" onClick={() => setCreatingGroup(true)} aria-haspopup="dialog" title={t("নতুন অ্যাকাউন্ট গ্রুপ তৈরি করুন")}>
+                {t("+ নতুন গ্রুপ")}
               </button>
             )}
           </div>
           {lockGroup && <input type="hidden" name="groupId" value={groupId} />}
-          <p aria-live="polite" className="mt-1 text-xs text-emerald-700">{created && `নতুন গ্রুপ "${created}" তৈরি হয়েছে ও নির্বাচিত`}</p>
+          <p aria-live="polite" className="mt-1 text-xs text-emerald-700">{created && t('নতুন গ্রুপ "{0}" তৈরি হয়েছে ও নির্বাচিত', { 0: created })}</p>
         </Field>
         <Field label="বিবরণ" name="description"><input id="description" name="description" defaultValue={defaults?.description ?? ""} className="input" /></Field>
         {group?.systemKey === "BANK_ACCOUNTS" && (
@@ -68,18 +70,18 @@ export function AccountForm({
           </>
         )}
         <Field label="প্রারম্ভিক ব্যালেন্স" name="openingBalance" hint="ব্যবসার হিসাব শুরুর তারিখের ব্যালেন্স">
-          <input id="openingBalance" name="openingBalance" type="number" min="0" step="0.01" defaultValue={defaults?.openingBalance ?? 0} className="input-num" />
+          <input id="openingBalance" name="openingBalance" type="text" inputMode="decimal" data-numeric min="0" step="0.01" defaultValue={defaults?.openingBalance ?? 0} className="input-num" />
         </Field>
         <Field label="ব্যালেন্সের দিক" name="openingSide">
           <select id="openingSide" name="openingSide" key={naturalSide} defaultValue={defaults?.openingSide ?? naturalSide} className="input">
-            <option value="DR">ডেবিট (সম্পদ/ব্যয়/পাওনা)</option>
-            <option value="CR">ক্রেডিট (দায়/মূলধন/আয়)</option>
+            <option value="DR">{t("ডেবিট (সম্পদ/ব্যয়/পাওনা)")}</option>
+            <option value="CR">{t("ক্রেডিট (দায়/মূলধন/আয়)")}</option>
           </select>
         </Field>
       </div>
       <div className="flex gap-2">
-        <SubmitButton>সংরক্ষণ করুন</SubmitButton>
-        <Link prefetch={false} href={cancelHref} className="btn-secondary">বাতিল</Link>
+        <SubmitButton>{t("সংরক্ষণ করুন")}</SubmitButton>
+        <Link prefetch={false} href={cancelHref} className="btn-secondary">{t("বাতিল")}</Link>
       </div>
       {creatingGroup && (
         <NewGroupDialog

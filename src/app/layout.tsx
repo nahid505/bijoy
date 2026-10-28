@@ -4,6 +4,8 @@ import "./globals.css";
 import { LangProvider } from "@/components/lang";
 import { Toaster } from "@/components/toaster";
 import { NavWatchdog } from "@/components/nav-watchdog";
+import { DigitInputs } from "@/components/digit-inputs";
+import { EnglishScreen } from "@/components/digit-display";
 import { getLang } from "@/server/i18n";
 
 // Typography: Bengali text in Noto Sans Bengali, English text and digits in Inter. Both are
@@ -21,11 +23,14 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const lang = await getLang();
   return (
-    <html lang={lang} className={`${latin.variable} ${bengali.variable}`}>
+    <html lang={lang} className={`${latin.variable} ${bengali.variable}`} data-lang-pending={lang === "en" ? "" : undefined}>
       <body className="min-h-screen font-sans">
         <LangProvider lang={lang}>
           <Toaster>{children}</Toaster>
           <NavWatchdog />
+          {/* number fields: Bangla / mixed digits → English as typed; English UI: remaining Bangla text and digits → English */}
+          <DigitInputs />
+          <EnglishScreen on={lang === "en"} />
         </LangProvider>
       </body>
     </html>

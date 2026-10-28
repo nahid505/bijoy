@@ -6,12 +6,13 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { DEPOT_PERMISSIONS, isPermission } from "@/lib/permissions";
 import { isDepot } from "@/lib/depot";
-import { businessSchema, memberSchema, newBusinessSchema, roleSchema } from "@/lib/validation";
+import { businessSchema, businessTypesSchema, memberSchema, newBusinessSchema, roleSchema } from "@/lib/validation";
 import { assertPermission, getContext, requireUser, setBusinessCookie, setSessionCookie } from "../auth";
 import { revokeAllSessions } from "../services/sessions";
 import { audit } from "../audit";
 import { formToObject, guard, parseForm, toResult, UserError, type ActionState } from "../action-utils";
-import { createBusiness, ensureDepotCash, ensureDepotRole } from "../services/bootstrap";
+import { createBusiness, setBusinessTypes } from "../services/bootstrap";
+import { assertOwner } from "../business-owner";
 import { isRestricted, saveAssignments } from "../party-scope";
 import { assertUserSlot } from "../services/subscriptions";
 import { notifyBusiness } from "../services/billing-notify";
@@ -67,15 +68,25 @@ export async function saveBusinessAction(_prev: ActionState, fd: FormData): Prom
     }
     if (fd.get("removeLogo") === "on") logo = null;
     await prisma.business.update({ where: { id: ctx.business.id }, data: { ...input, ...(logo !== undefined ? { logo } : {}) } });
-    if (isDepot(input.businessType)) {
-      // switched to a depot business: offer the depot-only role and the depot cash box
-      await ensureDepotRole(prisma, ctx.business.id);
-      await ensureDepotCash(prisma, ctx.business.id);
-    }
     await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: "UPDATE", entity: "Business", entityId: ctx.business.id, details: { ...input, booksStartDate: input.booksStartDate.toISOString(), lockDate: input.lockDate?.toISOString() ?? null } });
   });
   revalidatePath("/", "layout");
   return result.ok ? { ok: true, message: "ব্যবসার তথ্য সংরক্ষণ হয়েছে" } : toResult(result);
+}
+
+// ───────────────────────── business types & modules ─────────────────────────
+
+/** Saves the business types and modules ("ব্যবসার ধরন ও মডিউল ব্যবস্থাপনা"); also PUT /api/settings/company/business-types. */
+export async function saveBusinessTypesAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const result = await guard(async () => {
+    const ctx = await assertOwner(await assertPermission("business:manage"));
+    const input = businessTypesSchema.parse({ businessTypes: fd.getAll("businessTypes").map(String) });
+    const before = ctx.business.businessTypes;
+    const saved = await prisma.$transaction((tx) => setBusinessTypes(tx, ctx.business.id, input.businessTypes));
+    await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: "UPDATE", entity: "Business", entityId: ctx.business.id, details: { businessTypes: { before, after: saved.businessTypes } } });
+  });
+  revalidatePath("/", "layout");
+  return result.ok ? { ok: true, message: "ব্যবসার ধরন ও মডিউল সংরক্ষণ হয়েছে" } : toResult(result);
 }
 
 // ───────────────────────── members (users of this business) ─────────────────────────

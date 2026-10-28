@@ -24,6 +24,10 @@ export default async function EditPaddyPurchasePage({ params }: { params: Promis
   const item = v.items[0];
   const pay = v.payments[0];
   const product = item?.product;
+  // the slip's labour payment (paid from the same cash / bank as the purchase)
+  const labour = await prisma.voucher.findFirst({ where: { businessId: ctx.business.id, sourceKey: `paddy-labour:${v.id}` }, select: { cashAccount: { select: { id: true, name: true } } } });
+  const cashAccount = pay?.account ?? labour?.cashAccount ?? null;
+  const dec = (d: unknown) => (d === null || d === undefined ? "" : String(num(d as never)));
   return (
     <>
       <PageHeader title={`সম্পাদনা: ধান ক্রয় ${v.voucherNo}`} description="সংরক্ষণ করলে আগের স্টক ও হিসাব বাতিল হয়ে নতুনভাবে পোস্ট হবে (একই নম্বর থাকবে)" crumbs={[{ label: "ধান ক্রয়", href: "/purchases/paddy" }, { label: v.voucherNo, href: `/vouchers/v/${v.id}` }, { label: "সম্পাদনা" }]} />
@@ -31,7 +35,7 @@ export default async function EditPaddyPurchasePage({ params }: { params: Promis
         <PaddyPurchaseForm
           action={savePaddyPurchaseAction.bind(null, v.id)}
           warehouses={warehouses}
-          cashAccounts={pay ? [{ id: pay.account.id, name: pay.account.name, group: "" }] : []}
+          cashAccounts={cashAccount ? [{ id: cashAccount.id, name: cashAccount.name, group: "" }] : []}
           multiWarehouse={ctx.features.includes("MULTI_WAREHOUSE")}
           currency={ctx.business.currencySymbol}
           dateLocked={!canChangeEntryDate(ctx)}
@@ -40,7 +44,8 @@ export default async function EditPaddyPurchasePage({ params }: { params: Promis
             supplier: v.partyAccount ? { id: v.partyAccount.id, name: v.partyAccount.name, group: "" } : null,
             product: product ? { ...product, salePrice: num(product.salePrice), wholesalePrice: num(product.wholesalePrice), purchasePrice: num(product.purchasePrice), avgCost: num(product.avgCost), stock: num(product.stock) } : null,
             bagCount: String(pp.bagCount), grossKg: String(num(pp.grossKg)), dhaltaKg: String(num(pp.dhaltaKg)), ratePerMon: String(num(pp.ratePerMon)),
-            paidAmount: String(num(v.paidAmount)), cashAccountId: pay?.account.id ?? "", reference: v.reference ?? "", notes: pp.notes ?? "",
+            paidAmount: String(num(v.paidAmount)), cashAccountId: cashAccount?.id ?? "", reference: v.reference ?? "", notes: pp.notes ?? "",
+            variety: pp.variety ?? "", moisturePct: dec(pp.moisturePct), vehicleGrossKg: dec(pp.vehicleGrossKg), vehicleTareKg: dec(pp.vehicleTareKg), labourCost: num(pp.labourCost) ? String(num(pp.labourCost)) : "",
           }}
         />
       </section>

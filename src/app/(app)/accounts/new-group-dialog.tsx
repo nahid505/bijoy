@@ -6,12 +6,14 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { NATURE_LABELS } from "@/lib/accounting";
 import { createAccountGroupAction } from "@/server/actions/masters";
+import { useT } from "@/components/lang";
 import type { GroupOption } from "./account-form";
 
 const NATURES = ["ASSET", "LIABILITY", "INCOME", "EXPENSE", "EQUITY"] as const;
 const indent = (depth: number) => (depth > 0 ? `${"   ".repeat(depth)}└ ` : "");
 
 export function NewGroupDialog({ groups, onCancel, onCreated }: { groups: GroupOption[]; onCancel: () => void; onCreated: (g: GroupOption) => void }) {
+  const t = useT();
   const ref = useRef<HTMLDialogElement>(null);
   const [parentId, setParentId] = useState("");
   const [nature, setNature] = useState<string>("EXPENSE");
@@ -45,7 +47,7 @@ export function NewGroupDialog({ groups, onCancel, onCreated }: { groups: GroupO
         setErrors(r.errors ?? {});
       }
     } catch {
-      setMessage("সার্ভারে পৌঁছানো যায়নি — আবার চেষ্টা করুন");
+      setMessage(t("সার্ভারে পৌঁছানো যায়নি — আবার চেষ্টা করুন"));
     } finally {
       setBusy(false);
     }
@@ -63,38 +65,38 @@ export function NewGroupDialog({ groups, onCancel, onCreated }: { groups: GroupO
       className="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-lg border border-rule p-0 shadow-2xl backdrop:bg-ink-950/50"
     >
       <form onSubmit={submit} className="space-y-4 p-5" noValidate>
-        <h2 id="ngTitle" className="text-base font-bold text-ink-900">নতুন অ্যাকাউন্ট গ্রুপ</h2>
+        <h2 id="ngTitle" className="text-base font-bold text-ink-900">{t("নতুন অ্যাকাউন্ট গ্রুপ")}</h2>
         {message && <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{message}</p>}
         <div>
-          <label className="label" htmlFor="ngName">গ্রুপের নাম *</label>
-          <input id="ngName" name="ngName" required maxLength={100} autoFocus className="input" placeholder="যেমন: অফিস খরচ, পরিবহন খরচ" aria-invalid={!!err("name")} />
+          <label className="label" htmlFor="ngName">{t("গ্রুপের নাম *")}</label>
+          <input id="ngName" name="ngName" required maxLength={100} autoFocus className="input" placeholder={t("যেমন: অফিস খরচ, পরিবহন খরচ")} aria-invalid={!!err("name")} />
           {err("name") && <p className="mt-1 text-xs text-red-600">{err("name")}</p>}
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <label className="label" htmlFor="ngParent">প্যারেন্ট গ্রুপ</label>
+            <label className="label" htmlFor="ngParent">{t("প্যারেন্ট গ্রুপ")}</label>
             <select id="ngParent" className="input" value={parentId} onChange={(e) => setParentId(e.target.value)} aria-invalid={!!err("parentId")}>
-              <option value="">— নেই (মূল গ্রুপ) —</option>
+              <option value="">{t("— নেই (মূল গ্রুপ) —")}</option>
               {parents.map((g) => <option key={g.id} value={g.id}>{indent(g.depth)}{g.name}</option>)}
             </select>
-            <p className={`mt-1 text-xs ${err("parentId") ? "text-red-600" : "text-slate-500"}`}>{err("parentId") ?? "ঐচ্ছিক — সাব-গ্রুপ তৈরির জন্য"}</p>
+            <p className={`mt-1 text-xs ${err("parentId") ? "text-red-600" : "text-slate-500"}`}>{err("parentId") ?? t("ঐচ্ছিক — সাব-গ্রুপ তৈরির জন্য")}</p>
           </div>
           <div>
-            <label className="label" htmlFor="ngNature">মূল ধরন *</label>
+            <label className="label" htmlFor="ngNature">{t("মূল ধরন *")}</label>
             <select id="ngNature" className="input" value={parent ? parent.nature : nature} onChange={(e) => setNature(e.target.value)} disabled={!!parent} aria-invalid={!!err("nature")}>
-              {NATURES.map((n) => <option key={n} value={n}>{NATURE_LABELS[n]}</option>)}
+              {NATURES.map((n) => <option key={n} value={n}>{t(NATURE_LABELS[n])}</option>)}
             </select>
-            <p className={`mt-1 text-xs ${err("nature") ? "text-red-600" : "text-slate-500"}`}>{err("nature") ?? (parent ? "প্যারেন্ট গ্রুপের ধরনই প্রযোজ্য" : "সম্পদ / দায় / আয় / ব্যয় / মূলধন")}</p>
+            <p className={`mt-1 text-xs ${err("nature") ? "text-red-600" : "text-slate-500"}`}>{err("nature") ?? (parent ? t("প্যারেন্ট গ্রুপের ধরনই প্রযোজ্য") : t("সম্পদ / দায় / আয় / ব্যয় / মূলধন"))}</p>
           </div>
         </div>
         <div>
-          <label className="label" htmlFor="ngDescription">বিবরণ</label>
+          <label className="label" htmlFor="ngDescription">{t("বিবরণ")}</label>
           <textarea id="ngDescription" name="ngDescription" rows={2} maxLength={500} className="input" />
           {err("description") && <p className="mt-1 text-xs text-red-600">{err("description")}</p>}
         </div>
         <div className="flex justify-end gap-2 border-t border-rule pt-3">
-          <button type="button" className="btn-secondary" onClick={onCancel}>বাতিল</button>
-          <button type="submit" className="btn-primary" disabled={busy}>{busy ? "সংরক্ষণ হচ্ছে…" : "সংরক্ষণ করুন"}</button>
+          <button type="button" className="btn-secondary" onClick={onCancel}>{t("বাতিল")}</button>
+          <button type="submit" className="btn-primary" disabled={busy}>{busy ? t("সংরক্ষণ হচ্ছে…") : t("সংরক্ষণ করুন")}</button>
         </div>
       </form>
     </dialog>,

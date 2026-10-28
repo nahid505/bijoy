@@ -17,12 +17,12 @@ export default async function PlatformSettingsPage() {
       <section className="panel mb-4 p-5">
         <ActionForm action={adminSaveSettingsAction} className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Field label="ফ্রি ট্রায়াল (দিন)" name="trialDays"><input id="trialDays" name="trialDays" type="number" min="0" max="365" defaultValue={s.trialDays} className="input-num" /></Field>
+            <Field label="ফ্রি ট্রায়াল (দিন)" name="trialDays"><input id="trialDays" name="trialDays" type="text" inputMode="decimal" data-numeric min="0" max="365" defaultValue={s.trialDays} className="input-num" /></Field>
             <Field label="ট্রায়ালের প্ল্যান" name="trialPlanCode"><select id="trialPlanCode" name="trialPlanCode" defaultValue={s.trialPlanCode} className="input">{plans.map((p) => <option key={p.code} value={p.code}>{p.nameBn}</option>)}</select></Field>
             <Field label="মেয়াদ শেষে প্ল্যান (ফলব্যাক)" name="fallbackPlanCode"><select id="fallbackPlanCode" name="fallbackPlanCode" defaultValue={s.fallbackPlanCode} className="input">{plans.map((p) => <option key={p.code} value={p.code}>{p.nameBn}</option>)}</select></Field>
-            <Field label="গ্রেস পিরিয়ড (দিন)" name="graceDays"><input id="graceDays" name="graceDays" type="number" min="0" max="90" defaultValue={s.graceDays} className="input-num" /></Field>
+            <Field label="গ্রেস পিরিয়ড (দিন)" name="graceDays"><input id="graceDays" name="graceDays" type="text" inputMode="decimal" data-numeric min="0" max="90" defaultValue={s.graceDays} className="input-num" /></Field>
             <Field label="রিমাইন্ডার (দিন আগে)" name="reminderDays" hint="কমা দিয়ে, যেমন 7, 3, 1"><input id="reminderDays" name="reminderDays" defaultValue={s.reminderDays.join(", ")} className="input" /></Field>
-            <Field label="ভ্যাট (%)" name="vatPercent"><input id="vatPercent" name="vatPercent" type="number" min="0" max="50" step="0.01" defaultValue={s.vatPercent} className="input-num" /></Field>
+            <Field label="ভ্যাট (%)" name="vatPercent"><input id="vatPercent" name="vatPercent" type="text" inputMode="decimal" data-numeric min="0" max="50" step="0.01" defaultValue={s.vatPercent} className="input-num" /></Field>
             <Field label="মুদ্রা" name="currency"><input id="currency" name="currency" defaultValue={s.currency} className="input uppercase" /></Field>
             <Field label="ইনভয়েস প্রিফিক্স" name="invoicePrefix"><input id="invoicePrefix" name="invoicePrefix" defaultValue={s.invoicePrefix} className="input" /></Field>
           </div>

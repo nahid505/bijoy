@@ -13,6 +13,7 @@ import { trialBalance } from "./report";
 import { isMySql, rawExec, sql } from "@/lib/dialect";
 import { assertVouchersBalanced } from "./accounting";
 import { RANDOM_SOURCE_PREFIXES } from "@/lib/depot";
+import { normalizeBusinessTypes, primaryBusinessType } from "@/lib/business-types";
 
 export const BACKUP_FORMAT = "bijoy-lenden-backup";
 export const BACKUP_VERSION = 5;
@@ -280,7 +281,11 @@ export async function restoreBackup(raw: unknown, userId: string): Promise<{ bus
           invoiceFooter: (b.invoiceFooter as string) ?? null, invoiceTerms: (b.invoiceTerms as string) ?? null, lockDate: date(b.lockDate),
           ...(Array.isArray(b.expiryWarningDays) ? { expiryWarningDays: (b.expiryWarningDays as unknown[]).map(Number) } : {}),
           allowExpiredSale: Boolean(b.allowExpiredSale),
-          businessType: (b.businessType as string) ?? null,
+          // business types (an older backup has only the single type: it becomes the list)
+          ...((): { businessTypes: string[]; businessType: string | null } => {
+            const types = normalizeBusinessTypes(Array.isArray(b.businessTypes) ? b.businessTypes : b.businessType ? [b.businessType] : []);
+            return { businessTypes: types, businessType: primaryBusinessType(types) };
+          })(),
         },
       });
       const businessId = business.id;
@@ -377,6 +382,10 @@ export async function restoreBackup(raw: unknown, userId: string): Promise<{ bus
           data: data.paddyPurchases.map((x) => ({
             id: must(x.id), businessId, voucherId: must(x.voucherId), bagCount: Number(x.bagCount ?? 0), grossKg: Number(x.grossKg), dhaltaKg: Number(x.dhaltaKg ?? 0), netKg: Number(x.netKg),
             mon: Number(x.mon), ratePerMon: Number(x.ratePerMon), totalPrice: Number(x.totalPrice), notes: (x.notes as string) ?? null, createdAt: date(x.createdAt) ?? undefined,
+            variety: (x.variety as string) ?? null, labourCost: Number(x.labourCost ?? 0),
+            moisturePct: x.moisturePct === null || x.moisturePct === undefined ? null : Number(x.moisturePct),
+            vehicleGrossKg: x.vehicleGrossKg === null || x.vehicleGrossKg === undefined ? null : Number(x.vehicleGrossKg),
+            vehicleTareKg: x.vehicleTareKg === null || x.vehicleTareKg === undefined ? null : Number(x.vehicleTareKg),
           })),
         });
       }

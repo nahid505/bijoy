@@ -9,6 +9,7 @@ import { createPortal } from "react-dom";
 import { formatDrCr, formatMoney, formatQty } from "@/lib/format";
 import { quickCreatePartyAction, quickCreateProductAction } from "@/server/actions/lookup";
 import { anchoredStyle, useAnchoredPosition, useDebounced } from "./popover-utils";
+import { useT } from "./lang";
 import type { PartyOption, ProductOption, UnitOption } from "./trade-parts";
 
 export type LookupKind = "customers" | "suppliers" | "products" | "employees";
@@ -28,30 +29,31 @@ const DEBOUNCE_MS = 250;
 const NOUN: Record<LookupKind, string> = { customers: "কাস্টমার", suppliers: "সরবরাহকারী", products: "পণ্য", employees: "কর্মচারী" };
 
 /** Secondary line and right-hand figure for an option. */
-function describe(kind: LookupKind, item: Item, ctx: { currency: string; unitName?: (id: string) => string; priceOf?: (p: ProductOption) => number }) {
+function describe(kind: LookupKind, item: Item, ctx: { currency: string; unitName?: (id: string) => string; priceOf?: (p: ProductOption) => number; t: (s: string) => string }) {
+  const { t } = ctx;
   if (kind === "employees") {
     const e = item as EmployeeOption;
     return {
       sub: [e.code, e.designation, e.department].filter(Boolean).join(" · "),
       right: e.mobile ?? "",
-      right2: ["RESIGNED", "TERMINATED"].includes(e.status) ? "অব্যাহতিপ্রাপ্ত" : "",
+      right2: ["RESIGNED", "TERMINATED"].includes(e.status) ? t("অব্যাহতিপ্রাপ্ত") : "",
       warn: ["RESIGNED", "TERMINATED"].includes(e.status),
     };
   }
   if (kind === "products") {
     const p = item as ProductOption;
     return {
-      sub: [p.code && `কোড ${p.code}`, p.barcode && `বারকোড ${p.barcode}`].filter(Boolean).join(" · "),
-      right: `মজুদ ${formatQty(p.stock)} ${ctx.unitName?.(p.unitId) ?? ""}`,
+      sub: [p.code && `${t("কোড")} ${p.code}`, p.barcode && `${t("বারকোড")} ${p.barcode}`].filter(Boolean).join(" · "),
+      right: `${t("মজুদ")} ${formatQty(p.stock)} ${ctx.unitName?.(p.unitId) ?? ""}`,
       right2: formatMoney(ctx.priceOf ? ctx.priceOf(p) : p.salePrice, ctx.currency),
       warn: p.stock <= 0,
     };
   }
   const a = item as PartyOption & { code?: string | null };
   return {
-    sub: [a.mobile && `📞 ${a.mobile}`, a.code && `কোড ${a.code}`].filter(Boolean).join(" · "),
+    sub: [a.mobile && `📞 ${a.mobile}`, a.code && `${t("কোড")} ${a.code}`].filter(Boolean).join(" · "),
     right: a.balance !== undefined ? formatDrCr(a.balance, ctx.currency) : "",
-    right2: a.overdue ? `মেয়াদোত্তীর্ণ ${formatMoney(a.overdue, ctx.currency)}` : "",
+    right2: a.overdue ? `${t("মেয়াদোত্তীর্ণ")} ${formatMoney(a.overdue, ctx.currency)}` : "",
     warn: !!a.overdue,
   };
 }
@@ -83,6 +85,7 @@ export function SearchSelect<T extends Item>({
   kind, value, onChange, id, name, placeholder, noneLabel, disabled = false, create = false, batchOnly = false,
   currency = "৳", unitName, priceOf, ariaLabel, className = "", book,
 }: SearchSelectProps<T>) {
+  const t = useT();
   const uid = useId();
   const inputId = id ?? `ss-${uid}`;
   const listId = `${inputId}-list`;
@@ -214,7 +217,7 @@ export function SearchSelect<T extends Item>({
         spellCheck={false}
         disabled={disabled}
         className={`input pr-7 ${disabled ? "bg-slate-100" : ""}`}
-        placeholder={value ? value.name : placeholder ?? noneLabel ?? `${noun} খুঁজুন — নাম, ${kind === "employees" ? "আইডি" : "কোড"}, মোবাইল${kind === "products" ? ", বারকোড" : ""}`}
+        placeholder={value ? value.name : t(placeholder ?? noneLabel ?? `${noun} খুঁজুন — নাম, ${kind === "employees" ? "আইডি" : "কোড"}, মোবাইল${kind === "products" ? ", বারকোড" : ""}`)}
         value={shown}
         onFocus={(e) => {
           e.currentTarget.select();
@@ -242,27 +245,27 @@ export function SearchSelect<T extends Item>({
         >
           {loading && (
             <li className="flex items-center gap-2 px-3 py-2 text-xs text-slate-500" aria-live="polite">
-              <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-brand-600 border-t-transparent" /> খোঁজা হচ্ছে…
+              <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-brand-600 border-t-transparent" /> {t("খোঁজা হচ্ছে…")}
             </li>
           )}
-          {!loading && error && <li className="px-3 py-2 text-xs text-red-700" role="alert">{error}</li>}
+          {!loading && error && <li className="px-3 py-2 text-xs text-red-700" role="alert">{t(error)}</li>}
           {!loading && !error && items.length === 0 && (
-            <li className="px-3 py-2 text-xs text-slate-500">কিছু পাওয়া যায়নি{typed ? ` “${query}”` : ""} — নাম, কোড, মোবাইল{kind === "products" ? " বা বারকোড" : ""} দিয়ে খুঁজুন</li>
+            <li className="px-3 py-2 text-xs text-slate-500">{t("কিছু পাওয়া যায়নি")}{typed ? ` “${query}”` : ""}</li>
           )}
           {entries.map((e, i) => {
             const isActive = i === active;
             const base = `cursor-pointer px-3 py-1.5 ${isActive ? "bg-brand-50" : "hover:bg-ink-50"}`;
             if (e.type === "none") {
-              return <li key="none" id={`${listId}-${i}`} role="option" aria-selected={!value} className={`${base} text-slate-600`} onMouseEnter={() => setActive(i)} onClick={() => choose(i)}>{noneLabel}</li>;
+              return <li key="none" id={`${listId}-${i}`} role="option" aria-selected={!value} className={`${base} text-slate-600`} onMouseEnter={() => setActive(i)} onClick={() => choose(i)}>{noneLabel ? t(noneLabel) : ""}</li>;
             }
             if (e.type === "create") {
               return (
                 <li key="create" id={`${listId}-${i}`} role="option" aria-selected={false} className={`${base} border-t border-rule font-semibold text-brand-700`} onMouseEnter={() => setActive(i)} onClick={() => choose(i)}>
-                  + নতুন {noun} তৈরি করুন{typed && query.trim() ? `: “${query.trim()}”` : ""}
+                  + {t("নতুন {noun} তৈরি করুন", { noun: t(noun) })}{typed && query.trim() ? `: “${query.trim()}”` : ""}
                 </li>
               );
             }
-            const d = describe(kind, e.item, { currency, unitName, priceOf });
+            const d = describe(kind, e.item, { currency, unitName, priceOf, t });
             return (
               <li key={e.item.id} id={`${listId}-${i}`} role="option" aria-selected={value?.id === e.item.id} className={`${base} flex items-start justify-between gap-3`} onMouseEnter={() => setActive(i)} onClick={() => choose(i)}>
                 <span className="min-w-0">
@@ -304,6 +307,7 @@ export function SearchSelect<T extends Item>({
 }
 
 function QuickCreateDialog({ kind, dealer = false, depot = false, initialName, units, onCancel, onCreated }: { kind: LookupKind; dealer?: boolean; depot?: boolean; initialName: string; units: UnitOption[]; onCancel: () => void; onCreated: (item: Item) => void }) {
+  const t = useT();
   const ref = useRef<HTMLDialogElement>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -344,41 +348,41 @@ function QuickCreateDialog({ kind, dealer = false, depot = false, initialName, u
       className="m-auto w-[min(28rem,calc(100vw-2rem))] rounded-lg border border-rule p-0 shadow-2xl backdrop:bg-ink-950/50"
     >
       <form onSubmit={submit} className="space-y-3 p-5" noValidate>
-        <h2 className="text-base font-bold text-ink-900">নতুন {dealer ? "ডিলার" : NOUN[kind]} তৈরি করুন</h2>
+        <h2 className="text-base font-bold text-ink-900">{t("নতুন {noun} তৈরি করুন", { noun: t(dealer ? "ডিলার" : NOUN[kind]) })}</h2>
         {message && <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{message}</p>}
         <div>
-          <label className="label" htmlFor="qcName">নাম *</label>
+          <label className="label" htmlFor="qcName">{t("নাম *")}</label>
           <input id="qcName" name="qcName" defaultValue={initialName} required autoFocus className="input" />
           {err("name") && <p className="mt-1 text-xs text-red-600">{err("name")}</p>}
         </div>
         {kind !== "products" ? (
           <div>
-            <label className="label" htmlFor="qcMobile">মোবাইল</label>
+            <label className="label" htmlFor="qcMobile">{t("মোবাইল")}</label>
             <input id="qcMobile" name="qcMobile" type="tel" className="input" placeholder="01XXXXXXXXX" />
             {err("mobile") && <p className="mt-1 text-xs text-red-600">{err("mobile")}</p>}
           </div>
         ) : (
           <>
             <div className="grid grid-cols-2 gap-3">
-              <div><label className="label" htmlFor="qcCode">কোড / SKU</label><input id="qcCode" name="qcCode" className="input" /></div>
-              <div><label className="label" htmlFor="qcBarcode">বারকোড</label><input id="qcBarcode" name="qcBarcode" className="input" /></div>
+              <div><label className="label" htmlFor="qcCode">{t("কোড / SKU")}</label><input id="qcCode" name="qcCode" className="input" /></div>
+              <div><label className="label" htmlFor="qcBarcode">{t("বারকোড")}</label><input id="qcBarcode" name="qcBarcode" className="input" /></div>
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="label" htmlFor="qcUnit">ইউনিট *</label>
+                <label className="label" htmlFor="qcUnit">{t("ইউনিট *")}</label>
                 <select id="qcUnit" name="qcUnit" className="input" defaultValue={base[0]?.id}>
                   {base.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </select>
               </div>
-              <div><label className="label" htmlFor="qcPurchase">ক্রয়মূল্য</label><input id="qcPurchase" name="qcPurchase" type="number" min="0" step="0.01" className="input-num" /></div>
-              <div><label className="label" htmlFor="qcSale">বিক্রয়মূল্য</label><input id="qcSale" name="qcSale" type="number" min="0" step="0.01" className="input-num" /></div>
+              <div><label className="label" htmlFor="qcPurchase">{t("ক্রয়মূল্য")}</label><input id="qcPurchase" name="qcPurchase" type="text" inputMode="decimal" data-numeric min="0" step="0.01" className="input-num" /></div>
+              <div><label className="label" htmlFor="qcSale">{t("বিক্রয়মূল্য")}</label><input id="qcSale" name="qcSale" type="text" inputMode="decimal" data-numeric min="0" step="0.01" className="input-num" /></div>
             </div>
             {(err("code") || err("barcode") || err("unitId")) && <p className="text-xs text-red-600">{err("code") ?? err("barcode") ?? err("unitId")}</p>}
           </>
         )}
         <div className="flex justify-end gap-2 border-t border-rule pt-3">
-          <button type="button" className="btn-secondary" onClick={onCancel}>বাতিল</button>
-          <button type="submit" className="btn-primary" disabled={busy}>{busy ? "তৈরি হচ্ছে…" : "তৈরি করে বেছে নিন"}</button>
+          <button type="button" className="btn-secondary" onClick={onCancel}>{t("বাতিল")}</button>
+          <button type="submit" className="btn-primary" disabled={busy}>{busy ? t("তৈরি হচ্ছে…") : t("তৈরি করে বেছে নিন")}</button>
         </div>
       </form>
     </dialog>

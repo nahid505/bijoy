@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEPOT_PERMISSIONS, hasPermission, isPermission, PERMISSION_GROUPS } from "@/lib/permissions";
 import { DEPOT_ACCESS, DEPOT_PERMISSION_UPGRADE, DEPOT_ROLE } from "@/lib/depot";
 import { NAV } from "@/lib/nav";
+import { businessModules } from "@/lib/business-types";
 import { depotVoucherPermissions, voucherAccess } from "@/server/voucher-permissions";
 
 const depotOnly = [...DEPOT_ROLE.permissions];
@@ -12,9 +13,10 @@ const ALL15 = [
 // what the app layout does for the sidebar
 const sidebar = (granted: string[], businessType: string) =>
   NAV.flatMap((e) => {
-    if (e.businessTypes && !e.businessTypes.includes(businessType)) return [];
+    const modules = businessModules([businessType]);
+    if (e.module && !modules.has(e.module)) return [];
     if (e.children) {
-      const c = e.children.filter((x) => hasPermission(granted, x.permission));
+      const c = e.children.filter((x) => (!x.module || modules.has(x.module)) && !(x.hiddenWithModule && modules.has(x.hiddenWithModule)) && hasPermission(granted, x.permission));
       return c.length ? [{ key: e.key, children: c.map((x) => x.href) }] : [];
     }
     return !e.permission || hasPermission(granted, e.permission) ? [{ key: e.key, children: [] as string[] }] : [];

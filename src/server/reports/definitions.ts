@@ -12,6 +12,7 @@ import type { AppContext } from "../auth";
 import { ci } from "@/lib/dialect";
 import type { BookFilter, BookKey } from "@/lib/book";
 import { allowedAccounts, canOpenLedger, partyListWhere, voucherScopeWhere } from "../party-scope";
+import { digitVariants, toAsciiDigits } from "@/lib/digits";
 
 const typeLabel = (t: VoucherType) => VOUCHER_TYPES[t as VoucherTypeKey].label;
 const periodText = (from: string, to: string) => `${formatDate(from)} — ${formatDate(to)}`;
@@ -120,7 +121,7 @@ async function partyReport(ctx: AppContext, p: ReportParams, kind: "CUSTOMER" | 
   const { from, to, range } = reportPeriod(p, ctx.business.fiscalYearStartMonth);
   const cur = ctx.business.currencySymbol;
   const q = p.q?.trim();
-  const where = { businessId: ctx.business.id, ...partyListWhere(ctx, kind), ...(kind === "CUSTOMER" ? { isDepotDealer: false } : {}), ...(q ? { OR: [{ name: ci(q) }, { mobile: { contains: q } }] } : {}) };
+  const where = { businessId: ctx.business.id, ...partyListWhere(ctx, kind), ...(kind === "CUSTOMER" ? { isDepotDealer: false } : {}), ...(q ? { OR: [...digitVariants(q).map((v) => ({ name: ci(v) })), { mobile: { contains: toAsciiDigits(q) } }] } : {}) };
   const parties =
     kind === "CUSTOMER"
       ? await prisma.customer.findMany({ where, orderBy: { name: "asc" }, select: { id: true, name: true, mobile: true, accountId: true } })
@@ -401,7 +402,7 @@ export const REPORTS: ReportDef[] = [
       const q = p.q?.trim();
       const warehouseId = p.warehouseId || undefined;
       const products = await prisma.product.findMany({
-        where: { businessId: ctx.business.id, isDepotProduct: false, ...(q ? { OR: [{ name: ci(q) }, { code: ci(q) }, { barcode: { contains: q } }] } : {}) }, // depot products: /depot/products
+        where: { businessId: ctx.business.id, isDepotProduct: false, ...(q ? { OR: [...digitVariants(q).map((v) => ({ name: ci(v) })), { code: ci(toAsciiDigits(q)) }, { barcode: { contains: toAsciiDigits(q) } }] } : {}) }, // depot products: /depot/products
         orderBy: { name: "asc" },
         include: { unit: { select: { name: true } } },
       });

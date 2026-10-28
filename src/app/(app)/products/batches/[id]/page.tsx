@@ -48,7 +48,7 @@ export default async function BatchEditPage({ params }: { params: Promise<{ id: 
             <ActionForm action={updateBatchAction.bind(null, b.id)} className="grid gap-4 sm:grid-cols-3">
               <Field label="উৎপাদনের তারিখ" name="mfgDate"><input id="mfgDate" name="mfgDate" type="date" defaultValue={b.mfgDate ? toDateInput(b.mfgDate) : ""} className="input" /></Field>
               <Field label="মেয়াদ শেষের তারিখ" name="expiryDate"><input id="expiryDate" name="expiryDate" type="date" defaultValue={b.expiryDate ? toDateInput(b.expiryDate) : ""} className="input" /></Field>
-              <Field label="বিক্রয়মূল্য" name="salePrice"><input id="salePrice" name="salePrice" type="number" min="0" step="0.01" defaultValue={num(b.salePrice)} className="input-num" /></Field>
+              <Field label="বিক্রয়মূল্য" name="salePrice"><input id="salePrice" name="salePrice" type="text" inputMode="decimal" data-numeric min="0" step="0.01" defaultValue={num(b.salePrice)} className="input-num" /></Field>
               <p className="text-xs text-slate-500 sm:col-span-3">পরিবর্তন অডিট লগে সংরক্ষিত হয় এবং মেয়াদের নোটিফিকেশন সাথে সাথে পুনরায় যাচাই হয়।</p>
               <div className="sm:col-span-3"><SubmitButton>সংরক্ষণ করুন</SubmitButton></div>
             </ActionForm>

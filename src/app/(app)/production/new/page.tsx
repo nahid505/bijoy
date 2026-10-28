@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui";
+import { toDateInput } from "@/lib/format";
 import { requirePermission } from "@/server/auth";
 import { canChangeEntryDate } from "@/server/entry-date";
 import { readParams, type SearchParams } from "@/server/params";
@@ -31,7 +32,7 @@ export default async function NewProductionPage({ searchParams }: { searchParams
           currency={ctx.business.currencySymbol}
           dateLocked={!canChangeEntryDate(ctx)}
           multiWarehouse={ctx.features.includes("MULTI_WAREHOUSE")}
-          defaults={recipe ? { date: new Date().toISOString().slice(0, 10), recipeId: recipe.id, warehouseId: null, reference: "", narration: "", extraCost: 0, costAccountId: "", inputs: recipe.inputs.map((l) => ({ ...l, batchNo: null })), outputs: recipe.outputs.map((l) => ({ ...l, batchNo: null })) } : null}
+          defaults={recipe ? { date: toDateInput(), recipeId: recipe.id, warehouseId: null, reference: "", narration: "", extraCost: 0, costAccountId: "", inputs: recipe.inputs.map((l) => ({ ...l, batchNo: null })), outputs: recipe.outputs.map((l) => ({ ...l, batchNo: null })) } : null}
         />
       </section>
     </>

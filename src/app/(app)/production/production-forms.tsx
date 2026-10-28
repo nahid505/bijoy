@@ -8,7 +8,7 @@ import { ActionForm, Field, FieldError, SubmitButton, type FormAction } from "@/
 import { SearchSelect } from "@/components/search-select";
 import { SearchableAccountSelect } from "@/components/account-select";
 import type { AccountOption, ProductOption, UnitOption, WarehouseOption } from "@/components/trade-parts";
-import { formatMoney, formatQty, toBnDigits } from "@/lib/format";
+import { formatMoney, formatQty, toBnDigits, toDateInput } from "@/lib/format";
 import { allocateCost, batchesFor, processLoss, shareTotal, sharesBySaleValue, sharesValid, yieldPercent } from "@/lib/production";
 
 type Line = { key: string; product: ProductOption | null; quantity: string; costShare: string; batchNo: string };
@@ -69,13 +69,13 @@ function LineTable({
                   </td>
                   <td>
                     <div className="flex items-center gap-1">
-                      <input className="input-num" inputMode="decimal" value={l.quantity} onChange={(e) => update(l.key, { quantity: e.target.value })} aria-label={`পরিমাণ, সারি ${i + 1}`} />
+                      <input className="input-num" inputMode="decimal" data-numeric value={l.quantity} onChange={(e) => update(l.key, { quantity: e.target.value })} aria-label={`পরিমাণ, সারি ${i + 1}`} />
                       <span className="w-12 shrink-0 text-xs text-slate-500">{unitName(l.product)}</span>
                     </div>
                     <FieldError name={`${prefix}.${i}.quantity`} />
                   </td>
                   {outputs && (
-                    <td><input className="input-num" inputMode="decimal" value={l.costShare} onChange={(e) => update(l.key, { costShare: e.target.value })} aria-label={`খরচ-ভাগ %, সারি ${i + 1}`} /></td>
+                    <td><input className="input-num" inputMode="decimal" data-numeric value={l.costShare} onChange={(e) => update(l.key, { costShare: e.target.value })} aria-label={`খরচ-ভাগ %, সারি ${i + 1}`} /></td>
                   )}
                   {batches && (
                     <td>{l.product?.trackBatch ? <input className="input" value={l.batchNo} onChange={(e) => update(l.key, { batchNo: e.target.value })} placeholder={outputs ? "স্বয়ংক্রিয়" : "FEFO"} aria-label={`ব্যাচ, সারি ${i + 1}`} /> : <span className="text-xs text-slate-400">—</span>}</td>
@@ -183,7 +183,7 @@ export function ProductionForm({
   defaults: ProductionDefaults | null; currency: string; multiWarehouse: boolean;
 }) {
   const unitOf = useUnits(units);
-  const [date, setDate] = useState(defaults?.date ?? new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(defaults?.date ?? toDateInput()); // today in Bangladesh (UTC is still "yesterday" until 6 am)
   const [recipeId, setRecipeId] = useState(defaults?.recipeId ?? "");
   const [warehouseId, setWarehouseId] = useState(defaults?.warehouseId ?? warehouses[0]?.id ?? "");
   const [reference, setReference] = useState(defaults?.reference ?? "");
@@ -230,7 +230,7 @@ export function ProductionForm({
         </Field>
         {recipe && (
           <Field label={`${recipe.inputs[0]?.product.name ?? "প্রধান কাঁচামাল"} এর পরিমাণ (${unitOf(recipe.inputs[0]?.product ?? null)})`} name="mainQty" hint={batches > 0 ? `রেসিপির ${toBnDigits(batches)} ব্যাচ` : "পরিমাণ দিন"}>
-            <input id="mainQty" className="input-num" inputMode="decimal" value={mainQty} onChange={(e) => { setMainQty(e.target.value); applyRecipe(recipe, e.target.value); }} placeholder={`যেমন ${toBnDigits(1000)}`} />
+            <input id="mainQty" className="input-num" inputMode="decimal" data-numeric value={mainQty} onChange={(e) => { setMainQty(e.target.value); applyRecipe(recipe, e.target.value); }} placeholder={`যেমন ${toBnDigits(1000)}`} />
           </Field>
         )}
         {multiWarehouse && warehouses.length > 1 && (
@@ -245,7 +245,7 @@ export function ProductionForm({
       <LineTable title="উৎপাদিত পণ্য ও বাই-প্রোডাক্ট (স্টকে যোগ হবে)" hint="প্রকৃত ওজন/পরিমাণ লিখুন — রেসিপির হিসাব থেকে কম-বেশি হতে পারে।" lines={outputs} setLines={setOutputs} units={units} outputs currency={currency} batches prefix="outputs" />
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Field label="অতিরিক্ত উৎপাদন খরচ (মজুরি, বিদ্যুৎ, জ্বালানি)" name="extraCost"><input id="extraCost" className="input-num" inputMode="decimal" value={extraCost} onChange={(e) => setExtraCost(e.target.value)} placeholder="০" /></Field>
+        <Field label="অতিরিক্ত উৎপাদন খরচ (মজুরি, বিদ্যুৎ, জ্বালানি)" name="extraCost"><input id="extraCost" className="input-num" inputMode="decimal" data-numeric value={extraCost} onChange={(e) => setExtraCost(e.target.value)} placeholder="০" /></Field>
         <div className="lg:col-span-2">
           <label className="mb-1 block text-sm font-medium text-ink-800" htmlFor="costAccountId">খরচ কোন হিসাব থেকে {n(extraCost) > 0 && "*"}</label>
           <SearchableAccountSelect id="costAccountId" scope="all" known={accounts} value={costAccountId} onChange={(v) => setCostAccountId(v)} placeholder="নগদ / ব্যাংক / খরচের খাত" currency={currency} />

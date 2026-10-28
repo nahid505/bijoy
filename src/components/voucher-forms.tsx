@@ -9,6 +9,7 @@ import { SearchSelect } from "./search-select";
 import { EntryDateInput } from "./entry-date-input";
 import { ActionForm, FieldError, SubmitButton, useFormCtx, type FormAction } from "./forms";
 import { SearchableAccountSelect, type AccountItem } from "./account-select";
+import { useT } from "./lang";
 import {
   BatchCell,
   nextKey,
@@ -27,16 +28,17 @@ import {
 export type { AccountOption, ProductOption, UnitOption, WarehouseOption, BatchOption, PartyOption };
 
 function Header({ date, setDate, reference, setReference, dateLocked }: { date: string; setDate: (v: string) => void; reference: string; setReference: (v: string) => void; dateLocked?: boolean }) {
+  const t = useT();
   return (
     <>
       <div>
-        <label className="label" htmlFor="v-date">তারিখ *</label>
+        <label className="label" htmlFor="v-date">{t("তারিখ *")}</label>
         <EntryDateInput id="v-date" value={date} onChange={setDate} locked={dateLocked} />
         <FieldError name="date" />
       </div>
       <div>
-        <label className="label" htmlFor="v-ref">রেফারেন্স</label>
-        <input id="v-ref" className="input" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="চালান/চেক/মেমো নং" />
+        <label className="label" htmlFor="v-ref">{t("রেফারেন্স")}</label>
+        <input id="v-ref" className="input" value={reference} onChange={(e) => setReference(e.target.value)} placeholder={t("চালান/চেক/মেমো নং")} />
       </div>
     </>
   );
@@ -44,11 +46,12 @@ function Header({ date, setDate, reference, setReference, dateLocked }: { date: 
 
 function Footer({ cancelHref, label, disabled, extra }: { cancelHref: string; label: string; disabled?: boolean; extra?: React.ReactNode }) {
   const { pending } = useFormCtx();
+  const t = useT();
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {disabled ? <button type="button" className="btn-primary" disabled>{label}</button> : <SubmitButton pendingText="সংরক্ষণ হচ্ছে…">{label}</SubmitButton>}
+      {disabled ? <button type="button" className="btn-primary" disabled>{t(label)}</button> : <SubmitButton pendingText="সংরক্ষণ হচ্ছে…">{t(label)}</SubmitButton>}
       {extra}
-      <Link prefetch={false} href={cancelHref} className={`btn-secondary ${pending ? "pointer-events-none opacity-60" : ""}`}>বাতিল</Link>
+      <Link prefetch={false} href={cancelHref} className={`btn-secondary ${pending ? "pointer-events-none opacity-60" : ""}`}>{t("বাতিল")}</Link>
     </div>
   );
 }
@@ -127,6 +130,7 @@ export function TradeVoucherForm({
   const unitMap = useMemo(() => new Map(units.map((u) => [u.id, u])), [units]);
   const lockedToInvoice = !!defaults.returnOfId;
 
+  const t = useT();
   const [date, setDate] = useState(defaults.date);
   const [reference, setReference] = useState(defaults.reference);
   const [narration, setNarration] = useState(defaults.narration);
@@ -186,51 +190,51 @@ export function TradeVoucherForm({
       <input type="hidden" name="payload" value={payload} />
       {lockedToInvoice && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
-          মূল ইনভয়েস <b>{defaults.returnOfNo}</b> এর বিপরীতে ফেরত — সর্বোচ্চ বিক্রিত/ক্রয়কৃত অবশিষ্ট পরিমাণ পর্যন্ত। স্টক ও হিসাব স্বয়ংক্রিয়ভাবে উল্টানো হবে।
+          {t("মূল ইনভয়েস {0} এর বিপরীতে ফেরত — সর্বোচ্চ বিক্রিত/ক্রয়কৃত অবশিষ্ট পরিমাণ পর্যন্ত। স্টক ও হিসাব স্বয়ংক্রিয়ভাবে উল্টানো হবে।", { "0": defaults.returnOfNo ?? "" })}
         </div>
       )}
 
       <section className="panel grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-6">
         <div className="sm:col-span-2">
-          <label className="label" htmlFor="v-party">{isSale ? "কাস্টমার" : "সরবরাহকারী"}</label>
+          <label className="label" htmlFor="v-party">{t(isSale ? "কাস্টমার" : "সরবরাহকারী")}</label>
           <SearchSelect
             kind={isSale ? "customers" : "suppliers"}
             book={book}
             id="v-party"
             value={party}
             onChange={setParty}
-            noneLabel={isSale ? "নগদ কাস্টমার (ওয়াক-ইন)" : "নগদ ক্রয় (সরবরাহকারী ছাড়া)"}
+            noneLabel={t(isSale ? "নগদ কাস্টমার (ওয়াক-ইন)" : "নগদ ক্রয় (সরবরাহকারী ছাড়া)")}
             disabled={lockedToInvoice}
             create={lockedToInvoice ? false : {}}
             currency={currency}
-            ariaLabel={isSale ? "কাস্টমার" : "সরবরাহকারী"}
+            ariaLabel={t(isSale ? "কাস্টমার" : "সরবরাহকারী")}
           />
           <PartyInfo party={party ?? undefined} currency={currency} projectedDue={projectedDue} />
           <FieldError name="partyAccountId" />
         </div>
         <Header date={date} setDate={setDate} reference={reference} setReference={setReference} dateLocked={defaults.dateLocked} />
         <div>
-          <label className="label" htmlFor="v-wh">গুদাম</label>
+          <label className="label" htmlFor="v-wh">{t("গুদাম")}</label>
           <select id="v-wh" className="input" value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
             {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
           </select>
         </div>
         {(kind === "SALES" || kind === "PURCHASE") && (
           <div>
-            <label className="label" htmlFor="v-due">পরিশোধের শেষ তারিখ</label>
-            <input id="v-due" type="date" className="input" value={dueDate} onChange={(e) => setDueDate(e.target.value)} title="ফাঁকা থাকলে পার্টির ক্রেডিট দিন অনুযায়ী" />
+            <label className="label" htmlFor="v-due">{t("পরিশোধের শেষ তারিখ")}</label>
+            <input id="v-due" type="date" className="input" value={dueDate} onChange={(e) => setDueDate(e.target.value)} title={t("ফাঁকা থাকলে পার্টির ক্রেডিট দিন অনুযায়ী")} />
           </div>
         )}
       </section>
 
       <section className="panel">
         <div className="panel-head flex-wrap">
-          <h2 className="panel-title">পণ্য</h2>
+          <h2 className="panel-title">{t("পণ্য")}</h2>
           <div className="flex flex-wrap items-center gap-2">
             {kind === "SALES" && (
-              <select className="input w-auto py-1 text-xs" value={priceMode} onChange={(e) => setPriceMode(e.target.value as "retail" | "wholesale")} aria-label="মূল্য ধরন">
-                <option value="retail">খুচরা মূল্য</option>
-                <option value="wholesale">পাইকারি মূল্য</option>
+              <select className="input w-auto py-1 text-xs" value={priceMode} onChange={(e) => setPriceMode(e.target.value as "retail" | "wholesale")} aria-label={t("মূল্য ধরন")}>
+                <option value="retail">{t("খুচরা মূল্য")}</option>
+                <option value="wholesale">{t("পাইকারি মূল্য")}</option>
               </select>
             )}
           </div>
@@ -240,14 +244,14 @@ export function TradeVoucherForm({
             <thead>
               <tr>
                 <th className="w-8">#</th>
-                <th className="min-w-56">পণ্য</th>
-                <th className="w-40">ব্যাচ / মেয়াদ</th>
-                <th className="w-32">ইউনিট</th>
-                <th className="w-28 text-right">পরিমাণ</th>
-                {showFree && <th className="w-24 text-right" title="ফ্রি / স্কিম — স্টকে যোগ/বাদ হবে, দাম ধরা হবে না">ফ্রি</th>}
-                <th className="w-32 text-right">দর</th>
-                <th className="w-28 text-right">ছাড়</th>
-                <th className="w-36 text-right">মোট</th>
+                <th className="min-w-56">{t("পণ্য")}</th>
+                <th className="w-40">{t("ব্যাচ / মেয়াদ")}</th>
+                <th className="w-32">{t("ইউনিট")}</th>
+                <th className="w-28 text-right">{t("পরিমাণ")}</th>
+                {showFree && <th className="w-24 text-right" title={t("ফ্রি / স্কিম — স্টকে যোগ/বাদ হবে, দাম ধরা হবে না")}>{t("ফ্রি")}</th>}
+                <th className="w-32 text-right">{t("দর")}</th>
+                <th className="w-28 text-right">{t("ছাড়")}</th>
+                <th className="w-36 text-right">{t("মোট")}</th>
                 <th className="w-10" />
               </tr>
             </thead>
@@ -267,17 +271,17 @@ export function TradeVoucherForm({
                           if (prod) remember(prod);
                           update(l.key, { productId: prod?.id ?? "", unitId: prod?.unitId ?? "", rate: prod ? String(baseRate(prod)) : "", batchNo: "", expiryDate: "", mfgDate: "" });
                         }}
-                        placeholder="পণ্য খুঁজুন — নাম, কোড/SKU, বারকোড"
+                        placeholder={t("পণ্য খুঁজুন — নাম, কোড/SKU, বারকোড")}
                         disabled={lockedToInvoice}
                         create={lockedToInvoice ? false : { units }}
                         book={book}
                         currency={currency}
                         unitName={(id) => unitMap.get(id)?.name ?? ""}
                         priceOf={baseRate}
-                        ariaLabel={`পণ্য, সারি ${idx + 1}`}
+                        ariaLabel={`${t("পণ্য")}, ${t("সারি")} ${idx + 1}`}
                       />
-                      {short && <p className="mt-1 text-xs text-credit">মজুদ মাত্র {formatQty(p!.stock)} {unitMap.get(p!.unitId)?.name}</p>}
-                      {l.maxQty !== undefined && <p className="mt-1 text-xs text-amber-700">ফেরতযোগ্য সর্বোচ্চ {formatQty(l.maxQty)}</p>}
+                      {short && <p className="mt-1 text-xs text-credit">{t("মজুদ মাত্র")} {formatQty(p!.stock)} {unitMap.get(p!.unitId)?.name}</p>}
+                      {l.maxQty !== undefined && <p className="mt-1 text-xs text-amber-700">{t("ফেরতযোগ্য সর্বোচ্চ")} {formatQty(l.maxQty)}</p>}
                       <FieldError name={`items.${idx}.productId`} />
                     </td>
                     <td>
@@ -299,19 +303,19 @@ export function TradeVoucherForm({
                       </select>
                     </td>
                     <td>
-                      <input className="input-num" type="number" min="0" step="0.001" value={l.quantity} onChange={(e) => update(l.key, { quantity: e.target.value })} aria-label="পরিমাণ" />
+                      <input className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="0.001" value={l.quantity} onChange={(e) => update(l.key, { quantity: e.target.value })} aria-label={t("পরিমাণ")} />
                       <FieldError name={`items.${idx}.quantity`} />
                     </td>
                     {showFree && (
                       <td>
-                        <input className="input-num border-amber-300 bg-amber-50" type="number" min="0" step="0.001" value={l.freeQuantity} placeholder="0" onChange={(e) => update(l.key, { freeQuantity: e.target.value })} aria-label="ফ্রি পরিমাণ" />
+                        <input className="input-num border-amber-300 bg-amber-50" type="text" inputMode="decimal" data-numeric min="0" step="0.001" value={l.freeQuantity} placeholder="0" onChange={(e) => update(l.key, { freeQuantity: e.target.value })} aria-label={t("ফ্রি পরিমাণ")} />
                         <FieldError name={`items.${idx}.freeQuantity`} />
                       </td>
                     )}
-                    <td><input className="input-num" type="number" min="0" step="0.01" value={l.rate} onChange={(e) => update(l.key, { rate: e.target.value })} aria-label="দর" /></td>
-                    <td><input className="input-num" type="number" min="0" step="0.01" value={l.discount} placeholder="0" onChange={(e) => update(l.key, { discount: e.target.value })} aria-label="ছাড়" /></td>
+                    <td><input className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="0.01" value={l.rate} onChange={(e) => update(l.key, { rate: e.target.value })} aria-label={t("দর")} /></td>
+                    <td><input className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="0.01" value={l.discount} placeholder="0" onChange={(e) => update(l.key, { discount: e.target.value })} aria-label={t("ছাড়")} /></td>
                     <td className="num font-semibold">{formatMoney(lineAmount({ quantity: Number(l.quantity) || 0, unitPrice: Number(l.rate) || 0, discount: Number(l.discount) || 0 }), currency)}</td>
-                    <td>{lines.length > 1 && <button type="button" className="btn-ghost btn-sm text-credit" aria-label="সারি মুছুন" onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}>✕</button>}</td>
+                    <td>{lines.length > 1 && <button type="button" className="btn-ghost btn-sm text-credit" aria-label={t("সারি মুছুন")} onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}>✕</button>}</td>
                   </tr>
                 );
               })}
@@ -321,7 +325,7 @@ export function TradeVoucherForm({
         {!lockedToInvoice && (
           <div className="flex items-center justify-between border-t border-rule px-4 py-2.5">
             <button type="button" className="btn-secondary btn-sm" onClick={() => setLines((ls) => [...ls, { key: nextKey(), productId: "", unitId: "", quantity: "1", freeQuantity: "", rate: "", discount: "", batchNo: "", expiryDate: "", mfgDate: "" }])}>
-              + আরেকটি পণ্য
+              + {t("আরেকটি পণ্য")}
             </button>
             <FieldError name="items" />
           </div>
@@ -331,13 +335,13 @@ export function TradeVoucherForm({
       <div className="grid gap-4 lg:grid-cols-5">
         <section className="panel space-y-3 p-4 lg:col-span-3">
           {partyId ? (
-            <PaymentRows rows={payments} setRows={setPayments} cashAccounts={cashAccounts} total={totals.total} currency={currency} label={payLabel} book={book} />
+            <PaymentRows rows={payments} setRows={setPayments} cashAccounts={cashAccounts} total={totals.total} currency={currency} label={t(payLabel)} book={book} />
           ) : (
-            <PaymentRows rows={payments.length ? payments : []} setRows={setPayments} cashAccounts={cashAccounts} total={totals.total} currency={currency} label={`${payLabel} — নগদ লেনদেনে সম্পূর্ণ টাকা`} book={book} />
+            <PaymentRows rows={payments.length ? payments : []} setRows={setPayments} cashAccounts={cashAccounts} total={totals.total} currency={currency} label={`${t(payLabel)} — ${t("নগদ লেনদেনে সম্পূর্ণ টাকা")}`} book={book} />
           )}
           <FieldError name="payments" />
           <div>
-            <label className="label" htmlFor="v-narr">বিবরণ / নোট</label>
+            <label className="label" htmlFor="v-narr">{t("বিবরণ / নোট")}</label>
             <textarea id="v-narr" rows={2} className="input" value={narration} onChange={(e) => setNarration(e.target.value)} />
           </div>
         </section>
@@ -346,17 +350,17 @@ export function TradeVoucherForm({
           <dl className="space-y-2 text-sm">
             <Row label="উপমোট" value={formatMoney(totals.subtotal, currency)} />
             <div className="flex items-center justify-between gap-3">
-              <dt className="text-slate-600">ছাড় (৳)</dt>
-              <dd><input className="input-num w-32" type="number" min="0" step="0.01" value={discount} onChange={(e) => setDiscount(e.target.value)} aria-label="ছাড়" /></dd>
+              <dt className="text-slate-600">{t("ছাড় (৳)")}</dt>
+              <dd><input className="input-num w-32" type="text" inputMode="decimal" data-numeric min="0" step="0.01" value={discount} onChange={(e) => setDiscount(e.target.value)} aria-label={t("ছাড়")} /></dd>
             </div>
             {kind === "SALES" && (
               <div className="flex items-center justify-between gap-3">
-                <dt className="text-slate-600">ভ্যাট % <span className="text-xs">({formatMoney(totals.vatAmount, currency)})</span></dt>
-                <dd><input className="input-num w-32" type="number" min="0" max="100" step="0.01" value={vat} onChange={(e) => setVat(e.target.value)} aria-label="ভ্যাট" /></dd>
+                <dt className="text-slate-600">{t("ভ্যাট %")} <span className="text-xs">({formatMoney(totals.vatAmount, currency)})</span></dt>
+                <dd><input className="input-num w-32" type="text" inputMode="decimal" data-numeric min="0" max="100" step="0.01" value={vat} onChange={(e) => setVat(e.target.value)} aria-label={t("ভ্যাট")} /></dd>
               </div>
             )}
             <div className="flex justify-between border-t-2 border-double border-ink-600 pt-2 text-base font-bold text-ink-900">
-              <dt>সর্বমোট</dt>
+              <dt>{t("সর্বমোট")}</dt>
               <dd className="tabular-nums">{formatMoney(totals.total, currency)}</dd>
             </div>
             <Row label="পরিশোধ" value={formatMoney(paid, currency)} />
@@ -371,9 +375,10 @@ export function TradeVoucherForm({
 }
 
 function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+  const t = useT();
   return (
     <div className={`flex justify-between ${strong ? "font-semibold text-credit" : ""}`}>
-      <dt className="text-slate-600">{label}</dt>
+      <dt className="text-slate-600">{t(label)}</dt>
       <dd className="tabular-nums">{value}</dd>
     </div>
   );
@@ -413,6 +418,7 @@ export function CashVoucherForm({
   /** "depot": depot-book ledgers (dealers, companies, depot cash) and balances */
   book?: "depot";
 }) {
+  const t = useT();
   const [date, setDate] = useState(defaults.date);
   const [reference, setReference] = useState(defaults.reference);
   const [narration, setNarration] = useState(defaults.narration);
@@ -434,50 +440,50 @@ export function CashVoucherForm({
       <input type="hidden" name="payload" value={payload} />
       <section className="panel grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="sm:col-span-2">
-          <label className="label" htmlFor="v-cash">{receipt ? "জমা হবে (নগদ/ব্যাংক) — ডেবিট" : "প্রদান হবে (নগদ/ব্যাংক) — ক্রেডিট"}</label>
+          <label className="label" htmlFor="v-cash">{receipt ? t("জমা হবে (নগদ/ব্যাংক) — ডেবিট") : t("প্রদান হবে (নগদ/ব্যাংক) — ক্রেডিট")}</label>
           <SearchableAccountSelect id="v-cash" scope="cash" book={book} known={cashAccounts} value={cashId} onChange={(v, a) => { setCashId(v); rememberAcc(a); }} currency={currency} />
-          {cash?.balance !== undefined && <p className="mt-1 text-xs text-slate-500">বর্তমান ব্যালেন্স: {formatDrCr(cash.balance, currency)}</p>}
+          {cash?.balance !== undefined && <p className="mt-1 text-xs text-slate-500">{t("বর্তমান ব্যালেন্স:")} {formatDrCr(cash.balance, currency)}</p>}
           <FieldError name="cashAccountId" />
         </div>
         <Header date={date} setDate={setDate} reference={reference} setReference={setReference} dateLocked={defaults.dateLocked} />
       </section>
 
       <section className="panel">
-        <div className="panel-head"><h2 className="panel-title">{expenseMode ? "খরচের খাত (ডেবিট)" : receipt ? "কার কাছ থেকে / কোন খাতে (ক্রেডিট)" : "কাকে / কোন খাতে (ডেবিট)"}</h2></div>
+        <div className="panel-head"><h2 className="panel-title">{expenseMode ? t("খরচের খাত (ডেবিট)") : receipt ? t("কার কাছ থেকে / কোন খাতে (ক্রেডিট)") : t("কাকে / কোন খাতে (ডেবিট)")}</h2></div>
         <div className="overflow-x-auto">
           <table className="table">
-            <thead><tr><th className="min-w-64">{expenseMode ? "খরচের খাত" : "হিসাব (লেজার)"}</th><th className="w-40 text-right">টাকা</th><th className="min-w-48">লাইন বিবরণ</th><th className="w-10" /></tr></thead>
+            <thead><tr><th className="min-w-64">{expenseMode ? t("খরচের খাত") : t("হিসাব (লেজার)")}</th><th className="w-40 text-right">{t("টাকা")}</th><th className="min-w-48">{t("লাইন বিবরণ")}</th><th className="w-10" /></tr></thead>
             <tbody>
               {lines.map((l, idx) => {
                 const a = accMap.get(l.accountId);
                 return (
                   <tr key={l.key}>
                     <td>
-                      <SearchableAccountSelect scope={expenseMode ? "expense" : "all"} book={book} known={accounts} value={l.accountId} onChange={(v, acc) => { update(l.key, { accountId: v }); rememberAcc(acc); }} currency={currency} ariaLabel={`হিসাব, লাইন ${idx + 1}`} />
-                      {a?.balance !== undefined && !expenseMode && <p className="mt-1 text-xs text-slate-500">ব্যালেন্স: {formatDrCr(a.balance, currency)}</p>}
+                      <SearchableAccountSelect scope={expenseMode ? "expense" : "all"} book={book} known={accounts} value={l.accountId} onChange={(v, acc) => { update(l.key, { accountId: v }); rememberAcc(acc); }} currency={currency} ariaLabel={`${t("হিসাব")}, ${t("লাইন")} ${idx + 1}`} />
+                      {a?.balance !== undefined && !expenseMode && <p className="mt-1 text-xs text-slate-500">{t("ব্যালেন্স:")} {formatDrCr(a.balance, currency)}</p>}
                       <FieldError name={`lines.${idx}.accountId`} />
                     </td>
                     <td>
-                      <input className="input-num" type="number" min="0" step="0.01" value={l.amount} onChange={(e) => update(l.key, { amount: e.target.value })} aria-label="টাকা" />
+                      <input className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="0.01" value={l.amount} onChange={(e) => update(l.key, { amount: e.target.value })} aria-label={t("টাকা")} />
                       <FieldError name={`lines.${idx}.amount`} />
                     </td>
-                    <td><input className="input" value={l.narration} onChange={(e) => update(l.key, { narration: e.target.value })} aria-label="লাইন বিবরণ" /></td>
-                    <td>{lines.length > 1 && <button type="button" className="btn-ghost btn-sm text-credit" aria-label="সারি মুছুন" onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}>✕</button>}</td>
+                    <td><input className="input" value={l.narration} onChange={(e) => update(l.key, { narration: e.target.value })} aria-label={t("লাইন বিবরণ")} /></td>
+                    <td>{lines.length > 1 && <button type="button" className="btn-ghost btn-sm text-credit" aria-label={t("সারি মুছুন")} onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}>✕</button>}</td>
                   </tr>
                 );
               })}
             </tbody>
-            <tfoot><tr><td>মোট</td><td className="num">{formatMoney(total, currency)}</td><td colSpan={2} /></tr></tfoot>
+            <tfoot><tr><td>{t("মোট")}</td><td className="num">{formatMoney(total, currency)}</td><td colSpan={2} /></tr></tfoot>
           </table>
         </div>
         <div className="border-t border-rule px-4 py-2.5">
-          <button type="button" className="btn-secondary btn-sm" onClick={() => setLines((ls) => [...ls, { key: nextKey(), accountId: "", amount: "", narration: "" }])}>+ আরেকটি লাইন</button>
+          <button type="button" className="btn-secondary btn-sm" onClick={() => setLines((ls) => [...ls, { key: nextKey(), accountId: "", amount: "", narration: "" }])}>+ {t("আরেকটি লাইন")}</button>
           <FieldError name="lines" />
         </div>
       </section>
 
       <section className="panel p-4">
-        <label className="label" htmlFor="v-narr">বিবরণ (ন্যারেশন)</label>
+        <label className="label" htmlFor="v-narr">{t("বিবরণ (ন্যারেশন)")}</label>
         <textarea id="v-narr" rows={2} className="input" value={narration} onChange={(e) => setNarration(e.target.value)} />
       </section>
       <Footer
@@ -492,9 +498,10 @@ export function CashVoucherForm({
 /** Second submit button: save, then open the printable receipt / voucher. */
 export function SubmitThenPrint({ label = "সংরক্ষণ ও প্রিন্ট" }: { label?: string }) {
   const { pending } = useFormCtx();
+  const t = useT();
   return (
     <button type="submit" name="then" value="print" className="btn-secondary" disabled={pending}>
-      {label}
+      {t(label)}
     </button>
   );
 }
@@ -511,6 +518,7 @@ export interface JournalDefaults {
 }
 
 export function JournalVoucherForm({ action, accounts, defaults, currency, cancelHref }: { action: FormAction; accounts: AccountOption[]; defaults: JournalDefaults; currency: string; cancelHref: string }) {
+  const t = useT();
   const [date, setDate] = useState(defaults.date);
   const [reference, setReference] = useState(defaults.reference);
   const [narration, setNarration] = useState(defaults.narration);
@@ -531,40 +539,40 @@ export function JournalVoucherForm({ action, accounts, defaults, currency, cance
       <input type="hidden" name="payload" value={payload} />
       <section className="panel grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4"><Header date={date} setDate={setDate} reference={reference} setReference={setReference} dateLocked={defaults.dateLocked} /></section>
       <section className="panel">
-        <div className="panel-head"><h2 className="panel-title">জার্নাল এন্ট্রি</h2></div>
+        <div className="panel-head"><h2 className="panel-title">{t("জার্নাল এন্ট্রি")}</h2></div>
         <div className="overflow-x-auto">
           <table className="table">
-            <thead><tr><th className="min-w-64">হিসাব (লেজার)</th><th className="w-36 text-right">ডেবিট</th><th className="w-36 text-right">ক্রেডিট</th><th className="min-w-44">লাইন বিবরণ</th><th className="w-10" /></tr></thead>
+            <thead><tr><th className="min-w-64">{t("হিসাব (লেজার)")}</th><th className="w-36 text-right">{t("ডেবিট")}</th><th className="w-36 text-right">{t("ক্রেডিট")}</th><th className="min-w-44">{t("লাইন বিবরণ")}</th><th className="w-10" /></tr></thead>
             <tbody>
               {lines.map((l, idx) => (
                 <tr key={l.key}>
-                  <td><SearchableAccountSelect scope="all" known={accounts} value={l.accountId} onChange={(v) => update(l.key, { accountId: v })} currency={currency} ariaLabel={`হিসাব, সারি ${idx + 1}`} /><FieldError name={`lines.${idx}.accountId`} /></td>
-                  <td><input className="input-num" type="number" min="0" step="0.01" value={l.debit} onChange={(e) => update(l.key, { debit: e.target.value, credit: e.target.value ? "" : l.credit })} aria-label="ডেবিট" /><FieldError name={`lines.${idx}.debit`} /></td>
-                  <td><input className="input-num" type="number" min="0" step="0.01" value={l.credit} onChange={(e) => update(l.key, { credit: e.target.value, debit: e.target.value ? "" : l.debit })} aria-label="ক্রেডিট" /></td>
-                  <td><input className="input" value={l.narration} onChange={(e) => update(l.key, { narration: e.target.value })} aria-label="লাইন বিবরণ" /></td>
-                  <td>{lines.length > 2 && <button type="button" className="btn-ghost btn-sm text-credit" aria-label="সারি মুছুন" onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}>✕</button>}</td>
+                  <td><SearchableAccountSelect scope="all" known={accounts} value={l.accountId} onChange={(v) => update(l.key, { accountId: v })} currency={currency} ariaLabel={`${t("হিসাব")}, ${t("সারি")} ${idx + 1}`} /><FieldError name={`lines.${idx}.accountId`} /></td>
+                  <td><input className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="0.01" value={l.debit} onChange={(e) => update(l.key, { debit: e.target.value, credit: e.target.value ? "" : l.credit })} aria-label={t("ডেবিট")} /><FieldError name={`lines.${idx}.debit`} /></td>
+                  <td><input className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="0.01" value={l.credit} onChange={(e) => update(l.key, { credit: e.target.value, debit: e.target.value ? "" : l.debit })} aria-label={t("ক্রেডিট")} /></td>
+                  <td><input className="input" value={l.narration} onChange={(e) => update(l.key, { narration: e.target.value })} aria-label={t("লাইন বিবরণ")} /></td>
+                  <td>{lines.length > 2 && <button type="button" className="btn-ghost btn-sm text-credit" aria-label={t("সারি মুছুন")} onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}>✕</button>}</td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr>
-                <td>মোট</td>
+                <td>{t("মোট")}</td>
                 <td className="num dr">{formatMoney(dr, currency)}</td>
                 <td className="num cr">{formatMoney(cr, currency)}</td>
                 <td colSpan={2} className={diff === 0 ? "text-brand-700" : "text-credit"}>
-                  {diff === 0 ? (dr > 0 ? "✔ ডেবিট = ক্রেডিট" : "") : `✘ পার্থক্য ${formatMoney(Math.abs(diff), currency)} (${diff > 0 ? "ক্রেডিট কম" : "ডেবিট কম"})`}
+                  {diff === 0 ? (dr > 0 ? `✔ ${t("ডেবিট = ক্রেডিট")}` : "") : `✘ ${t("পার্থক্য")} ${formatMoney(Math.abs(diff), currency)} (${diff > 0 ? t("ক্রেডিট কম") : t("ডেবিট কম")})`}
                 </td>
               </tr>
             </tfoot>
           </table>
         </div>
         <div className="border-t border-rule px-4 py-2.5">
-          <button type="button" className="btn-secondary btn-sm" onClick={() => setLines((ls) => [...ls, blank()])}>+ আরেকটি লাইন</button>
+          <button type="button" className="btn-secondary btn-sm" onClick={() => setLines((ls) => [...ls, blank()])}>+ {t("আরেকটি লাইন")}</button>
           <FieldError name="lines" />
         </div>
       </section>
       <section className="panel p-4">
-        <label className="label" htmlFor="v-narr">বিবরণ (ন্যারেশন)</label>
+        <label className="label" htmlFor="v-narr">{t("বিবরণ (ন্যারেশন)")}</label>
         <textarea id="v-narr" rows={2} className="input" value={narration} onChange={(e) => setNarration(e.target.value)} />
       </section>
       <Footer cancelHref={cancelHref} label="জার্নাল সংরক্ষণ করুন" disabled={diff !== 0 || dr === 0} />
@@ -605,6 +613,7 @@ export function StockJournalForm({
   currency: string;
   cancelHref: string;
 }) {
+  const t = useT();
   const [date, setDate] = useState(defaults.date);
   const [reference, setReference] = useState(defaults.reference);
   const [narration, setNarration] = useState(defaults.narration);
@@ -637,10 +646,10 @@ export function StockJournalForm({
       <input type="hidden" name="payload" value={payload} />
       <section className="panel grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4"><Header date={date} setDate={setDate} reference={reference} setReference={setReference} dateLocked={defaults.dateLocked} /></section>
       <section className="panel">
-        <div className="panel-head"><h2 className="panel-title">স্টক সমন্বয় / স্থানান্তর</h2><span className="text-xs text-slate-500">স্থানান্তর: এক গুদাম থেকে “বাহির” ও অন্য গুদামে “আগমন” লাইন দিন</span></div>
+        <div className="panel-head"><h2 className="panel-title">{t("স্টক সমন্বয় / স্থানান্তর")}</h2><span className="text-xs text-slate-500">{t("স্থানান্তর: এক গুদাম থেকে “বাহির” ও অন্য গুদামে “আগমন” লাইন দিন")}</span></div>
         <div className="overflow-x-auto">
           <table className="table">
-            <thead><tr><th className="min-w-56">পণ্য</th><th className="w-40">গুদাম</th><th className="w-36">দিক</th><th className="w-40">ব্যাচ</th><th className="w-28 text-right">পরিমাণ</th><th className="w-32 text-right">দর (আগমন)</th><th className="w-32 text-right">মূল্য</th><th className="w-10" /></tr></thead>
+            <thead><tr><th className="min-w-56">{t("পণ্য")}</th><th className="w-40">{t("গুদাম")}</th><th className="w-36">{t("দিক")}</th><th className="w-40">{t("ব্যাচ")}</th><th className="w-28 text-right">{t("পরিমাণ")}</th><th className="w-32 text-right">{t("দর (আগমন)")}</th><th className="w-32 text-right">{t("মূল্য")}</th><th className="w-10" /></tr></thead>
             <tbody>
               {lines.map((l, idx) => {
                 const p = productMap.get(l.productId);
@@ -654,50 +663,50 @@ export function StockJournalForm({
                           if (prod) setProductMap((m) => new Map(m).set(prod.id, prod));
                           update(l.key, { productId: prod?.id ?? "", batchNo: "", expiryDate: "", mfgDate: "" });
                         }}
-                        placeholder="পণ্য খুঁজুন — নাম, কোড/SKU, বারকোড"
+                        placeholder={t("পণ্য খুঁজুন — নাম, কোড/SKU, বারকোড")}
                         create={{ units }}
                         book={book}
                         currency={currency}
                         unitName={unitName}
                         priceOf={(x) => x.avgCost || x.purchasePrice}
-                        ariaLabel={`পণ্য, সারি ${idx + 1}`}
+                        ariaLabel={`${t("পণ্য")}, ${t("সারি")} ${idx + 1}`}
                       />
                       <FieldError name={`lines.${idx}.productId`} />
                     </td>
                     <td>
-                      <select className="input" value={l.warehouseId} onChange={(e) => update(l.key, { warehouseId: e.target.value })} aria-label="গুদাম">
+                      <select className="input" value={l.warehouseId} onChange={(e) => update(l.key, { warehouseId: e.target.value })} aria-label={t("গুদাম")}>
                         {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
                       </select>
                     </td>
                     <td>
-                      <select className="input" value={l.direction} onChange={(e) => update(l.key, { direction: e.target.value })} aria-label="দিক">
-                        <option value="-1">বাহির (ঘাটতি/নষ্ট)</option>
-                        <option value="1">আগমন (উদ্বৃত্ত)</option>
+                      <select className="input" value={l.direction} onChange={(e) => update(l.key, { direction: e.target.value })} aria-label={t("দিক")}>
+                        <option value="-1">{t("বাহির (ঘাটতি/নষ্ট)")}</option>
+                        <option value="1">{t("আগমন (উদ্বৃত্ত)")}</option>
                       </select>
                     </td>
                     <td><BatchCell product={p} inbound={l.direction === "1"} batches={batches} warehouseId={l.warehouseId} batchNo={l.batchNo} expiryDate={l.expiryDate} mfgDate={l.mfgDate} onChange={(patch) => update(l.key, patch)} /></td>
                     <td>
-                      <input className="input-num" type="number" min="0" step="0.001" value={l.quantity} onChange={(e) => update(l.key, { quantity: e.target.value })} aria-label="পরিমাণ" />
+                      <input className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="0.001" value={l.quantity} onChange={(e) => update(l.key, { quantity: e.target.value })} aria-label={t("পরিমাণ")} />
                       {p && <span className="text-[11px] text-slate-400">{unitName(p.unitId)}</span>}
                       <FieldError name={`lines.${idx}.quantity`} />
                     </td>
-                    <td><input className="input-num" type="number" min="0" step="0.01" value={l.rate} placeholder={p ? String(p.avgCost || p.purchasePrice) : ""} disabled={l.direction !== "1"} onChange={(e) => update(l.key, { rate: e.target.value })} aria-label="দর" /></td>
+                    <td><input className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="0.01" value={l.rate} placeholder={p ? String(p.avgCost || p.purchasePrice) : ""} disabled={l.direction !== "1"} onChange={(e) => update(l.key, { rate: e.target.value })} aria-label={t("দর")} /></td>
                     <td className="num">{formatMoney(value(l), currency)}</td>
-                    <td>{lines.length > 1 && <button type="button" className="btn-ghost btn-sm text-credit" aria-label="সারি মুছুন" onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}>✕</button>}</td>
+                    <td>{lines.length > 1 && <button type="button" className="btn-ghost btn-sm text-credit" aria-label={t("সারি মুছুন")} onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}>✕</button>}</td>
                   </tr>
                 );
               })}
             </tbody>
-            <tfoot><tr><td colSpan={6}>আগমন {formatMoney(vin, currency)} · বাহির {formatMoney(vout, currency)} · নিট সমন্বয়</td><td className="num">{formatMoney(vin - vout, currency)}</td><td /></tr></tfoot>
+            <tfoot><tr><td colSpan={6}>{t("আগমন")} {formatMoney(vin, currency)} · {t("বাহির")} {formatMoney(vout, currency)} · {t("নিট সমন্বয়")}</td><td className="num">{formatMoney(vin - vout, currency)}</td><td /></tr></tfoot>
           </table>
         </div>
         <div className="border-t border-rule px-4 py-2.5">
-          <button type="button" className="btn-secondary btn-sm" onClick={() => setLines((ls) => [...ls, blank()])}>+ আরেকটি লাইন</button>
+          <button type="button" className="btn-secondary btn-sm" onClick={() => setLines((ls) => [...ls, blank()])}>+ {t("আরেকটি লাইন")}</button>
           <FieldError name="lines" />
         </div>
       </section>
       <section className="panel p-4">
-        <label className="label" htmlFor="v-narr">কারণ / বিবরণ</label>
+        <label className="label" htmlFor="v-narr">{t("কারণ / বিবরণ")}</label>
         <textarea id="v-narr" rows={2} className="input" value={narration} onChange={(e) => setNarration(e.target.value)} />
       </section>
       <Footer cancelHref={cancelHref} label="স্টক জার্নাল সংরক্ষণ করুন" />

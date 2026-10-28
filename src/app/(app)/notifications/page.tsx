@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { notificationLocalizer } from "@/server/notification-locale";
+import { getT } from "@/server/i18n";
 import Link from "next/link";
 import type { NotificationKind, Prisma } from "@prisma/client";
 import { prisma, num } from "@/lib/db";
@@ -34,6 +36,7 @@ const ICON = { CRITICAL: "🔴", WARNING: "🟠", INFO: "🔵" } as const;
 
 export default async function NotificationsPage({ searchParams }: { searchParams: SearchParams }) {
   const ctx = await requireContext();
+  const loc = await notificationLocalizer(); // stored Bangla texts → the UI language
   const p = await readParams(searchParams);
   const kinds = visibleKinds((perm) => can(ctx, perm as never), ctx.features);
   const cur = ctx.business.currencySymbol;
@@ -69,13 +72,14 @@ export default async function NotificationsPage({ searchParams }: { searchParams
     prisma.jobRun.findFirst({ where: { businessId: ctx.business.id, job: "daily-check" }, orderBy: { runOn: "desc" }, select: { finishedAt: true } }),
   ]);
   const countOf = (k?: NotificationKind[]) => counts.filter((c) => !k || k.includes(c.kind)).reduce((s, c) => s + c._count, 0);
+  const t = await getT();
   const unreadIds = rows.filter((r) => r.reads.length === 0 && !r.resolvedAt).map((r) => r.id);
 
   return (
     <>
       <PageHeader
         title="নোটিফিকেশন"
-        description={`মেয়াদ, কম স্টক ও বকেয়ার সতর্কবার্তা — প্রতিদিন স্বয়ংক্রিয়ভাবে যাচাই হয়${lastRun?.finishedAt ? ` (সর্বশেষ ${formatDateTime(lastRun.finishedAt)})` : ""}। পড়া হলেও সতর্কবার্তা মুছে যায় না; সমস্যা সমাধান হলে ইতিহাসে চলে যায়।`}
+        description={t("মেয়াদ, কম স্টক ও বকেয়ার সতর্কবার্তা — প্রতিদিন স্বয়ংক্রিয়ভাবে যাচাই হয়{0}। পড়া হলেও সতর্কবার্তা মুছে যায় না; সমস্যা সমাধান হলে ইতিহাসে চলে যায়।", { 0: lastRun?.finishedAt ? ` ${t("(সর্বশেষ {0})", { 0: formatDateTime(lastRun.finishedAt) })}` : "" })}
         crumbs={[{ label: "নোটিফিকেশন" }]}
         actions={
           <>
@@ -114,12 +118,12 @@ export default async function NotificationsPage({ searchParams }: { searchParams
                   <span aria-hidden className="text-lg leading-6">{ICON[n.severity]}</span>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className={`text-sm ${unread ? "font-bold" : "font-semibold"} text-ink-900`}>{n.title}</p>
+                      <p className={`text-sm ${unread ? "font-bold" : "font-semibold"} text-ink-900`}>{loc(n.title)}</p>
                       <Badge tone={n.severity === "CRITICAL" ? "red" : n.severity === "WARNING" ? "amber" : "blue"}>{KIND_LABEL[n.kind]}</Badge>
                       {unread && <Badge tone="blue">নতুন</Badge>}
                       {n.resolvedAt && <Badge tone="green">সমাধান হয়েছে</Badge>}
                     </div>
-                    <p className="mt-0.5 text-sm text-slate-700">{n.message}</p>
+                    <p className="mt-0.5 text-sm text-slate-700">{loc(n.message)}</p>
                     <p className="mt-1 text-[11px] text-slate-500">
                       তৈরি {formatDateTime(n.createdAt)}
                       {n.updatedAt.getTime() - n.createdAt.getTime() > 60_000 && !n.resolvedAt ? ` · হালনাগাদ ${formatDateTime(n.updatedAt)}` : ""}

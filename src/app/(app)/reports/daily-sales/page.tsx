@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { featureForPath } from "@/lib/features";
 import { addDays, formatDate, formatMoney, formatQty, toBnDigits } from "@/lib/format";
-import { amountInBanglaWords } from "@/lib/words";
+import { AmountInWords } from "@/components/amount-words";
 import { PrintButton } from "@/components/forms";
 import { FilterField, PageHeader, PrintHeader } from "@/components/ui";
 import { requirePermission } from "@/server/auth";
@@ -113,7 +113,7 @@ export default async function DailySalesPage({ searchParams }: { searchParams: S
             <p>সর্বমোট বিক্রয়: <b id="net-total" className="tabular-nums">{money(d.net)}</b></p>
             <p>নগদ আদায়: <b className="tabular-nums text-emerald-700 print:text-black">{money(d.collected)}</b></p>
             <p>বাকি: <b className="tabular-nums text-red-700 print:text-black">{money(d.due)}</b></p>
-            <p className="sm:col-span-3 print:col-span-3"><b>কথায়:</b> {amountInBanglaWords(d.net)}</p>
+            <p className="sm:col-span-3 print:col-span-3"><b>কথায়:</b> <AmountInWords amount={d.net} /></p>
           </div>
 
           <div className="print-only pt-10">

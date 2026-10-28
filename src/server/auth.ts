@@ -50,8 +50,10 @@ export interface AppContext {
     invoiceTerms: string | null;
     expiryWarningDays: number[];
     allowExpiredSale: boolean;
-    /** e.g. "DEPOT" (depot management dashboard, menus and reports) */
+    /** the primary type, e.g. "DEPOT" (depot management dashboard, menus and reports) */
     businessType: string | null;
+    /** every type chosen in settings — decides the modules the sidebar shows (businessModules in src/lib/business-types.ts) */
+    businessTypes: string[];
   };
   roleName: string;
   /** role permissions, plus "!key" blocks for permissions of switched-off features */
@@ -136,6 +138,7 @@ export const getContext = cache(async (): Promise<AppContext | null> => {
       expiryWarningDays: normalizeThresholds(b.expiryWarningDays),
       allowExpiredSale: b.allowExpiredSale,
       businessType: b.businessType,
+      businessTypes: strList(b.businessTypes),
     },
     roleName: m.role.name,
     permissions,

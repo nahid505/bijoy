@@ -23,7 +23,10 @@
     "db:mysql:schema": "node scripts/mysql-schema.mjs && node scripts/mysql-migration.mjs",
     "postinstall": "prisma generate",
     "audit:integrity": "tsx scripts/audit-integrity.ts",
-    "deploy:cpanel": "node scripts/deploy-cpanel.mjs"
+    "deploy:cpanel": "node scripts/deploy-cpanel.mjs",
+    "i18n:check": "node scripts/i18n-extract.mjs --check",
+    "i18n:missing": "node scripts/i18n-extract.mjs",
+    "check:client-imports": "node scripts/check-client-imports.mjs"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",

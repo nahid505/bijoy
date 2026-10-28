@@ -142,4 +142,4 @@ npm run build
 | `/api/health`-এ `"database":"error"` | `DATABASE_URL`-এর ইউজার, পাসওয়ার্ড (URL-encode), ডেটাবেজের নাম আর ইউজারের privilege পরীক্ষা করুন |
 | লগইনের পর আবার লগইন পেজ দেখায় | HTTPS থাকলে `COOKIE_SECURE=true` আর `APP_URL` সঠিক কিনা দেখুন |
 | রেজিস্ট্রেশনে "কোড সঠিক নয়" | মোবাইলে OTP যায়। SMS সেটআপ না থাকলে আপাতত `REGISTRATION_OTP=false` দিন |
-| পরিবর্তনের পর পুরনো পেজ দেখায় | Setup Node.js App → **Restart** |
+| পরিবর্তনের পর পুরনো পেজ / নতুন মেনু দেখায় না | `/api/health`-এর `"build"` মিলিয়ে দেখুন (নতুন প্যাকেজের `.next/BUILD_ID`); না মিললে পুরনো বিল্ড চলছে → Setup Node.js App → **Restart** (না হলে **Stop**, তারপর **Start**)। `"migration"`-এ সর্বশেষ মাইগ্রেশনের নাম থাকবে |

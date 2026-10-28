@@ -52,7 +52,7 @@ export default async function SmsSettingsPage() {
                   <input id="senderId" name="senderId" defaultValue={s?.senderId ?? ""} maxLength={20} className="input" />
                 </Field>
                 <Field label="কম ব্যালেন্স সতর্কতা" name="lowBalanceThreshold" hint="ব্যালেন্স এর নিচে নামলে নোটিফিকেশন">
-                  <input id="lowBalanceThreshold" name="lowBalanceThreshold" type="number" min="0" step="1" defaultValue={s ? num(s.lowBalanceThreshold) : 100} className="input-num" />
+                  <input id="lowBalanceThreshold" name="lowBalanceThreshold" type="text" inputMode="decimal" data-numeric min="0" step="1" defaultValue={s ? num(s.lowBalanceThreshold) : 100} className="input-num" />
                 </Field>
                 {s?.apiKeyHint && <label className="flex items-center gap-2 text-xs sm:col-span-2"><input type="checkbox" name="clearApiKey" /> সংরক্ষিত API কী মুছে ফেলুন</label>}
                 <p className="text-xs text-slate-500 sm:col-span-2">
@@ -82,13 +82,13 @@ export default async function SmsSettingsPage() {
                   <input id="alertMobiles" name="alertMobiles" defaultValue={strList(s?.alertMobiles).join(", ")} className="input" placeholder="01XXXXXXXXX, 01XXXXXXXXX" />
                 </Field>
                 <Field label="বকেয়া স্মরণ — প্রতি কত দিনে একবার" name="dueReminderEveryDays">
-                  <input id="dueReminderEveryDays" name="dueReminderEveryDays" type="number" min="1" max="90" defaultValue={s?.dueReminderEveryDays ?? 7} className="input-num" />
+                  <input id="dueReminderEveryDays" name="dueReminderEveryDays" type="text" inputMode="decimal" data-numeric min="1" max="90" defaultValue={s?.dueReminderEveryDays ?? 7} className="input-num" />
                 </Field>
                 <div className="sm:col-span-2">
                   <p className="label">মেয়াদ শেষের কত দিন আগে এসএমএস (প্রতিটি ধাপে একবার)</p>
                   <div className="flex flex-wrap gap-2">
                     {[0, 1, 2, 3, 4].map((i) => (
-                      <input key={i} name="expiryAlertDays" type="number" min="1" max="365" defaultValue={days[i] ?? ""} className="input-num w-20" aria-label={`সতর্কতা ${i + 1}`} />
+                      <input key={i} name="expiryAlertDays" type="text" inputMode="decimal" data-numeric min="1" max="365" defaultValue={days[i] ?? ""} className="input-num w-20" aria-label={`সতর্কতা ${i + 1}`} />
                     ))}
                   </div>
                 </div>

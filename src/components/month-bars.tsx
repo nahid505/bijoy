@@ -20,6 +20,8 @@ export function GroupedBars({
   colorB,
   currency,
   tableLabel = "টেবিল আকারে দেখুন",
+  timeLabel = "সময়",
+  totalLabel = "মোট",
 }: {
   title: string;
   points: BarPoint[];
@@ -29,6 +31,9 @@ export function GroupedBars({
   colorB: string;
   currency: string;
   tableLabel?: string;
+  /** table header of the time column and the totals row (translated by the caller) */
+  timeLabel?: string;
+  totalLabel?: string;
 }) {
   const max = Math.max(1, ...points.flatMap((p) => [p.a, p.b]));
   const totalA = points.reduce((s, p) => s + p.a, 0);
@@ -64,11 +69,11 @@ export function GroupedBars({
         <details className="mt-2 text-xs">
           <summary className="cursor-pointer text-slate-500 hover:text-brand-700">{tableLabel}</summary>
           <table className="table mt-2">
-            <thead><tr><th>সময়</th><th className="num">{labelA}</th><th className="num">{labelB}</th></tr></thead>
+            <thead><tr><th>{timeLabel}</th><th className="num">{labelA}</th><th className="num">{labelB}</th></tr></thead>
             <tbody>
               {points.map((p) => <tr key={p.key}><td>{p.fullLabel}</td><td className="num">{formatMoney(p.a, currency)}</td><td className="num">{formatMoney(p.b, currency)}</td></tr>)}
             </tbody>
-            <tfoot><tr><td>মোট</td><td className="num">{formatMoney(totalA, currency)}</td><td className="num">{formatMoney(totalB, currency)}</td></tr></tfoot>
+            <tfoot><tr><td>{totalLabel}</td><td className="num">{formatMoney(totalA, currency)}</td><td className="num">{formatMoney(totalB, currency)}</td></tr></tfoot>
           </table>
         </details>
       </div>

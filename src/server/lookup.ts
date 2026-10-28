@@ -11,12 +11,13 @@ import { partyAging } from "./services/aging";
 import { bookAccountWhere } from "./services/accounting";
 import type { BookKey } from "@/lib/book";
 import { commissionPerUnit } from "@/lib/depot";
+import { digitVariants, toAsciiDigits } from "@/lib/digits";
 import { ci, rawRows, sql } from "@/lib/dialect";
 
 export const LOOKUP_LIMIT = 20;
 
 /** Bangla digits → ASCII, so "০১৭১১" finds 01711… */
-const asciiDigits = (s: string) => s.replace(/[০-৯]/g, (d) => String("০১২৩৪৫৬৭৮৯".indexOf(d)));
+const asciiDigits = toAsciiDigits;
 
 /** Digits of a phone-like query, without the +88 / 88 country prefix. */
 function mobileDigits(q: string): string | null {
@@ -78,7 +79,7 @@ export async function searchParties(businessId: string, kind: PartyKind, q: stri
         ...(query
           ? {
               OR: [
-                { name: ci(query) },
+                ...digitVariants(query).map((v) => ({ name: ci(v) })), // "চাল 50" also finds "চাল ৫০"
                 { id: query },
                 { accountId: query },
                 { account: { code: ci(asciiDigits(query)) } },
@@ -140,7 +141,7 @@ export async function searchProducts(businessId: string, q: string, opts: { ids?
         isDepotProduct: opts.book === "DEPOT",
         ...(opts.batchOnly ? { trackBatch: true } : {}),
         ...(query
-          ? { OR: [{ name: ci(query) }, { code: ci(code) }, { barcode: { contains: code } }, { id: query }] }
+          ? { OR: [...digitVariants(query).map((v) => ({ name: ci(v) })), { code: ci(code) }, { barcode: { contains: code } }, { id: query }] }
           : {}),
       };
   const rows = await prisma.product.findMany({ where, orderBy: { name: "asc" }, take: opts.ids ? undefined : take * 3 });
@@ -245,14 +246,13 @@ export async function searchAccounts(
           base,
           {
             OR: [
-              ...names.map((t) => ({ name: ci(t) })),
+              ...names.flatMap(digitVariants).map((t) => ({ name: ci(t) })),
               { code: ci(ascii) },
               { accountNumber: ci(ascii) },
               { bankName: ci(query) },
               { systemKey: { contains: query.toUpperCase().replace(/\s+/g, "_") } },
               { id: query },
-              { customer: { name: ci(query) } },
-              { supplier: { name: ci(query) } },
+              ...digitVariants(query).flatMap((v) => [{ customer: { name: ci(v) } }, { supplier: { name: ci(v) } }]),
               ...(custIds.length ? [{ customer: { id: { in: custIds } } }] : []),
               ...(supIds.length ? [{ supplier: { id: { in: supIds } } }] : []),
             ],

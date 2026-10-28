@@ -2,6 +2,7 @@ import Link from "next/link";
 import { formatDate, formatDrCr, formatMoney, formatQty } from "@/lib/format";
 import type { Cell, CellFormat, ReportResult } from "@/server/reports/types";
 import { Badge, EmptyState } from "./ui";
+import { getT } from "@/server/i18n";
 
 export function formatCell(value: Cell, format: CellFormat | undefined, currency: string): string {
   if (value === null || value === undefined || value === "") return "";
@@ -21,15 +22,16 @@ export function formatCell(value: Cell, format: CellFormat | undefined, currency
 
 const ROW_CLASS = { normal: "", detail: "text-slate-600", group: "row-group", subtotal: "row-subtotal", total: "row-total" };
 
-export function ReportTable({ report, currency }: { report: ReportResult; currency: string }) {
-  if (report.rows.length === 0) return <EmptyState message={report.emptyMessage} />;
+export async function ReportTable({ report, currency }: { report: ReportResult; currency: string }) {
+  const t = await getT();
+  if (report.rows.length === 0) return <EmptyState message={report.emptyMessage ? t(report.emptyMessage) : undefined} />;
   return (
     <div className="overflow-x-auto">
       <table className="table">
         <thead>
           <tr>
             {report.columns.map((c) => (
-              <th key={c.key} className={c.format && c.format !== "text" && c.format !== "date" ? "num" : ""}>{c.label}</th>
+              <th key={c.key} className={c.format && c.format !== "text" && c.format !== "date" ? "num" : ""}>{t(c.label)}</th>
             ))}
           </tr>
         </thead>
@@ -56,14 +58,15 @@ export function ReportTable({ report, currency }: { report: ReportResult; curren
   );
 }
 
-export function ReportSummary({ report }: { report: ReportResult }) {
+export async function ReportSummary({ report }: { report: ReportResult }) {
   if (!report.summary?.length) return null;
+  const t = await getT();
   const tones = { green: "text-brand-700", red: "text-credit", blue: "text-debit", slate: "text-ink-900" };
   return (
     <div className="grid grid-cols-2 divide-x divide-y divide-rule border-b border-rule sm:grid-cols-4 sm:divide-y-0">
       {report.summary.map((s) => (
         <div key={s.label} className="px-4 py-2.5">
-          <p className="text-[11px] text-slate-500">{s.label}</p>
+          <p className="text-[11px] text-slate-500">{t(s.label)}</p>
           <p className={`text-sm font-bold tabular-nums ${tones[s.tone ?? "slate"]}`}>{s.value}</p>
         </div>
       ))}
@@ -71,11 +74,12 @@ export function ReportSummary({ report }: { report: ReportResult }) {
   );
 }
 
-export function ReportNotes({ report }: { report: ReportResult }) {
+export async function ReportNotes({ report }: { report: ReportResult }) {
   if (!report.notes?.length) return null;
+  const t = await getT();
   return (
     <div className="space-y-1 border-t border-rule px-4 py-2 text-xs text-slate-500">
-      {report.notes.map((n) => <p key={n}><Badge>নোট</Badge> {n}</p>)}
+      {report.notes.map((n) => <p key={n}><Badge>{t("নোট")}</Badge> {t(n)}</p>)}
     </div>
   );
 }

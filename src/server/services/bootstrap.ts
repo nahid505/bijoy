@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client";
 import defaults from "../../lib/business-defaults.json";
 import { startSubscription } from "./subscriptions";
 import { DEPOT_CASH_KEY, DEPOT_CASH_NAME, DEPOT_ROLE, isDepot } from "../../lib/depot";
+import { primaryBusinessType } from "../../lib/business-types";
 
 type Tx = Prisma.TransactionClient;
 
@@ -45,6 +46,20 @@ export async function ensureDefaultRoles(tx: Tx, businessId: string) {
   return added;
 }
 
+/**
+ * Saves the business types chosen in settings. businessType keeps the primary one (DEPOT when chosen — every depot check
+ * reads it); choosing DEPOT also offers the depot-only role and the depot cash box. Turning a type off deletes nothing:
+ * its data stays and comes back with the type.
+ */
+export async function setBusinessTypes(tx: Pick<Tx, "business" | "role" | "account" | "accountGroup">, businessId: string, types: string[]) {
+  const business = await tx.business.update({ where: { id: businessId }, data: { businessTypes: types, businessType: primaryBusinessType(types) }, select: { businessType: true } });
+  if (isDepot(business.businessType)) {
+    await ensureDepotRole(tx, businessId);
+    await ensureDepotCash(tx, businessId);
+  }
+  return { businessTypes: types, primary: business.businessType };
+}
+
 /** The business's "ডিপো ক্যাশ" ledger id (group নগদ) — created on first use; depot businesses only (null otherwise). */
 export async function ensureDepotCash(tx: Pick<Tx, "account" | "accountGroup" | "business">, businessId: string): Promise<string | null> {
   const found = await tx.account.findFirst({ where: { businessId, systemKey: DEPOT_CASH_KEY }, select: { id: true } });
@@ -66,15 +81,21 @@ export async function ensureDepotRole(tx: Pick<Tx, "role">, businessId: string) 
 
 export async function createBusiness(
   tx: Tx,
-  input: { name: string; ownerUserId: string; mobile?: string | null; address?: string | null; fiscalYearStartMonth?: number; businessType?: string | null; planCode?: string | null },
+  input: {
+    name: string; ownerUserId: string; mobile?: string | null; address?: string | null; fiscalYearStartMonth?: number; planCode?: string | null;
+    /** the business types (settings); businessType alone = a one-type list (seed, tests, older callers) */
+    businessTypes?: string[]; businessType?: string | null;
+  },
 ) {
   const fyMonth = input.fiscalYearStartMonth ?? 7;
+  const types = input.businessTypes ?? (input.businessType ? [input.businessType] : []);
   const business = await tx.business.create({
     data: {
       name: input.name,
       mobile: input.mobile ?? null,
       address: input.address ?? null,
-      businessType: input.businessType ?? null,
+      businessTypes: types,
+      businessType: primaryBusinessType(types),
       fiscalYearStartMonth: fyMonth,
       booksStartDate: fiscalYearStart(new Date(), fyMonth),
     },
@@ -138,7 +159,7 @@ export async function createBusiness(
     });
     if (role.isSystem) ownerRoleId = role.id;
   }
-  if (isDepot(input.businessType)) {
+  if (types.includes("DEPOT")) {
     await ensureDepotRole(tx, businessId);
     await ensureDepotCash(tx, businessId);
   }

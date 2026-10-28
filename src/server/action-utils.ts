@@ -5,6 +5,7 @@ import { InvalidEntryError, UnbalancedVoucherError } from "@/lib/accounting";
 import { UserError } from "@/lib/errors";
 import { fieldErrors } from "@/lib/validation";
 import { ForbiddenError } from "./auth";
+import { normalizeNumericInput } from "@/lib/digits";
 
 export { UserError };
 
@@ -42,9 +43,26 @@ export async function guard<T>(fn: () => Promise<T>): Promise<GuardResult<T>> {
   }
 }
 
+/**
+ * A value typed as a number in Bangla, English or mixed digits ("১২451৩৩", "১,২৫০.৫০") reaches validation as a plain
+ * English number ("1245133", "1250.50"). Text that merely contains digits ("Miniket চাল ৫০kg") is kept as typed, and so
+ * are passwords (they must match exactly what the user chose).
+ */
+export function normalizeNumericValue(key: string, value: string): string {
+  return /password/i.test(key) ? value : normalizeNumericInput(value);
+}
+
+/** normalizeNumericValue through a JSON payload (voucher / challan editors send their lines as JSON). */
+function normalizeNumericDeep(value: unknown, key = ""): unknown {
+  if (typeof value === "string") return normalizeNumericValue(key, value);
+  if (Array.isArray(value)) return value.map((v) => normalizeNumericDeep(v, key));
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, normalizeNumericDeep(v, k)]));
+  return value;
+}
+
 export function formToObject(fd: FormData): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const [k, v] of fd.entries()) if (typeof v === "string" && !k.startsWith("$ACTION")) out[k] = v;
+  for (const [k, v] of fd.entries()) if (typeof v === "string" && !k.startsWith("$ACTION")) out[k] = normalizeNumericValue(k, v);
   return out;
 }
 
@@ -61,7 +79,7 @@ export function parseJsonPayload<S extends ZodTypeAny>(schema: S, fd: FormData):
   } catch {
     throw new UserError("অবৈধ অনুরোধ");
   }
-  return schema.parse(data);
+  return schema.parse(normalizeNumericDeep(data));
 }
 
 export function toResult<T>(r: GuardResult<T>): ActionState {

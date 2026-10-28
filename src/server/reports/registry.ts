@@ -7,9 +7,10 @@ import { DAILY_CASH_REPORT } from "./daily-cash";
 import { DAILY_PURCHASE_REPORT } from "./daily-purchase";
 import { DAILY_SALES_REPORT } from "./daily-sales";
 import { DEPOT_REPORTS } from "./depot";
+import { RICE_MILL_REPORT } from "./rice-mill";
 import type { PartyScope } from "../party-scope";
 
-export const REPORTS = [...BASE, ...EXTRA_REPORTS, ...EXPIRY_REPORTS, ...PAYROLL_REPORTS, DAILY_CASH_REPORT, DAILY_PURCHASE_REPORT, DAILY_SALES_REPORT, ...DEPOT_REPORTS];
+export const REPORTS = [...BASE, ...EXTRA_REPORTS, ...EXPIRY_REPORTS, ...PAYROLL_REPORTS, DAILY_CASH_REPORT, DAILY_PURCHASE_REPORT, DAILY_SALES_REPORT, ...DEPOT_REPORTS, RICE_MILL_REPORT];
 
 export function findReport(slug: string) {
   return REPORTS.find((r) => r.slug === slug) ?? null;

@@ -12,6 +12,7 @@ import type { ReportDef, ReportParams, ReportResult, ReportRow } from "./types";
 import type { AppContext } from "../auth";
 import { ci, rawRows, sql } from "@/lib/dialect";
 import { allowedParties, canSeeParty, voucherScopeWhere } from "../party-scope";
+import { digitVariants } from "@/lib/digits";
 
 const periodText = (from: string, to: string) => `${formatDate(from)} — ${formatDate(to)}`;
 const asOfOf = (p: ReportParams) => (p.asOf && /^\d{4}-\d{2}-\d{2}$/.test(p.asOf) ? p.asOf : toDateInput());
@@ -335,7 +336,7 @@ export const EXTRA_REPORTS: ReportDef[] = [
       const cur = ctx.business.currencySymbol;
       const q = p.q?.trim();
       const products = await prisma.product.findMany({
-        where: { businessId: ctx.business.id, isActive: true, isDepotProduct: false, ...(q ? { name: ci(q) } : {}) }, // general stock only
+        where: { businessId: ctx.business.id, isActive: true, isDepotProduct: false, ...(q ? { OR: digitVariants(q).map((v) => ({ name: ci(v) })) } : {}) }, // general stock only
         include: { category: { select: { name: true } }, unit: { select: { name: true } } },
         orderBy: [{ category: { name: "asc" } }, { name: "asc" }],
       });

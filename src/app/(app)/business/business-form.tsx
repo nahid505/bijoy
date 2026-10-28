@@ -3,7 +3,6 @@
 import { MONTH_NAMES } from "@/lib/format";
 import { ActionForm, Field, SubmitButton } from "@/components/forms";
 import { saveBusinessAction } from "@/server/actions/business";
-import { BUSINESS_TYPE_LABELS } from "@/lib/business-types";
 
 export interface BusinessDefaults {
   name: string;
@@ -25,7 +24,6 @@ export interface BusinessDefaults {
   lockDate: string;
   expiryWarningDays: number[];
   allowExpiredSale: boolean;
-  businessType: string | null;
 }
 
 const WARNING_LABELS = ["প্রথম সতর্কতা", "দ্বিতীয় সতর্কতা", "তৃতীয় সতর্কতা", "চূড়ান্ত সতর্কতা"];
@@ -36,12 +34,6 @@ export function BusinessForm({ d }: { d: BusinessDefaults }) {
       <fieldset className="grid gap-4 sm:grid-cols-3">
         <legend className="mb-2 text-sm font-semibold text-ink-800">ব্যবসার প্রোফাইল</legend>
         <Field label="ব্যবসার নাম *" name="name" className="sm:col-span-2"><input id="name" name="name" defaultValue={d.name} className="input" required /></Field>
-        <Field label="ব্যবসার ধরন" name="businessType" hint="&ldquo;ডিপো ব্যবসা&rdquo; বেছে নিলে ডিপো ড্যাশবোর্ড, ডেলিভারি চালান, কোম্পানি কমিশন ও রুটভিত্তিক মার্কেট বাকি চালু হবে">
-          <select id="businessType" name="businessType" defaultValue={d.businessType ?? ""} className="input">
-            <option value="">— নির্ধারিত নয় —</option>
-            {Object.entries(BUSINESS_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-        </Field>
         <Field label="লোগো" name="logo" hint="PNG/JPG/WEBP/SVG, সর্বোচ্চ ২০০ KB">
           <div className="flex items-center gap-3">
             {d.logo && (
@@ -52,7 +44,7 @@ export function BusinessForm({ d }: { d: BusinessDefaults }) {
           </div>
           {d.logo && <label className="mt-1 flex items-center gap-1 text-xs"><input type="checkbox" name="removeLogo" /> লোগো সরান</label>}
         </Field>
-        <Field label="মোবাইল" name="mobile"><input id="mobile" name="mobile" defaultValue={d.mobile ?? ""} className="input" /></Field>
+        <Field label="মোবাইল" name="mobile"><input id="mobile" name="mobile" type="tel" inputMode="tel" defaultValue={d.mobile ?? ""} className="input" /></Field>
         <Field label="ইমেইল" name="email"><input id="email" name="email" type="email" defaultValue={d.email ?? ""} className="input" /></Field>
         <Field label="ট্রেড লাইসেন্স" name="tradeLicense"><input id="tradeLicense" name="tradeLicense" defaultValue={d.tradeLicense ?? ""} className="input" /></Field>
         <Field label="BIN (ভ্যাট নিবন্ধন)" name="binNumber"><input id="binNumber" name="binNumber" defaultValue={d.binNumber ?? ""} className="input" /></Field>
@@ -80,7 +72,7 @@ export function BusinessForm({ d }: { d: BusinessDefaults }) {
       <fieldset className="grid gap-4 border-t border-rule pt-4 sm:grid-cols-4">
         <legend className="mb-2 text-sm font-semibold text-ink-800">ইনভয়েস সেটিং</legend>
         <Field label="ইনভয়েস প্রিফিক্স" name="invoicePrefix" hint="যেমন INV → INV-000001"><input id="invoicePrefix" name="invoicePrefix" defaultValue={d.invoicePrefix} className="input" /></Field>
-        <Field label="ডিফল্ট ভ্যাট (%)" name="defaultVatPercent"><input id="defaultVatPercent" name="defaultVatPercent" type="number" min="0" max="100" step="0.01" defaultValue={d.defaultVatPercent} className="input-num" /></Field>
+        <Field label="ডিফল্ট ভ্যাট (%)" name="defaultVatPercent"><input id="defaultVatPercent" name="defaultVatPercent" type="text" inputMode="decimal" data-numeric min="0" max="100" step="0.01" defaultValue={d.defaultVatPercent} className="input-num" /></Field>
         <Field label="ইনভয়েস ফুটার" name="invoiceFooter" className="sm:col-span-2"><input id="invoiceFooter" name="invoiceFooter" defaultValue={d.invoiceFooter ?? ""} className="input" /></Field>
         <Field label="শর্তাবলি (ইনভয়েসে)" name="invoiceTerms" className="sm:col-span-4"><textarea id="invoiceTerms" name="invoiceTerms" rows={2} defaultValue={d.invoiceTerms ?? ""} className="input" /></Field>
       </fieldset>
@@ -89,7 +81,7 @@ export function BusinessForm({ d }: { d: BusinessDefaults }) {
         <p className="text-xs text-slate-500 sm:col-span-4">মেয়াদ শেষ হওয়ার কত দিন আগে সতর্কবার্তা তৈরি হবে। প্রতিদিন স্বয়ংক্রিয় যাচাইয়ে প্রতিটি ব্যাচের জন্য প্রতিটি ধাপে একবারই নোটিফিকেশন তৈরি হয়। ঘর খালি রাখলে সেই ধাপ বাদ যাবে।</p>
         {WARNING_LABELS.map((label, i) => (
           <Field key={label} label={`${label} (দিন আগে)`} name="expiryWarningDays">
-            <input name="expiryWarningDays" type="number" min="1" max="3650" step="1" defaultValue={d.expiryWarningDays[i] ?? ""} className="input-num" aria-label={label} />
+            <input name="expiryWarningDays" type="text" inputMode="decimal" data-numeric min="1" max="3650" step="1" defaultValue={d.expiryWarningDays[i] ?? ""} className="input-num" aria-label={label} />
           </Field>
         ))}
         <label className="flex items-start gap-2 text-sm sm:col-span-4">

@@ -22,7 +22,7 @@ import { assertWarehouse, clearPostings, loadEditable, saveCashVoucher, saveJour
 
 export async function assertDepotBusiness(tx: Tx | typeof prisma, businessId: string) {
   const b = await tx.business.findUniqueOrThrow({ where: { id: businessId }, select: { businessType: true } });
-  if (!isDepot(b.businessType)) throw new UserError("এই সুবিধা শুধু ডিপো ব্যবসার জন্য — ব্যবসা সেটিং থেকে ব্যবসার ধরন \"ডিপো ব্যবসা\" করুন");
+  if (!isDepot(b.businessType)) throw new UserError("এই সুবিধা শুধু ডিপো ব্যবসার জন্য — ব্যবসা সেটিং → ব্যবসার ধরন ও মডিউল-এ \"ডিপো ব্যবসা\" বাছাই করুন");
 }
 
 /** The commission ledgers: income (one per business) and receivable (one per company), created on first use. */

@@ -93,13 +93,13 @@ run("SaaS subscriptions & billing", () => {
     req.cookies = new Map(A.cookies);
   });
 
-  it("registration creates the tenant with an Owner, business type, address and a trial on the trial plan", async () => {
+  it("registration creates the tenant with an Owner, address and a trial on the trial plan (business types: chosen later)", async () => {
     const s = await sub(A.id);
     expect(s.status).toBe("TRIAL");
     expect(s.plan.code).toBe("PREMIUM");
     expect(s.trialEndsAt!.getTime()).toBe(addDays(startOfDay(new Date()), 14).getTime());
     const b = await prisma.business.findUniqueOrThrow({ where: { id: A.id } });
-    expect(b.businessType).toBe("PHARMACY");
+    expect([b.businessType, b.businessTypes]).toEqual([null, []]); // the form no longer sends a type; settings sets them
     expect(b.address).toBe("ঢাকা");
     expect(await prisma.subscriptionEvent.count({ where: { businessId: A.id, type: "TRIAL_STARTED" } })).toBe(1);
     const ctx = await ctxNow();

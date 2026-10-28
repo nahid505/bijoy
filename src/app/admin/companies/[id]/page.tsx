@@ -4,7 +4,8 @@ import { notFound } from "next/navigation";
 import { prisma, num } from "@/lib/db";
 import { formatDate, formatDateTime, formatMoney, toBnDigits, toDateInput } from "@/lib/format";
 import { FEATURES, type FeatureDef } from "@/lib/features";
-import { BUSINESS_TYPE_LABELS } from "@/lib/business-types";
+import { businessTypesText } from "@/lib/business-types";
+import { strList } from "@/lib/dialect";
 import { CYCLE_LABELS, SUB_STATUS_LABELS, effectiveStatus } from "@/lib/subscription";
 import { ActionButton, ActionForm, Field, SubmitButton } from "@/components/forms";
 import { Badge, DetailRow, EmptyState, PageHeader, TableWrap } from "@/components/ui";
@@ -28,7 +29,7 @@ export default async function CompanyPage({ params }: { params: Promise<{ id: st
 
   return (
     <>
-      <PageHeader title={b.name} description={[b.businessType ? BUSINESS_TYPE_LABELS[b.businessType as keyof typeof BUSINESS_TYPE_LABELS] : null, b.mobile, b.email].filter(Boolean).join(" · ")} crumbs={[{ label: "কোম্পানি", href: "/admin/companies" }, { label: b.name }]} />
+      <PageHeader title={b.name} description={[businessTypesText(strList(b.businessTypes)), b.mobile, b.email].filter(Boolean).join(" · ")} crumbs={[{ label: "কোম্পানি", href: "/admin/companies" }, { label: b.name }]} />
       <div className="mb-4 grid gap-4 lg:grid-cols-3">
         <section className="panel">
           <div className="panel-head"><h2 className="panel-title">সাবস্ক্রিপশন</h2></div>
@@ -56,7 +57,7 @@ export default async function CompanyPage({ params }: { params: Promise<{ id: st
             <SubmitButton className="btn-primary">পরিবর্তন করুন</SubmitButton>
           </ActionForm>
           <ActionForm action={adminExtendAction.bind(null, b.id)} className="grid gap-2 sm:grid-cols-5 sm:items-end">
-            <Field label="মেয়াদ বাড়ান (দিন)" name="days"><input id="days" name="days" type="number" min="1" max="3650" defaultValue="30" className="input-num" /></Field>
+            <Field label="মেয়াদ বাড়ান (দিন)" name="days"><input id="days" name="days" type="text" inputMode="decimal" data-numeric min="1" max="3650" defaultValue="30" className="input-num" /></Field>
             <Field label="নোট" name="note" className="sm:col-span-3"><input id="extend-note" name="note" className="input" placeholder="যেমন: প্রমোশনাল ৩০ দিন" /></Field>
             <SubmitButton className="btn-secondary">বাড়ান</SubmitButton>
           </ActionForm>

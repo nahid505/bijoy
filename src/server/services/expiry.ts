@@ -4,6 +4,7 @@ import { round2, round3 } from "@/lib/calc";
 import { toBnDigits } from "@/lib/format";
 import { expiryStatus, matchesFilter, normalizeThresholds, type ExpiryFilter, type ExpiryStatus } from "@/lib/expiry";
 import { ci } from "@/lib/dialect";
+import { digitVariants, toAsciiDigits } from "@/lib/digits";
 
 export type BatchSort = "expiry" | "product" | "quantity" | "batch";
 
@@ -52,7 +53,7 @@ export async function listBatches(businessId: string, today: Date, query: BatchQ
       ...(query.includeEmpty ? {} : { quantity: { gt: 0 } }),
       ...(query.productId ? { productId: query.productId } : {}),
       ...(q
-        ? { OR: [{ batchNo: ci(q) }, { product: { name: ci(q) } }, { product: { code: ci(q) } }] }
+        ? { OR: [...digitVariants(q).flatMap((v) => [{ batchNo: ci(v) }, { product: { name: ci(v) } }]), { product: { code: ci(toAsciiDigits(q)) } }] }
         : {}),
     },
     include: { product: { select: { name: true, code: true, avgCost: true, unit: { select: { name: true } } } }, supplier: { select: { name: true } } },

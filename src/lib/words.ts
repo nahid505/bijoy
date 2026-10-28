@@ -49,3 +49,44 @@ export function amountInBanglaWords(amount: number): string {
   if (paisa) s += ` ${UNITS[paisa]} পয়সা`;
   return `${amount < 0 ? "ঋণাত্মক " : ""}${s} মাত্র`;
 }
+
+// English, same South-Asian grouping (Crore / Lakh / Thousand / Hundred) — how amounts are written in Bangladesh.
+const EN_UNITS = ["Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
+const EN_TENS = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+
+function enBelow100(n: number): string {
+  return n < 20 ? EN_UNITS[n] : `${EN_TENS[Math.floor(n / 10)]}${n % 10 ? `-${EN_UNITS[n % 10]}` : ""}`;
+}
+
+function enBelow1000(n: number): string {
+  const h = Math.floor(n / 100);
+  const r = n % 100;
+  return [h ? `${EN_UNITS[h]} Hundred` : "", r ? enBelow100(r) : ""].filter(Boolean).join(" ");
+}
+
+/** Integer → English words: 12_50_000 → "Twelve Lakh Fifty Thousand". */
+export function numberToEnglishWords(value: number): string {
+  let n = Math.floor(Math.abs(value));
+  if (n === 0) return EN_UNITS[0];
+  const parts: string[] = [];
+  const crore = Math.floor(n / 10_000_000);
+  n %= 10_000_000;
+  const lakh = Math.floor(n / 100_000);
+  n %= 100_000;
+  const thousand = Math.floor(n / 1_000);
+  n %= 1_000;
+  if (crore) parts.push(`${crore >= 100 ? numberToEnglishWords(crore) : enBelow100(crore)} Crore`);
+  if (lakh) parts.push(`${enBelow100(lakh)} Lakh`);
+  if (thousand) parts.push(`${enBelow100(thousand)} Thousand`);
+  if (n) parts.push(enBelow1000(n));
+  return parts.join(" ");
+}
+
+/** 1234.5 → "One Thousand Two Hundred Thirty-Four Taka and Fifty Paisa Only" */
+export function amountInEnglishWords(amount: number): string {
+  const taka = Math.floor(Math.abs(amount) + 1e-9);
+  const paisa = Math.round((Math.abs(amount) - taka) * 100);
+  let s = `${numberToEnglishWords(taka)} Taka`;
+  if (paisa) s += ` and ${enBelow100(paisa)} Paisa`;
+  return `${amount < 0 ? "Minus " : ""}${s} Only`;
+}

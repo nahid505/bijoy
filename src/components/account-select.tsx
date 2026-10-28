@@ -8,6 +8,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { formatDrCr } from "@/lib/format";
 import { accountGroupsForCreateAction, quickCreateAccountAction } from "@/server/actions/lookup";
+import { useT } from "./lang";
 import { anchoredStyle, useAnchoredPosition, useDebounced } from "./popover-utils";
 import type { AccountOption } from "./trade-parts";
 
@@ -47,6 +48,7 @@ export function SearchableAccountSelect({
   value, onChange, scope = "all", known, id, name, placeholder = "— হিসাব নির্বাচন —", noneLabel, disabled = false,
   allowCreate = true, currency = "৳", ariaLabel, className = "", book,
 }: SearchableAccountSelectProps) {
+  const t = useT();
   const bookParam = book ? `&book=${book}` : "";
   const uid = useId();
   const triggerId = id ?? `acc-${uid}`;
@@ -247,9 +249,9 @@ export function SearchableAccountSelect({
               <span className="ml-1.5 text-xs text-slate-400">{selected.group}</span>
             </>
           ) : value && missing !== value ? (
-            <span className="text-slate-400">লোড হচ্ছে…</span>
+            <span className="text-slate-400">{t("লোড হচ্ছে…")}</span>
           ) : (
-            <span className="text-slate-400">{noneLabel ?? placeholder}</span>
+            <span className="text-slate-400">{t(noneLabel ?? placeholder)}</span>
           )}
         </span>
         <span aria-hidden className="shrink-0 text-xs text-slate-400">⌄</span>
@@ -266,39 +268,39 @@ export function SearchableAccountSelect({
               ref={searchRef}
               type="search"
               role="searchbox"
-              aria-label="হিসাব খুঁজুন"
+              aria-label={t("হিসাব খুঁজুন")}
               aria-controls={listId}
               aria-activedescendant={activeId}
               aria-busy={loading}
               autoComplete="off"
               spellCheck={false}
-              placeholder="🔍 হিসাব খুঁজুন..."
+              placeholder={t("🔍 হিসাব খুঁজুন...")}
               className="input"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={onSearchKey}
             />
           </div>
-          <ul id={listId} role="listbox" aria-label="হিসাবের তালিকা" className="min-h-0 flex-1 overflow-y-auto py-1" onMouseDown={(e) => e.preventDefault()}>
+          <ul id={listId} role="listbox" aria-label={t("হিসাবের তালিকা")} className="min-h-0 flex-1 overflow-y-auto py-1" onMouseDown={(e) => e.preventDefault()}>
             {loading && items.length === 0 && (
               <li className="flex items-center gap-2 px-3 py-2 text-xs text-slate-500" aria-live="polite">
-                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-brand-600 border-t-transparent" /> খোঁজা হচ্ছে…
+                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-brand-600 border-t-transparent" /> {t("খোঁজা হচ্ছে…")}
               </li>
             )}
-            {error && <li className="px-3 py-2 text-xs text-red-700" role="alert">{error}</li>}
+            {error && <li className="px-3 py-2 text-xs text-red-700" role="alert">{t(error)}</li>}
             {!loading && !error && items.length === 0 && (
-              <li className="px-3 py-3 text-center text-sm text-slate-500" aria-live="polite">কোনো হিসাব পাওয়া যায়নি</li>
+              <li className="px-3 py-3 text-center text-sm text-slate-500" aria-live="polite">{t("কোনো হিসাব পাওয়া যায়নি")}</li>
             )}
             {entries.map((e, i) => {
               const isActive = i === active;
               const base = `cursor-pointer px-3 py-1.5 ${isActive ? "bg-brand-50" : "hover:bg-ink-50"}`;
               const common = { id: `${listId}-${i}`, onMouseEnter: () => setActive(i), onClick: () => choose(i) };
-              if (e.type === "none") return <li key="none" {...common} role="option" aria-selected={!value} className={`${base} text-slate-600`}>{noneLabel}</li>;
-              if (e.type === "more") return <li key="more" {...common} role="option" aria-selected={false} className={`${base} text-center text-xs font-medium text-brand-700`}>আরও হিসাব দেখুন ↓</li>;
+              if (e.type === "none") return <li key="none" {...common} role="option" aria-selected={!value} className={`${base} text-slate-600`}>{noneLabel ? t(noneLabel) : ""}</li>;
+              if (e.type === "more") return <li key="more" {...common} role="option" aria-selected={false} className={`${base} text-center text-xs font-medium text-brand-700`}>{t("আরও হিসাব দেখুন ↓")}</li>;
               if (e.type === "create") {
                 return (
                   <li key="create" {...common} role="option" aria-selected={false} className={`${base} border-t border-rule font-medium text-brand-700`}>
-                    + নতুন হিসাব তৈরি করুন{query.trim() ? ` — “${query.trim()}”` : ""}
+                    + {t("নতুন হিসাব তৈরি করুন")}{query.trim() ? ` — “${query.trim()}”` : ""}
                   </li>
                 );
               }
@@ -306,9 +308,9 @@ export function SearchableAccountSelect({
               // group headings while browsing; while searching the group is shown on each row
               const heading = !query && a.group !== lastGroup ? a.group : null;
               lastGroup = a.group;
-              const sub = [query ? a.group : null, a.code && `কোড ${a.code}`, a.detail].filter(Boolean).join(" · ");
+              const sub = [query ? a.group : null, a.code && `${t("কোড")} ${a.code}`, a.detail].filter(Boolean).join(" · ");
               return [
-                heading && <li key={`h-${i}`} role="presentation" className="bg-ink-50 px-3 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{heading}</li>,
+                heading && <li key={`h-${i}`} role="presentation" className="bg-ink-50 px-3 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{t(heading)}</li>,
                 <li key={a.id} {...common} role="option" aria-selected={a.id === value} className={`${base} flex items-start justify-between gap-3`}>
                   <span className="min-w-0">
                     <span className={`block truncate ${a.id === value ? "font-semibold" : ""}`}>{a.name}</span>
@@ -318,7 +320,7 @@ export function SearchableAccountSelect({
                 </li>,
               ];
             })}
-            {loading && items.length > 0 && <li className="px-3 py-1.5 text-center text-xs text-slate-400" aria-live="polite">খোঁজা হচ্ছে…</li>}
+            {loading && items.length > 0 && <li className="px-3 py-1.5 text-center text-xs text-slate-400" aria-live="polite">{t("খোঁজা হচ্ছে…")}</li>}
           </ul>
         </div>
       )}
@@ -347,6 +349,7 @@ export function SearchableAccountSelect({
 }
 
 function QuickCreateAccountDialog({ scope, initialName, onCancel, onCreated }: { scope: AccountScope; initialName: string; onCancel: () => void; onCreated: (a: AccountItem) => void }) {
+  const t = useT();
   const ref = useRef<HTMLDialogElement>(null);
   const [groups, setGroups] = useState<{ id: string; name: string; systemKey: string | null }[] | null>(null);
   const [groupId, setGroupId] = useState("");
@@ -395,38 +398,38 @@ function QuickCreateAccountDialog({ scope, initialName, onCancel, onCreated }: {
       className="m-auto w-[min(30rem,calc(100vw-2rem))] rounded-lg border border-rule p-0 shadow-2xl backdrop:bg-ink-950/50"
     >
       <form onSubmit={submit} className="space-y-3 p-5" noValidate>
-        <h2 className="text-base font-bold text-ink-900">নতুন হিসাব তৈরি করুন</h2>
+        <h2 className="text-base font-bold text-ink-900">{t("নতুন হিসাব তৈরি করুন")}</h2>
         {message && <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{message}</p>}
         <div>
-          <label className="label" htmlFor="qaName">হিসাবের নাম *</label>
+          <label className="label" htmlFor="qaName">{t("হিসাবের নাম *")}</label>
           <input id="qaName" name="qaName" defaultValue={initialName} required autoFocus className="input" />
           {err("name") && <p className="mt-1 text-xs text-red-600">{err("name")}</p>}
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
-            <label className="label" htmlFor="qaGroup">গ্রুপ *</label>
+            <label className="label" htmlFor="qaGroup">{t("গ্রুপ *")}</label>
             <select id="qaGroup" className="input" value={groupId} onChange={(e) => setGroupId(e.target.value)} disabled={!groups?.length}>
-              {groups === null && <option value="">লোড হচ্ছে…</option>}
+              {groups === null && <option value="">{t("লোড হচ্ছে…")}</option>}
               {groups?.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
             </select>
             {err("groupId") && <p className="mt-1 text-xs text-red-600">{err("groupId")}</p>}
           </div>
           <div>
-            <label className="label" htmlFor="qaCode">কোড</label>
-            <input id="qaCode" name="qaCode" className="input" placeholder="ঐচ্ছিক, অনন্য" />
+            <label className="label" htmlFor="qaCode">{t("কোড")}</label>
+            <input id="qaCode" name="qaCode" className="input" placeholder={t("ঐচ্ছিক, অনন্য")} />
             {err("code") && <p className="mt-1 text-xs text-red-600">{err("code")}</p>}
           </div>
         </div>
         {bank && (
           <div className="grid gap-3 sm:grid-cols-2">
-            <div><label className="label" htmlFor="qaBank">ব্যাংক / প্রতিষ্ঠান</label><input id="qaBank" name="qaBank" className="input" placeholder="যেমন বিকাশ, ডাচ-বাংলা" /></div>
-            <div><label className="label" htmlFor="qaNumber">হিসাব নম্বর</label><input id="qaNumber" name="qaNumber" className="input" /></div>
+            <div><label className="label" htmlFor="qaBank">{t("ব্যাংক / প্রতিষ্ঠান")}</label><input id="qaBank" name="qaBank" className="input" placeholder={t("যেমন বিকাশ, ডাচ-বাংলা")} /></div>
+            <div><label className="label" htmlFor="qaNumber">{t("হিসাব নম্বর")}</label><input id="qaNumber" name="qaNumber" className="input" /></div>
           </div>
         )}
-        <p className="text-xs text-slate-500">প্রারম্ভিক ব্যালেন্স ০ থাকবে — প্রয়োজনে পরে লেজার পাতা থেকে দিন।</p>
+        <p className="text-xs text-slate-500">{t("প্রারম্ভিক ব্যালেন্স ০ থাকবে — প্রয়োজনে পরে লেজার পাতা থেকে দিন।")}</p>
         <div className="flex justify-end gap-2 border-t border-rule pt-3">
-          <button type="button" className="btn-secondary" onClick={onCancel}>বাতিল</button>
-          <button type="submit" className="btn-primary" disabled={busy || !groupId}>{busy ? "তৈরি হচ্ছে…" : "তৈরি করে বেছে নিন"}</button>
+          <button type="button" className="btn-secondary" onClick={onCancel}>{t("বাতিল")}</button>
+          <button type="submit" className="btn-primary" disabled={busy || !groupId}>{busy ? t("তৈরি হচ্ছে…") : t("তৈরি করে বেছে নিন")}</button>
         </div>
       </form>
     </dialog>

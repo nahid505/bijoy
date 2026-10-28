@@ -60,14 +60,16 @@ export function SubmitButton({
   pendingText?: string;
 }) {
   const { pending } = useFormCtx();
+  const t = useT();
   return (
     <button type="submit" className={className} disabled={pending} aria-disabled={pending}>
-      {pending ? pendingText : children}
+      {pending ? t(pendingText) : typeof children === "string" ? t(children) : children}
     </button>
   );
 }
 
 export function FormAlert({ state }: { state: FormState }) {
+  const t = useT();
   if (!state?.message) return null;
   return (
     <div
@@ -76,15 +78,16 @@ export function FormAlert({ state }: { state: FormState }) {
         state.ok ? "bg-brand-50 text-brand-800 ring-1 ring-brand-200" : "bg-red-50 text-red-700 ring-1 ring-red-200"
       }`}
     >
-      {state.message}
+      {t(state.message)}
     </div>
   );
 }
 
 export function FieldError({ name }: { name: string }) {
   const { state } = useFormCtx();
+  const t = useT();
   const error = state?.errors?.[name]?.[0];
-  return error ? <p className="mt-1 text-xs text-red-600">{error}</p> : null;
+  return error ? <p className="mt-1 text-xs text-red-600">{t(error)}</p> : null;
 }
 
 export function Field({
@@ -101,14 +104,15 @@ export function Field({
   className?: string;
 }) {
   const { state } = useFormCtx();
+  const t = useT();
   const hasError = !!state?.errors?.[name];
   return (
     <div className={className}>
       <label className="label" htmlFor={name}>
-        {label}
+        {t(label)}
       </label>
       {children}
-      {hint && !hasError && <p className="mt-1 text-xs text-slate-400">{hint}</p>}
+      {hint && !hasError && <p className="mt-1 text-xs text-slate-400">{t(hint)}</p>}
       <FieldError name={name} />
     </div>
   );
@@ -150,12 +154,12 @@ export function ConfirmDialog({
       className="m-auto w-[min(26rem,calc(100vw-2rem))] rounded-lg border border-rule p-0 text-left shadow-2xl backdrop:bg-ink-950/50"
     >
       <div className="p-5">
-        <h2 className="text-base font-bold text-ink-900">{title}</h2>
-        <p className="mt-2 text-sm text-slate-600">{message}</p>
+        <h2 className="text-base font-bold text-ink-900">{t(title)}</h2>
+        <p className="mt-2 text-sm text-slate-600">{t(message)}</p>
       </div>
       <div className="flex justify-end gap-2 border-t border-rule bg-ink-50 px-5 py-3">
         <button type="button" className="btn-secondary" onClick={onCancel}>{t("বাতিল")}</button>
-        <button type="button" className={danger ? "btn-danger" : "btn-primary"} onClick={onConfirm} autoFocus>{confirmLabel}</button>
+        <button type="button" className={danger ? "btn-danger" : "btn-primary"} onClick={onConfirm} autoFocus>{t(confirmLabel)}</button>
       </div>
     </dialog>
   );
@@ -193,15 +197,15 @@ export function ActionButton({
   return (
     <span className="inline-flex flex-col items-end gap-1">
       <button type="button" className={className} disabled={pending} onClick={() => (confirmText ? setAsking(true) : run())}>
-        {pending ? t(pendingText) : label}
+        {pending ? t(pendingText) : t(label)}
       </button>
-      {state && !state.ok && state.message && <span className="max-w-xs text-xs text-red-600">{state.message}</span>}
+      {state && !state.ok && state.message && <span className="max-w-xs text-xs text-red-600">{t(state.message)}</span>}
       {confirmText && asking && (
         <ConfirmDialog
           open={asking}
           title={t("নিশ্চিত করুন")}
           message={confirmText}
-          confirmLabel={label}
+          confirmLabel={t(label)}
           danger={className.includes("danger")}
           onCancel={() => setAsking(false)}
           onConfirm={() => {
@@ -240,7 +244,7 @@ export function ConfirmSubmitButton({
           open
           title={t(title)}
           message={message}
-          confirmLabel={label}
+          confirmLabel={t(label)}
           danger={className.includes("danger")}
           onCancel={() => setAsking(false)}
           onConfirm={() => {
@@ -254,9 +258,10 @@ export function ConfirmSubmitButton({
 }
 
 export function PrintButton({ label = "প্রিন্ট" }: { label?: string }) {
+  const t = useT();
   return (
     <button type="button" className="btn-secondary" onClick={() => window.print()}>
-      🖨 {label}
+      🖨 {t(label)}
     </button>
   );
 }

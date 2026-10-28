@@ -67,9 +67,9 @@ run("depot management (ডিপো ব্যবসা)", () => {
     await prisma.$disconnect();
   });
 
-  it("registration accepts 'depot' (any case) as the DEPOT business type", () => {
+  it("registration no longer takes a business type (it is chosen in settings)", () => {
     const base = { businessName: "ডিপো", ownerName: "মালিক", mobile: "01712345678", password: "Dokan-2026x", confirmPassword: "Dokan-2026x" };
-    for (const v of ["DEPOT", "depot", " Depot "]) expect(registrationSchema.parse({ ...base, businessType: v }).businessType).toBe("DEPOT");
+    expect("businessType" in registrationSchema.parse({ ...base, businessType: "DEPOT" })).toBe(false);
   });
 
   it("company-paid DO release: stock out at cost against the company, commission receivable, no dealer due", async () => {

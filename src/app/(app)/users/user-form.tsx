@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useT } from "@/components/lang";
 import { ActionForm, Field, SubmitButton, type FormAction } from "@/components/forms";
 import { PartyMultiSelect, type PartyChoice } from "@/components/party-multi-select";
 
@@ -31,13 +32,14 @@ export function UserForm({
   /** depot business: depot dealers are assigned in their own list */
   depot?: boolean;
 }) {
+  const t = useT();
   const [roleId, setRoleId] = useState(defaults?.roleId ?? "");
   const role = roles.find((r) => r.id === roleId);
   const note = (on: boolean | undefined, what: string) =>
     on ? (
-      <p className="mt-1 text-xs text-brand-700">✔ নির্বাচিত রোলে কার্যকর — এই ব্যবহারকারী শুধু নিচের {what} দেখবেন</p>
+      <p className="mt-1 text-xs text-brand-700">✔ {t("নির্বাচিত রোলে কার্যকর — এই ব্যবহারকারী শুধু নিচের {0} দেখবেন", { 0: t(what) })}</p>
     ) : (
-      <p className="mt-1 text-xs text-slate-500">নির্বাচিত রোলে &quot;শুধু নির্ধারিত {what}&quot; অনুমতি নেই — তালিকাটি সংরক্ষিত থাকবে, তবে এখন সব {what} দেখা যাবে</p>
+      <p className="mt-1 text-xs text-slate-500">{t('নির্বাচিত রোলে "শুধু নির্ধারিত {0}" অনুমতি নেই — তালিকাটি সংরক্ষিত থাকবে, তবে এখন সব {0} দেখা যাবে', { 0: t(what) })}</p>
     );
   return (
     <ActionForm action={action}>

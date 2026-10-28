@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { DEPOT_ACCESS, isDepot } from "@/lib/depot";
 import { formatMoney, toBnDigits, toDateInput } from "@/lib/format";
 import { EmptyState, PageHeader, StatCard, TableWrap } from "@/components/ui";
+import { getT } from "@/server/i18n";
 import { can, requirePermission } from "@/server/auth";
 import { canChangeEntryDate } from "@/server/entry-date";
 import { settleCommissionAction, transferCommissionAction } from "@/server/actions/depot";
@@ -29,13 +30,14 @@ export default async function DepotCommissionPage() {
   summary.outstanding = summary.rows.reduce((s, r) => s + r.outstanding, 0);
   const earned = summary.rows.reduce((s, r) => s + r.earned, 0);
   const settled = summary.rows.reduce((s, r) => s + r.settled, 0);
+  const t = await getT();
   return (
     <>
       <PageHeader
         title="কোম্পানি কমিশন হিসাব"
         description="ডিও রিলিজ চালান থেকে অর্জিত কমিশন, আদায়/সমন্বয় এবং কোম্পানির কাছে বর্তমান প্রাপ্য"
         crumbs={[{ label: "ডিপো ব্যবস্থাপনা" }, { label: "কোম্পানি কমিশন" }]}
-        actions={<Link prefetch={false} href="/reports/depot-commission" className="btn-secondary">কমিশন রিপোর্ট (প্রিন্ট/এক্সেল)</Link>}
+        actions={<Link prefetch={false} href="/reports/depot-commission" className="btn-secondary">{t("কমিশন রিপোর্ট (প্রিন্ট/এক্সেল)")}</Link>}
       />
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
         <StatCard label="মোট অর্জিত কমিশন" value={formatMoney(earned, cur)} tone="blue" />
@@ -43,11 +45,11 @@ export default async function DepotCommissionPage() {
         <StatCard label="কোম্পানির কাছে মোট প্রাপ্য" value={formatMoney(summary.outstanding, cur)} tone="amber" />
       </div>
       <section className="panel mb-5">
-        <div className="panel-head"><h2 className="panel-title">কোম্পানিভিত্তিক কমিশন</h2></div>
+        <div className="panel-head"><h2 className="panel-title">{t("কোম্পানিভিত্তিক কমিশন")}</h2></div>
         {summary.rows.length === 0 ? <EmptyState message="এখনও কোনো ডিও রিলিজ চালান নেই — প্রথম কমিশন আসবে ডিও রিলিজ থেকে" /> : (
           <TableWrap>
             <table className="table">
-              <thead><tr><th>কোম্পানি</th><th className="text-right">ডিও চালান</th><th className="text-right">অর্জিত</th><th className="text-right">আদায়/সমন্বয়</th><th className="text-right">প্রাপ্য</th><th /></tr></thead>
+              <thead><tr><th>{t("কোম্পানি")}</th><th className="text-right">{t("ডিও চালান")}</th><th className="text-right">{t("অর্জিত")}</th><th className="text-right">{t("আদায়/সমন্বয়")}</th><th className="text-right">{t("প্রাপ্য")}</th><th /></tr></thead>
               <tbody>
                 {summary.rows.map((r) => (
                   <tr key={r.companyAccountId}>
@@ -56,7 +58,7 @@ export default async function DepotCommissionPage() {
                     <td className="num">{formatMoney(r.earned, cur)}</td>
                     <td className="num">{formatMoney(r.settled, cur)}</td>
                     <td className={`num font-bold ${r.outstanding < 0 ? "text-credit" : ""}`}>{formatMoney(r.outstanding, cur)}</td>
-                    <td className="text-right"><Link prefetch={false} href={`/accounts/${r.receivableAccountId}`} className="text-sm text-brand-700 hover:underline">লেজার</Link></td>
+                    <td className="text-right"><Link prefetch={false} href={`/accounts/${r.receivableAccountId}`} className="text-sm text-brand-700 hover:underline">{t("লেজার")}</Link></td>
                   </tr>
                 ))}
               </tbody>
@@ -66,7 +68,7 @@ export default async function DepotCommissionPage() {
       </section>
       {can(ctx, DEPOT_ACCESS.settle) && (
         <section className="panel p-5">
-          <h2 className="mb-3 text-base font-semibold text-ink-900">কমিশন আদায় / সমন্বয়</h2>
+          <h2 className="mb-3 text-base font-semibold text-ink-900">{t("কমিশন আদায় / সমন্বয়")}</h2>
           <CommissionSettleForm
             action={settleCommissionAction}
             companies={summary.rows.map((r) => ({ id: r.companyAccountId, name: r.company, outstanding: r.outstanding }))}
@@ -79,9 +81,9 @@ export default async function DepotCommissionPage() {
       )}
       {!isRestricted(ctx) && (
       <section className="panel mt-4 p-5" id="commission-transfer">
-        <h2 className="text-base font-semibold text-ink-900">কমিশন সাধারণ আয়ে স্থানান্তর</h2>
+        <h2 className="text-base font-semibold text-ink-900">{t("কমিশন সাধারণ আয়ে স্থানান্তর")}</h2>
         <p className="mb-3 mt-1 text-sm text-slate-600">
-          ডিপোর হিসাব সাধারণ ব্যবসা থেকে সম্পূর্ণ আলাদা। শুধু অর্জিত কোম্পানি কমিশন এখান থেকে সাধারণ আয়ে নেওয়া যায় — ডিপোর নগদ থেকে বের হয়ে সাধারণ নগদে &quot;ডিপো কমিশন আয় (স্থানান্তরিত)&quot; হিসেবে যোগ হবে।
+          {t("ডিপোর হিসাব সাধারণ ব্যবসা থেকে সম্পূর্ণ আলাদা। শুধু অর্জিত কোম্পানি কমিশন এখান থেকে সাধারণ আয়ে নেওয়া যায় — ডিপোর নগদ থেকে বের হয়ে সাধারণ নগদে \"ডিপো কমিশন আয় (স্থানান্তরিত)\" হিসেবে যোগ হবে।")}
         </p>
         <div className="mb-4 grid gap-3 sm:grid-cols-3">
           <StatCard label="মোট অর্জিত কমিশন" value={formatMoney(transfer.earned, cur)} />
@@ -91,7 +93,7 @@ export default async function DepotCommissionPage() {
         {can(ctx, "vouchers:create") ? (
           <CommissionTransferForm action={transferCommissionAction} available={transfer.available} cashAccounts={cash.map((a) => ({ ...a, group: "" }))} today={toDateInput()} dateLocked={!canChangeEntryDate(ctx)} currency={cur} />
         ) : (
-          <p className="text-sm text-slate-500">স্থানান্তর সাধারণ হিসাবে এন্ট্রি দেয় — এর জন্য &quot;ভাউচার তৈরি&quot; অনুমতি লাগবে।</p>
+          <p className="text-sm text-slate-500">{t('স্থানান্তর সাধারণ হিসাবে এন্ট্রি দেয় — এর জন্য "ভাউচার তৈরি" অনুমতি লাগবে।')}</p>
         )}
       </section>
       )}

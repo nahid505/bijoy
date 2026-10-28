@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import ExcelJS from "exceljs";
-import { amountInBanglaWords, numberToBanglaWords } from "@/lib/words";
+import { amountInBanglaWords, amountInEnglishWords, numberToBanglaWords, numberToEnglishWords } from "@/lib/words";
 import { toCsv, toXlsx } from "@/server/reports/export";
 import type { ReportResult } from "@/server/reports/types";
 
@@ -18,6 +18,19 @@ describe("amount in Bangla words (money receipts)", () => {
   it("formats taka and paisa", () => {
     expect(amountInBanglaWords(1500.5)).toBe("এক হাজার পাঁচ শত টাকা পঞ্চাশ পয়সা মাত্র");
     expect(amountInBanglaWords(3045)).toBe("তিন হাজার পঁয়তাল্লিশ টাকা মাত্র");
+  });
+});
+
+describe("amount in English words (English UI)", () => {
+  it("uses Crore / Lakh / Thousand grouping", () => {
+    expect(numberToEnglishWords(0)).toBe("Zero");
+    expect(numberToEnglishWords(1_234_567)).toBe("Twelve Lakh Thirty-Four Thousand Five Hundred Sixty-Seven");
+    expect(numberToEnglishWords(25_00_00_000)).toBe("Twenty-Five Crore");
+  });
+  it("formats taka and paisa", () => {
+    expect(amountInEnglishWords(1500.5)).toBe("One Thousand Five Hundred Taka and Fifty Paisa Only");
+    expect(amountInEnglishWords(0)).toBe("Zero Taka Only");
+    expect(amountInEnglishWords(-3045)).toBe("Minus Three Thousand Forty-Five Taka Only");
   });
 });
 

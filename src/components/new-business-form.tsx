@@ -12,7 +12,7 @@ export function NewBusinessForm() {
       </Field>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="মোবাইল" name="mobile">
-          <input id="mobile" name="mobile" className="input" />
+          <input id="mobile" name="mobile" type="tel" inputMode="tel" className="input" />
         </Field>
         <Field label="অর্থবছর শুরু" name="fiscalYearStartMonth" hint="বাংলাদেশে সাধারণত জুলাই">
           <select id="fiscalYearStartMonth" name="fiscalYearStartMonth" defaultValue="7" className="input">

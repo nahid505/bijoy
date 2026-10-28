@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { prisma, num } from "@/lib/db";
 import { formatDate, formatDateTime, formatMoney, toBnDigits } from "@/lib/format";
-import { BUSINESS_TYPE_LABELS } from "@/lib/business-types";
+import { businessTypesText } from "@/lib/business-types";
+import { strList } from "@/lib/dialect";
 import { CYCLE_LABELS, SUB_STATUS_LABELS, type SubStatus } from "@/lib/subscription";
 import { ActionButton } from "@/components/forms";
 import { FeatureComparison, PlanCards } from "@/components/plan-cards";
@@ -63,7 +64,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Sear
           <div className="panel-head flex items-center justify-between"><h2 className="panel-title">প্রতিষ্ঠানের তথ্য</h2>{can(ctx, "business:manage") && <Link prefetch={false} href="/business" className="text-xs text-brand-700 hover:underline">সম্পাদনা</Link>}</div>
           <dl className="p-4">
             <DetailRow label="নাম">{business.name}</DetailRow>
-            <DetailRow label="ধরন">{business.businessType ? BUSINESS_TYPE_LABELS[business.businessType as keyof typeof BUSINESS_TYPE_LABELS] ?? business.businessType : "—"}</DetailRow>
+            <DetailRow label="ধরন">{businessTypesText(strList(business.businessTypes))}</DetailRow>
             <DetailRow label="মোবাইল">{business.mobile ?? "—"}</DetailRow>
             <DetailRow label="ঠিকানা">{business.address ?? "—"}</DetailRow>
             {(business.binNumber || business.tinNumber) && <DetailRow label="BIN / TIN">{[business.binNumber, business.tinNumber].filter(Boolean).join(" / ")}</DetailRow>}

@@ -117,7 +117,7 @@ export function EmployeeForm({
           </Field>
           <Field label="নাম *" name="name"><input id="name" className="input" value={f.name} onChange={(e) => set("name", e.target.value)} required /></Field>
           <Field label="মোবাইল" name="mobile"><input id="mobile" type="tel" className="input" value={f.mobile} onChange={(e) => set("mobile", e.target.value)} placeholder="01XXXXXXXXX" /></Field>
-          <Field label="জাতীয় পরিচয়পত্র (NID)" name="nid"><input id="nid" className="input" value={f.nid} onChange={(e) => set("nid", e.target.value)} inputMode="numeric" /></Field>
+          <Field label="জাতীয় পরিচয়পত্র (NID)" name="nid"><input id="nid" className="input" value={f.nid} onChange={(e) => set("nid", e.target.value)} inputMode="numeric" data-numeric /></Field>
           <Field label="বিভাগ" name="departmentId">
             <select id="departmentId" className="input" value={f.departmentId} onChange={(e) => set("departmentId", e.target.value)}>
               <option value="">—</option>
@@ -158,7 +158,7 @@ export function EmployeeForm({
           <div className="min-w-0 space-y-3 lg:col-span-2">
             <div className="grid gap-3 sm:grid-cols-3">
               <Field label="মূল বেতন *" name="basicSalary">
-                <input id="basicSalary" type="number" min="0" step="0.01" className="input-num" value={f.basicSalary || ""} onChange={(e) => set("basicSalary", Number(e.target.value))} />
+                <input id="basicSalary" type="text" inputMode="decimal" data-numeric min="0" step="0.01" className="input-num" value={f.basicSalary || ""} onChange={(e) => set("basicSalary", Number(e.target.value))} />
               </Field>
               <Field label="ওভারটাইম" name="overtimeEligible">
                 <label className="flex h-9 items-center gap-2 text-sm">
@@ -166,7 +166,7 @@ export function EmployeeForm({
                 </label>
               </Field>
               <Field label="ওভারটাইম হার (ঘণ্টায়)" name="overtimeRate" hint={`ফাঁকা = মূল বেতন ÷ (${settings.workingDays} × ${settings.hoursPerDay}) × ${settings.overtimeMultiplier}`}>
-                <input id="overtimeRate" type="number" min="0" step="0.01" className="input-num" value={f.overtimeRate} onChange={(e) => set("overtimeRate", e.target.value)} disabled={!f.overtimeEligible} />
+                <input id="overtimeRate" type="text" inputMode="decimal" data-numeric min="0" step="0.01" className="input-num" value={f.overtimeRate} onChange={(e) => set("overtimeRate", e.target.value)} disabled={!f.overtimeEligible} />
               </Field>
             </div>
             <div className="overflow-x-auto">
@@ -195,7 +195,7 @@ export function EmployeeForm({
                           </select>
                         </td>
                         <td>
-                          <input className="input-num" type="number" min="0" step="0.01" aria-label={`পরিমাণ ${i + 1}`} value={l.value} onChange={(e) => setLines((ls) => ls.map((x) => (x.key === l.key ? { ...x, value: e.target.value } : x)))} />
+                          <input className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="0.01" aria-label={`পরিমাণ ${i + 1}`} value={l.value} onChange={(e) => setLines((ls) => ls.map((x) => (x.key === l.key ? { ...x, value: e.target.value } : x)))} />
                           {percent(l.calcType) && <span className="text-xs text-slate-400">%</span>}
                           <FieldError name={`components.${i}.value`} />
                         </td>
@@ -315,8 +315,8 @@ export function AttendanceSheet({ action, date, rows: initial, locked }: { actio
                     })}
                   </div>
                 </td>
-                <td><input className="input-num" type="number" min="0" max="24" step="0.5" aria-label={`${r.name} — ওভারটাইম ঘণ্টা`} value={r.overtimeHours || ""} disabled={!!locked} onChange={(e) => update(r.employeeId, { overtimeHours: Number(e.target.value) || 0, status: r.status || "PRESENT" })} /></td>
-                <td><input className="input-num" type="number" min="0" max="1440" step="1" aria-label={`${r.name} — দেরি মিনিট`} value={r.lateMinutes || ""} disabled={!!locked || r.status !== "LATE"} onChange={(e) => update(r.employeeId, { lateMinutes: Number(e.target.value) || 0 })} /></td>
+                <td><input className="input-num" type="text" inputMode="decimal" data-numeric min="0" max="24" step="0.5" aria-label={`${r.name} — ওভারটাইম ঘণ্টা`} value={r.overtimeHours || ""} disabled={!!locked} onChange={(e) => update(r.employeeId, { overtimeHours: Number(e.target.value) || 0, status: r.status || "PRESENT" })} /></td>
+                <td><input className="input-num" type="text" inputMode="decimal" data-numeric min="0" max="1440" step="1" aria-label={`${r.name} — দেরি মিনিট`} value={r.lateMinutes || ""} disabled={!!locked || r.status !== "LATE"} onChange={(e) => update(r.employeeId, { lateMinutes: Number(e.target.value) || 0 })} /></td>
                 <td><input className="input" aria-label={`${r.name} — নোট`} value={r.note} disabled={!!locked} onChange={(e) => update(r.employeeId, { note: e.target.value })} /></td>
               </tr>
             ))}
@@ -349,7 +349,7 @@ export function PayslipAdjustForm({ action, extraOvertimeHours, manual, componen
     <ActionForm action={action} className="space-y-3">
       <input type="hidden" name="payload" value={payload} />
       <Field label="অতিরিক্ত ওভারটাইম (ঘণ্টা)" name="extraOvertimeHours" hint={overtimeEligible ? "হাজিরায় এন্ট্রি করা ঘণ্টার সাথে যোগ হবে" : "এই কর্মচারীর ওভারটাইম প্রযোজ্য নয়"}>
-        <input id="extraOvertimeHours" className="input-num w-32" type="number" min="0" step="0.5" value={extra} disabled={!overtimeEligible} onChange={(e) => setExtra(e.target.value)} />
+        <input id="extraOvertimeHours" className="input-num w-32" type="text" inputMode="decimal" data-numeric min="0" step="0.5" value={extra} disabled={!overtimeEligible} onChange={(e) => setExtra(e.target.value)} />
       </Field>
       <div className="space-y-2">
         <p className="label mb-0">এককালীন ভাতা / কর্তন (এই মাসের জন্য)</p>
@@ -359,7 +359,7 @@ export function PayslipAdjustForm({ action, extraOvertimeHours, manual, componen
               <option value="">— নির্বাচন —</option>
               {components.map((c) => <option key={c.id} value={c.id}>{c.kind === "EARNING" ? "+ " : "− "}{c.name}</option>)}
             </select>
-            <input className="input-num col-span-4 sm:col-span-2" type="number" min="0" step="0.01" aria-label={`টাকা ${i + 1}`} value={l.amount} onChange={(e) => setLines((ls) => ls.map((x) => (x.key === l.key ? { ...x, amount: e.target.value } : x)))} />
+            <input className="input-num col-span-4 sm:col-span-2" type="text" inputMode="decimal" data-numeric min="0" step="0.01" aria-label={`টাকা ${i + 1}`} value={l.amount} onChange={(e) => setLines((ls) => ls.map((x) => (x.key === l.key ? { ...x, amount: e.target.value } : x)))} />
             <input className="input col-span-7 sm:col-span-4" placeholder="কারণ" aria-label={`কারণ ${i + 1}`} value={l.note} onChange={(e) => setLines((ls) => ls.map((x) => (x.key === l.key ? { ...x, note: e.target.value } : x)))} />
             <button type="button" className="btn-ghost btn-sm col-span-1 text-credit" aria-label="সারি মুছুন" onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}>✕</button>
           </div>
@@ -418,7 +418,7 @@ export function SalaryPaymentForm({ action, employees, cashAccounts, today, curr
                   <td><span className="font-medium">{r.name}</span><span className="block text-xs text-slate-400">{[r.code, r.department].filter(Boolean).join(" · ")}</span></td>
                   <td className="text-xs text-slate-600">{r.months}</td>
                   <td className="num">{formatMoney(r.payable, currency)}</td>
-                  <td><input className="input-num" type="number" min="0" max={r.payable} step="0.01" aria-label={`${r.name} — পরিশোধ`} value={r.amount} disabled={!r.on} onChange={(e) => setRows((rs) => rs.map((x) => (x.id === r.id ? { ...x, amount: e.target.value } : x)))} /></td>
+                  <td><input className="input-num" type="text" inputMode="decimal" data-numeric min="0" max={r.payable} step="0.01" aria-label={`${r.name} — পরিশোধ`} value={r.amount} disabled={!r.on} onChange={(e) => setRows((rs) => rs.map((x) => (x.id === r.id ? { ...x, amount: e.target.value } : x)))} /></td>
                 </tr>
               ))}
             </tbody>
@@ -459,9 +459,9 @@ export function AdvanceForm({ action, cashAccounts, today, currency, employee, d
           </select>
         </Field>
         <Field label="তারিখ" name="date"><EntryDateInput id="date" value={date} onChange={setDate} locked={dateLocked} /></Field>
-        <Field label="টাকা *" name="amount"><input id="amount" type="number" min="0" step="0.01" className="input-num" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
+        <Field label="টাকা *" name="amount"><input id="amount" type="text" inputMode="decimal" data-numeric min="0" step="0.01" className="input-num" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
         <Field label="মাসিক কিস্তি *" name="installment" hint={months ? `প্রায় ${months} মাসে বেতন থেকে কাটা হবে` : "প্রতি মাসের বেতন থেকে কাটা হবে"}>
-          <input id="installment" type="number" min="0" step="0.01" className="input-num" value={installment} onChange={(e) => setInstallment(e.target.value)} />
+          <input id="installment" type="text" inputMode="decimal" data-numeric min="0" step="0.01" className="input-num" value={installment} onChange={(e) => setInstallment(e.target.value)} />
         </Field>
         <div>
           <label className="label" htmlFor="adv-cash">প্রদানের মাধ্যম</label>
@@ -531,7 +531,7 @@ export function ComponentForm({ action, defaults, auto, rules, known, currency, 
               </Field>
             ) : (
               <Field label={f.calcType === "FIXED" ? "ডিফল্ট টাকা" : "ডিফল্ট শতাংশ (%)"} name="defaultValue" hint="কর্মচারীর কাঠামোতে যোগ করার সময় প্রস্তাবিত মান">
-                <input id="defaultValue" type="number" min="0" step="0.01" className="input-num" value={f.defaultValue} onChange={(e) => set("defaultValue", Number(e.target.value))} />
+                <input id="defaultValue" type="text" inputMode="decimal" data-numeric min="0" step="0.01" className="input-num" value={f.defaultValue} onChange={(e) => set("defaultValue", Number(e.target.value))} />
               </Field>
             )}
             <Field label="প্রযোজ্য" name="appliesTo">
@@ -553,7 +553,7 @@ export function ComponentForm({ action, defaults, auto, rules, known, currency, 
             <FieldError name="liabilityAccountId" />
           </div>
         )}
-        <Field label="ক্রম" name="sortOrder"><input id="sortOrder" type="number" min="0" className="input-num" value={f.sortOrder} onChange={(e) => set("sortOrder", Number(e.target.value))} /></Field>
+        <Field label="ক্রম" name="sortOrder"><input id="sortOrder" type="text" inputMode="decimal" data-numeric min="0" className="input-num" value={f.sortOrder} onChange={(e) => set("sortOrder", Number(e.target.value))} /></Field>
         <div className="flex items-end gap-4 text-sm">
           <label className="flex items-center gap-2"><input type="checkbox" checked={f.isActive} disabled={auto} onChange={(e) => set("isActive", e.target.checked)} /> সক্রিয়</label>
           <label className="flex items-center gap-2"><input type="checkbox" checked={f.taxable} onChange={(e) => set("taxable", e.target.checked)} /> করযোগ্য আয়</label>
@@ -589,7 +589,7 @@ export function PayrollSettingsForm({ action, defaults, known, currency }: {
           </select>
         </Field>
         {f.workingDaysMode === "FIXED" && (
-          <Field label="কর্মদিবস (প্রতি মাসে)" name="fixedWorkingDays"><input id="fixedWorkingDays" type="number" min="1" max="31" className="input-num" value={f.fixedWorkingDays} onChange={(e) => set("fixedWorkingDays", Number(e.target.value))} /></Field>
+          <Field label="কর্মদিবস (প্রতি মাসে)" name="fixedWorkingDays"><input id="fixedWorkingDays" type="text" inputMode="decimal" data-numeric min="1" max="31" className="input-num" value={f.fixedWorkingDays} onChange={(e) => set("fixedWorkingDays", Number(e.target.value))} /></Field>
         )}
         <Field label="সাপ্তাহিক ছুটি" name="weeklyOffDays">
           <div className="flex flex-wrap gap-2 text-sm">
@@ -600,12 +600,12 @@ export function PayrollSettingsForm({ action, defaults, known, currency }: {
             ))}
           </div>
         </Field>
-        <Field label="দৈনিক কর্মঘণ্টা" name="hoursPerDay"><input id="hoursPerDay" type="number" min="1" max="24" step="0.5" className="input-num" value={f.hoursPerDay} onChange={(e) => set("hoursPerDay", Number(e.target.value))} /></Field>
+        <Field label="দৈনিক কর্মঘণ্টা" name="hoursPerDay"><input id="hoursPerDay" type="text" inputMode="decimal" data-numeric min="1" max="24" step="0.5" className="input-num" value={f.hoursPerDay} onChange={(e) => set("hoursPerDay", Number(e.target.value))} /></Field>
         <Field label="ওভারটাইম গুণক" name="overtimeMultiplier" hint="বাংলাদেশ শ্রম আইন: মূল মজুরির দ্বিগুণ হারে (২)">
-          <input id="overtimeMultiplier" type="number" min="1" max="5" step="0.25" className="input-num" value={f.overtimeMultiplier} onChange={(e) => set("overtimeMultiplier", Number(e.target.value))} />
+          <input id="overtimeMultiplier" type="text" inputMode="decimal" data-numeric min="1" max="5" step="0.25" className="input-num" value={f.overtimeMultiplier} onChange={(e) => set("overtimeMultiplier", Number(e.target.value))} />
         </Field>
         <Field label="কত দিন দেরি = ১ দিনের কর্তন" name="lateDaysPerAbsence" hint="০ = দেরির জন্য কর্তন নেই">
-          <input id="lateDaysPerAbsence" type="number" min="0" max="31" className="input-num" value={f.lateDaysPerAbsence} onChange={(e) => set("lateDaysPerAbsence", Number(e.target.value))} />
+          <input id="lateDaysPerAbsence" type="text" inputMode="decimal" data-numeric min="0" max="31" className="input-num" value={f.lateDaysPerAbsence} onChange={(e) => set("lateDaysPerAbsence", Number(e.target.value))} />
         </Field>
         <Field label="অনুপস্থিতির কর্তন হবে" name="absenceBasis">
           <select id="absenceBasis" className="input" value={f.absenceBasis} onChange={(e) => set("absenceBasis", e.target.value)}>

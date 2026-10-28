@@ -7,6 +7,7 @@ import { ActionForm, Field, FieldError, SubmitButton, type FormAction } from "@/
 import { SearchableAccountSelect } from "@/components/account-select";
 import type { AccountOption } from "@/components/trade-parts";
 import { formatMoney } from "@/lib/format";
+import { useT } from "@/components/lang";
 
 export interface DepotExpenseValues {
   date: string;
@@ -29,6 +30,7 @@ export function DepotExpenseForm({ action, initial, known, depotCashId, balance,
   currency: string;
   editing?: boolean;
 }) {
+  const t = useT();
   const [date, setDate] = useState(initial.date);
   const [head, setHead] = useState(initial.expenseAccountId);
   const [cash, setCash] = useState(initial.cashAccountId);
@@ -43,25 +45,25 @@ export function DepotExpenseForm({ action, initial, known, depotCashId, balance,
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <Field label="তারিখ *" name="date"><EntryDateInput id="expense-date" value={date} onChange={setDate} locked={dateLocked} /></Field>
         <div>
-          <label className="mb-1 block text-sm font-medium text-ink-800" htmlFor="expense-head">খরচের খাত *</label>
-          <SearchableAccountSelect id="expense-head" scope="expense" known={known} value={head} onChange={setHead} currency={currency} placeholder="— খরচের খাত নির্বাচন —" />
+          <label className="mb-1 block text-sm font-medium text-ink-800" htmlFor="expense-head">{t("খরচের খাত *")}</label>
+          <SearchableAccountSelect id="expense-head" scope="expense" known={known} value={head} onChange={setHead} currency={currency} placeholder={t("— খরচের খাত নির্বাচন —")} />
           <FieldError name="expenseAccountId" />
         </div>
         <div>
-          <label className="mb-1 block text-sm font-medium text-ink-800" htmlFor="expense-cash">পেমেন্ট মেথড *</label>
+          <label className="mb-1 block text-sm font-medium text-ink-800" htmlFor="expense-cash">{t("পেমেন্ট মেথড *")}</label>
           <SearchableAccountSelect id="expense-cash" scope="cash" known={known} value={cash} onChange={setCash} currency={currency} />
           <FieldError name="cashAccountId" />
         </div>
-        <Field label="টাকার পরিমাণ *" name="amount" hint={after !== null ? `ডিপো ক্যাশে আছে ${formatMoney(balance!, currency)} → খরচের পর ${formatMoney(after, currency)}` : undefined}>
-          <input id="expense-amount" name="amount" type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} className="input-num" required />
+        <Field label="টাকার পরিমাণ *" name="amount" hint={after !== null ? `${t("ডিপো ক্যাশে আছে")} ${formatMoney(balance!, currency)} → ${t("খরচের পর")} ${formatMoney(after, currency)}` : undefined}>
+          <input id="expense-amount" name="amount" type="text" inputMode="decimal" data-numeric min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} className="input-num" required />
         </Field>
         <Field label="ভাউচার / মেমো নং" name="reference"><input id="expense-reference" name="reference" defaultValue={initial.reference} className="input" maxLength={100} /></Field>
       </div>
-      {after !== null && after < 0 && <p className="text-sm font-medium text-red-600" id="expense-short">ডিপো ক্যাশে পর্যাপ্ত টাকা নেই — আগে মূল ক্যাশ থেকে ফান্ড স্থানান্তর করুন।</p>}
-      <Field label="বিবরণ" name="narration"><textarea id="expense-narration" name="narration" defaultValue={initial.narration} className="input" rows={2} maxLength={500} placeholder="যেমন: গুদাম ভাড়া — অক্টোবর" /></Field>
+      {after !== null && after < 0 && <p className="text-sm font-medium text-red-600" id="expense-short">{t("ডিপো ক্যাশে পর্যাপ্ত টাকা নেই — আগে মূল ক্যাশ থেকে ফান্ড স্থানান্তর করুন।")}</p>}
+      <Field label="বিবরণ" name="narration"><textarea id="expense-narration" name="narration" defaultValue={initial.narration} className="input" rows={2} maxLength={500} placeholder={t("যেমন: গুদাম ভাড়া — অক্টোবর")} /></Field>
       <div className="flex flex-wrap gap-2">
         <SubmitButton>{editing ? "পরিবর্তন সংরক্ষণ করুন" : "খরচ সংরক্ষণ করুন"}</SubmitButton>
-        {!editing && <button type="submit" name="then" value="new" className="btn-secondary">সংরক্ষণ ও আরেকটি</button>}
+        {!editing && <button type="submit" name="then" value="new" className="btn-secondary">{t("সংরক্ষণ ও আরেকটি")}</button>}
       </div>
     </ActionForm>
   );

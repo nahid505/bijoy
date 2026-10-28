@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma, num } from "@/lib/db";
 import { formatDate, formatMoney, formatQty } from "@/lib/format";
-import { amountInBanglaWords } from "@/lib/words";
+import { AmountInWords } from "@/components/amount-words";
 import { PAYROLL_KIND_LABELS, PAYSLIP_STATUS_LABELS, periodLabel } from "@/lib/payroll";
 import { PrintButton } from "@/components/forms";
 import { Badge } from "@/components/ui";
@@ -113,7 +113,7 @@ export default async function PayslipPage({ params }: { params: Promise<{ id: st
           <div>
             <p className="text-xs text-slate-500">নিট বেতন (Net)</p>
             <p className="text-2xl font-bold text-ink-900">{formatMoney(d.net, cur)}</p>
-            <p className="text-xs">কথায়: {amountInBanglaWords(d.net)}</p>
+            <p className="text-xs">কথায়: <AmountInWords amount={d.net} /></p>
           </div>
           {!draft && (
             <div className="text-right text-xs">
