@@ -244,6 +244,12 @@ export async function saveProduct(ctx: Ctx, input: ProductInput, id?: string) {
       brandId = (await tx.brand.findFirst({ where: { businessId: ctx.businessId, name: ciEquals(input.newBrandName) }, select: { id: true } }))?.id
         ?? (await tx.brand.create({ data: { businessId: ctx.businessId, name: input.newBrandName } })).id;
     }
+    // product group / category typed in (depot form): the same — reuse one of that name, or create it
+    let categoryId = input.categoryId;
+    if (!categoryId && input.newCategoryName) {
+      categoryId = (await tx.category.findFirst({ where: { businessId: ctx.businessId, name: ciEquals(input.newCategoryName) }, select: { id: true } }))?.id
+        ?? (await tx.category.create({ data: { businessId: ctx.businessId, name: input.newCategoryName } })).id;
+    }
     const existing = id ? await tx.product.findFirst({ where: { id, businessId: ctx.businessId } }) : null;
     if (id && !existing) throw new UserError("পণ্য পাওয়া যায়নি");
     const depotProduct = input.isDepotProduct ?? existing?.isDepotProduct ?? false;
@@ -259,7 +265,7 @@ export async function saveProduct(ctx: Ctx, input: ProductInput, id?: string) {
       name: input.name,
       code: input.code,
       barcode: input.barcode,
-      categoryId: input.categoryId,
+      categoryId,
       brandId,
       unitId: input.unitId,
       purchasePrice: input.purchasePrice,

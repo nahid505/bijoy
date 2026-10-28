@@ -49,6 +49,7 @@ describe("on-screen translation", () => {
     expect(tr("০.০০ মণ")).toBe("০.০০ Maund");
     expect(tr("ফ্রি (Free)")).toBe("Free");
     expect(tr("মালিক (Owner)")).toBe("Owner");
+    expect(tr("১ জুলাই ২০২৬ — ২৮ অক্টোবর ২০২৬ — সব গুদাম")).toBe("১ জুলাই ২০২৬ — ২৮ অক্টোবর ২০২৬ — All warehouses"); // dates: digits / months next
     expect(tr("খুচরা দোকান, রহিম ট্রেডার্স")).toBeNull(); // a piece is the business's own: the whole line stays
     expect(tr("মিনিকেট চাল ২৫ কেজি")).toBeNull(); // a product name ending in a unit is data, not "{0} কেজি"
     expect(tr("২৫ কেজি")).toBe("২৫ Kg");

@@ -67,6 +67,20 @@ run("depot products (ডিপো পণ্য তালিকা)", () => {
     expect(() => product({ depotCommissionType: "PERCENT", depotCommissionRate: 120 })).toThrow(/১০০/);
   });
 
+  it("a product group typed in the depot form is created once and reused (any case)", async () => {
+    const a = await saveProduct(ctx, product({ name: "ক্রিম বিস্কুট", code: "B-1", purchasePrice: 20, newCategoryName: "Biscuit", isDepotProduct: true }));
+    const b = await saveProduct(ctx, product({ name: "সল্ট বিস্কুট", code: "B-2", purchasePrice: 18, newCategoryName: "biscuit", isDepotProduct: true }));
+    const [pa, pb] = await Promise.all([a, b].map((id) => prisma.product.findUniqueOrThrow({ where: { id }, include: { category: true } })));
+    expect([pa.category?.name, pb.categoryId]).toEqual(["Biscuit", pa.categoryId]);
+    expect(await prisma.category.count({ where: { businessId: ctx.businessId } })).toBe(1);
+    // a group picked from the list wins over a typed name
+    const c = await saveProduct(ctx, product({ name: "কেক", code: "K-1", purchasePrice: 30, categoryId: pa.categoryId, newCategoryName: "কেক", isDepotProduct: true }));
+    expect((await prisma.product.findUniqueOrThrow({ where: { id: c } })).categoryId).toBe(pa.categoryId);
+    // out of the way of the picker / report checks below (no transactions yet)
+    await prisma.product.deleteMany({ where: { id: { in: [a, b, c] } } });
+    await prisma.category.deleteMany({ where: { businessId: ctx.businessId } });
+  });
+
   it("pickers: depot forms see only depot products (commission per unit), general forms and the POS never", async () => {
     const depotHits = await searchProducts(ctx.businessId, "", { book: "DEPOT" });
     expect(depotHits.map((p) => p.name).sort()).toEqual(["রড", "সিমেন্ট"]);

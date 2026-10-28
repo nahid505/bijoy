@@ -10,11 +10,11 @@ import { isDepot } from "@/lib/depot";
 export const metadata: Metadata = { title: "রিপোর্ট" };
 
 const SECTIONS: { title: string; slugs: string[]; depotOnly?: boolean; module?: BusinessModule }[] = [
-  { title: "অটো রাইস মিল", slugs: ["rice-mill"], module: "RICE_MILL" },
+  { title: "অটো রাইস মিল", slugs: ["daily-milling", "rice-mill"], module: "RICE_MILL" },
   { title: "ডিপো ব্যবস্থাপনা", slugs: ["depot-deliveries", "depot-market-dues", "depot-commission", "depot-company-ledger", "depot-profit-loss", "depot-cash-book", "depot-free"], depotOnly: true },
   { title: "দৈনিক ও হিসাব বই", slugs: ["daily-cash", "daily-summary", "day-book", "ledger", "cash-book", "bank-book"] },
   { title: "আর্থিক বিবরণী", slugs: ["trial-balance", "profit-loss", "balance-sheet", "cash-flow", "income-expense", "expenses", "integrity"] },
-  { title: "বিক্রয়, ক্রয় ও মজুদ", slugs: ["daily-sales", "daily-purchase", "sales", "purchases", "collection", "stock", "stock-valuation"] },
+  { title: "বিক্রয়, ক্রয় ও মজুদ", slugs: ["daily-sales", "daily-purchase", "daily-stock", "sales", "purchases", "collection", "stock", "stock-valuation"] },
   { title: "পণ্যের মেয়াদ (Expiry)", slugs: ["expired-stock", "expiring-stock", "expiry", "product-expiry", "expiry-value"] },
   { title: "বাকি ও পার্টি", slugs: ["customer-dues", "supplier-dues", "customer-statement", "supplier-statement", "customers", "suppliers"] },
   { title: "বেতন (Payroll)", slugs: ["payroll-monthly", "payroll-employee-history", "payroll-payable", "payroll-payments", "payroll-department", "payroll-components"] },

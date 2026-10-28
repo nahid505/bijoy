@@ -1,9 +1,9 @@
 import "server-only";
 import { round2 } from "@/lib/calc";
-import { formatDate, formatMoney, formatQty, toBnDigits } from "@/lib/format";
+import { dayOrToday, dayRange, formatDate, formatMoney, formatQty, toBnDigits } from "@/lib/format";
 import { KG_PER_MON } from "@/lib/paddy";
 import { reportPeriod } from "../period";
-import { millSales, millStock, millSummary } from "../services/rice-mill";
+import { dailyMilling, millSales, millStock, millSummary } from "../services/rice-mill";
 import type { ReportDef, ReportResult, ReportRow } from "./types";
 
 const qtyText = (q: number, unit: string) => {
@@ -85,4 +85,64 @@ export const RICE_MILL_REPORT: ReportDef = {
   filters: ["range"],
   permission: "reports:view",
   run: riceMillReport,
+};
+
+/** "4,500.00 কেজি / 90 বস্তা" — bags only when known */
+export const millQtyText = (q: { kg: number; bags: number | null }) =>
+  q.kg ? `${formatQty(q.kg)} কেজি${q.bags ? ` / ${toBnDigits(Number.isInteger(q.bags) ? String(q.bags) : q.bags.toFixed(2))} বস্তা` : ""}` : "—";
+
+/**
+ * "ডেইলি ধান ভাঙানো হিসাব" — the screen has its own page (/reports/daily-milling); this entry serves the reports
+ * index and the CSV / Excel export (?date=YYYY-MM-DD).
+ */
+export const DAILY_MILLING_REPORT: ReportDef = {
+  slug: "daily-milling",
+  title: "ডেইলি ধান ভাঙানো হিসাব",
+  description: "দিনের প্রতিটি মিলিং ব্যাচ — ধানের জাত, বস্তা ও পরিমাণ, উৎপাদিত চাল, কুঁড়া, খুদ ও তুষ, ফলন % ও অপারেটর",
+  filters: [],
+  permission: "reports:view",
+  async run(ctx, p) {
+    const date = dayOrToday(p.date);
+    const d = await dailyMilling(ctx.business.id, dayRange(date, date));
+    const pct = (n: number) => `${toBnDigits(n.toFixed(2))}%`;
+    const rows: ReportRow[] = d.rows.map((r, i) => ({
+      href: `/production/${r.voucherId}`,
+      cells: {
+        no: toBnDigits(i + 1), batch: r.batchNo, date: r.date, paddy: r.paddyNames,
+        paddyQty: `${millQtyText(r.paddy)} (${toBnDigits(r.paddy.mon.toFixed(2))} মণ)`,
+        rice: millQtyText(r.rice), bran: millQtyText(r.bran), broken: millQtyText(r.broken), husk: millQtyText(r.husk),
+        yield: `চাল ${pct(r.yields.rice)} · কুঁড়া ${pct(r.yields.bran)} · খুদ ${pct(r.yields.broken)} · তুষ ${pct(r.yields.husk)} · লস ${pct(r.yields.loss)}`,
+        operator: r.enteredBy ?? "",
+      },
+    }));
+    rows.push({
+      kind: "total",
+      cells: {
+        no: null, batch: `মোট (${toBnDigits(d.rows.length)} টি ব্যাচ)`, date: null, paddy: "",
+        paddyQty: `${millQtyText(d.totals.paddy)} (${toBnDigits(d.totals.paddy.mon.toFixed(2))} মণ)`,
+        rice: millQtyText(d.totals.rice), bran: millQtyText(d.totals.bran), broken: millQtyText(d.totals.broken), husk: millQtyText(d.totals.husk),
+        yield: `চাল ${pct(d.yields.rice)} · কুঁড়া ${pct(d.yields.bran)} · খুদ ${pct(d.yields.broken)} · তুষ ${pct(d.yields.husk)} · লস ${pct(d.yields.loss)}`,
+        operator: "",
+      },
+    });
+    return {
+      title: "ডেইলি ধান ভাঙানো হিসাব",
+      subtitle: formatDate(date),
+      columns: [
+        { key: "no", label: "নং" },
+        { key: "batch", label: "মিলিং ব্যাচ নং" },
+        { key: "date", label: "তারিখ", format: "date" },
+        { key: "paddy", label: "ধানের জাত" },
+        { key: "paddyQty", label: "ভাঙানো ধান (কেজি / বস্তা)" },
+        { key: "rice", label: "মূল চাল" },
+        { key: "bran", label: "কুঁড়া / ব্র্যান" },
+        { key: "broken", label: "খুদ / ভাঙা চাল" },
+        { key: "husk", label: "তুষ / ভূসি" },
+        { key: "yield", label: "উৎপাদন হার" },
+        { key: "operator", label: "অপারেটর / এন্ট্রিদাতা" },
+      ],
+      rows,
+      emptyMessage: "এই দিনে কোনো মিলিং ব্যাচ নেই",
+    };
+  },
 };

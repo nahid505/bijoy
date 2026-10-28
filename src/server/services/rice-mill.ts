@@ -180,3 +180,147 @@ export async function millSummary(businessId: string, range: DateRange) {
     },
   };
 }
+
+// ───────────────────────── daily milling (ডেইলি ধান ভাঙানো হিসাব) ─────────────────────────
+
+/** What a mill output is, from its name: কুঁড়া (bran), খুদ (broken rice), তুষ / ভূসি (husk); anything else is the rice. */
+export type MillOutputKind = "rice" | "bran" | "broken" | "husk";
+export function millOutputKind(name: string): MillOutputKind {
+  if (/কুঁড়া|কুড়া|কুরা|bran/i.test(name)) return "bran";
+  if (/খুদ|ক্ষুদ|ভাঙা চাল|ভাঙ্গা চাল|broken/i.test(name)) return "broken";
+  if (/তুষ|ভূসি|ভুসি|husk/i.test(name)) return "husk";
+  return "rice";
+}
+
+/** A quantity in a product's base unit as kg (কেজি; মণ = 40 kg; টন; গ্রাম). Other units are taken as kg. */
+export function toKg(quantity: number, unit: string): number {
+  if (/মণ|mon|maund/i.test(unit)) return quantity * KG_PER_MON;
+  if (/টন|ton/i.test(unit)) return quantity * 1000;
+  if (/গ্রাম|gram/i.test(unit) && !/কেজি|kg/i.test(unit)) return quantity / 1000;
+  return quantity;
+}
+
+const isBag = (unit: string) => /বস্তা|bag|sack/i.test(unit);
+
+/** The business's one bag unit per base unit (base unit id → kg… per bag; null when there are several). */
+export async function bagUnits(businessId: string): Promise<Map<string, number | null>> {
+  const units = await prisma.unit.findMany({ where: { businessId, baseUnitId: { not: null } }, select: { name: true, baseUnitId: true, factor: true } });
+  const bagOf = new Map<string, number | null>();
+  for (const u of units) {
+    if (!u.baseUnitId || !isBag(u.name)) continue;
+    bagOf.set(u.baseUnitId, bagOf.has(u.baseUnitId) ? null : num(u.factor));
+  }
+  return bagOf;
+}
+
+/** Bags of a line: the quantity when entered in a bag unit, else base quantity ÷ the business's one bag unit; null = unknown. */
+export function lineBags(
+  item: { quantity: unknown; baseQuantity: unknown; unit: { name: string; baseUnitId: string | null } | null; product: { unit: { id?: string; name: string }; unitId?: string } },
+  bagOf: Map<string, number | null>,
+): number | null {
+  if (item.unit && item.unit.baseUnitId && isBag(item.unit.name)) return num(item.quantity as never);
+  const per = bagOf.get(item.product.unit.id ?? item.product.unitId ?? "");
+  return per ? round2(num(item.baseQuantity as never) / per) : null;
+}
+
+/** kg and bags of one kind of goods in a milling run (bags: null when they cannot be told) */
+export interface MillQty {
+  kg: number;
+  bags: number | null;
+}
+
+export interface MillingRow {
+  voucherId: string;
+  /** milling batch number (the production entry's number) */
+  batchNo: string;
+  date: Date;
+  enteredBy: string | null;
+  /** paddy varieties milled ("মিনিকেট ধান, ব্রি-২৮ ধান") */
+  paddyNames: string;
+  paddy: MillQty & { mon: number };
+  rice: MillQty;
+  bran: MillQty;
+  broken: MillQty;
+  husk: MillQty;
+  /** % of the paddy milled; loss = paddy − all outputs */
+  yields: { rice: number; bran: number; broken: number; husk: number; loss: number };
+}
+
+const pctOf = (part: number, whole: number) => (whole > 0 ? round2((part / whole) * 100) : 0);
+
+/**
+ * Milling runs (production entries with paddy out and rice / by-products in) of a period, one row each, with the
+ * day's totals. Bags: the quantity entered in a bag unit (বস্তা), else the base quantity ÷ the business's one bag
+ * unit for that base unit; unknown when there is none (or more than one).
+ */
+export async function dailyMilling(businessId: string, range: DateRange) {
+  const [runs, bagOf] = await Promise.all([
+    prisma.productionRun.findMany({
+      where: { businessId, voucher: { businessId, ...(range.gte || range.lt ? { date: range } : {}) } },
+      orderBy: [{ voucher: { date: "asc" } }, { voucher: { createdAt: "asc" } }],
+      select: {
+        voucher: {
+          select: {
+            id: true, voucherNo: true, date: true,
+            createdBy: { select: { name: true } },
+            items: {
+              orderBy: { lineNo: "asc" },
+              select: { quantity: true, baseQuantity: true, direction: true, unit: { select: { name: true, baseUnitId: true } }, product: { select: { name: true, unit: { select: { id: true, name: true } } } } },
+            },
+          },
+        },
+      },
+    }),
+    bagUnits(businessId),
+  ]);
+
+  const rows: MillingRow[] = [];
+  for (const { voucher: v } of runs) {
+    const add = (q: MillQty, item: (typeof v.items)[number]) => {
+      const base = num(item.baseQuantity);
+      const kg = toKg(base, item.product.unit.name);
+      q.kg = round3(q.kg + kg);
+      // bags: entered in a bag unit, else via the business's one bag unit; once unknown, the sum is unknown
+      const bags = lineBags(item, bagOf);
+      q.bags = q.bags === null || bags === null ? null : round2(q.bags + bags);
+    };
+    const empty = (): MillQty => ({ kg: 0, bags: 0 });
+    const paddy = empty();
+    const out: Record<MillOutputKind, MillQty> = { rice: empty(), bran: empty(), broken: empty(), husk: empty() };
+    const names: string[] = [];
+    for (const item of v.items) {
+      if (item.direction < 0) {
+        add(paddy, item);
+        if (!names.includes(item.product.name)) names.push(item.product.name);
+      } else if (item.direction > 0) add(out[millOutputKind(item.product.name)], item);
+    }
+    if (paddy.kg <= 0) continue; // not a milling run (nothing went in)
+    const noBags = (q: MillQty): MillQty => (q.kg === 0 ? { kg: 0, bags: 0 } : q);
+    const produced = out.rice.kg + out.bran.kg + out.broken.kg + out.husk.kg;
+    rows.push({
+      voucherId: v.id, batchNo: v.voucherNo, date: v.date, enteredBy: v.createdBy?.name?.trim() || null,
+      paddyNames: names.join(", "),
+      paddy: { ...paddy, mon: round2(paddy.kg / KG_PER_MON) },
+      rice: noBags(out.rice), bran: noBags(out.bran), broken: noBags(out.broken), husk: noBags(out.husk),
+      yields: {
+        rice: pctOf(out.rice.kg, paddy.kg), bran: pctOf(out.bran.kg, paddy.kg), broken: pctOf(out.broken.kg, paddy.kg), husk: pctOf(out.husk.kg, paddy.kg),
+        loss: pctOf(Math.max(0, paddy.kg - produced), paddy.kg),
+      },
+    });
+  }
+  const sum = (pick: (r: MillingRow) => MillQty): MillQty => ({
+    kg: round3(rows.reduce((s, r) => s + pick(r).kg, 0)),
+    bags: rows.some((r) => pick(r).bags === null) ? null : round2(rows.reduce((s, r) => s + (pick(r).bags ?? 0), 0)),
+  });
+  const paddyKg = round3(rows.reduce((s, r) => s + r.paddy.kg, 0));
+  const totals = { paddy: { ...sum((r) => r.paddy), mon: round2(paddyKg / KG_PER_MON) }, rice: sum((r) => r.rice), bran: sum((r) => r.bran), broken: sum((r) => r.broken), husk: sum((r) => r.husk) };
+  const producedKg = totals.rice.kg + totals.bran.kg + totals.broken.kg + totals.husk.kg;
+  return {
+    rows,
+    totals,
+    yields: {
+      rice: pctOf(totals.rice.kg, paddyKg), bran: pctOf(totals.bran.kg, paddyKg), broken: pctOf(totals.broken.kg, paddyKg), husk: pctOf(totals.husk.kg, paddyKg),
+      loss: pctOf(Math.max(0, paddyKg - producedKg), paddyKg),
+    },
+  };
+}

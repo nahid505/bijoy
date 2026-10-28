@@ -180,6 +180,8 @@ export const NAV: NavEntry[] = [
       { href: "/reports/daily-cash", label: "ডেইলী জমা-খরচ হিসাব", permission: "accounts:view" },
       { href: "/reports/daily-sales", label: "ডেইলি বিক্রয় রিপোর্ট", permission: "sales:view" },
       { href: "/reports/daily-purchase", label: "ডেইলি ক্রয় রিপোর্ট", permission: "purchases:view" },
+      { href: "/reports/daily-milling", label: "ডেইলি ধান ভাঙানো হিসাব", permission: "reports:view", module: "RICE_MILL" },
+      { href: "/reports/daily-stock", label: "দৈনিক স্টক রিপোর্ট", permission: "reports:view" },
       { href: "/reports/daily-summary", label: "দৈনিক সারসংক্ষেপ", permission: "reports:view" },
       { href: "/reports/day-book", label: "ডে বুক", permission: "reports:view" },
       { href: "/reports/ledger", label: "লেজার রিপোর্ট", permission: "reports:view" },

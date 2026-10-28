@@ -135,6 +135,22 @@ html[data-lang-pending] body {
   .print-only { display: block !important; }
   a { color: inherit !important; text-decoration: none !important; }
 
+  /* report tables (stock report and every generic report): ruled on paper — every cell boxed, rows kept whole */
+  .print-area .table th, .print-area .table td { border: 1px solid #94a3b8 !important; padding: 3px 6px !important; }
+  .print-area .table tr { break-inside: avoid; }
+  .print-area .table thead { display: table-header-group; }
+
+  /* printed lists (e.g. the depot product list): every cell boxed, group headings kept with their rows */
+  .print-grid { border-collapse: collapse !important; width: 100%; }
+  .print-grid th, .print-grid td { border: 1px solid #555 !important; padding: 3px 5px !important; }
+  .print-grid tr { break-inside: avoid; }
+  .print-grid tr.bg-ink-50 th { background: #e5e7eb !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .print-grid thead { display: table-header-group; } /* the header row repeats on every page */
+
+  /* daily cash book: a line's two বিবরণ rows stay together and wrap instead of being cut */
+  .daily-cash tr { break-inside: avoid; }
+  .daily-cash .cash-particulars { white-space: normal !important; overflow: visible !important; overflow-wrap: anywhere; line-height: 1.35; }
+
   /* depot dealer challan: the free-quantity highlight must survive printing */
   #dealer-lines, #dealer-lines *, .challan-slip, .challan-slip * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   #dealer-lines tr { break-inside: avoid; }

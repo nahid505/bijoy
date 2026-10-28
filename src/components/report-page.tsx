@@ -67,6 +67,8 @@ export async function ReportPage({
 
   return (
     <>
+      {/* the printed sheet has its own heading (PrintHeader below) */}
+      <div className="no-print">
       <PageHeader
         title={title ?? def.title}
         description={description ?? def.description}
@@ -84,6 +86,7 @@ export async function ReportPage({
           </>
         }
       />
+      </div>
       {before}
       <section className="panel print-area">
         <form method="get" action={path} className="no-print flex flex-wrap items-end gap-2 border-b border-rule p-3">

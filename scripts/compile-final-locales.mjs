@@ -17,6 +17,7 @@ import { chunk3Translations } from "./translations/chunk3.mjs";
 import { chunk4Translations } from "./translations/chunk4.mjs";
 import { chunk5Translations } from "./translations/chunk5.mjs";
 import { chunk6Translations } from "./translations/chunk6.mjs";
+import { chunk7Translations } from "./translations/chunk7.mjs";
 import { allKeys } from "./i18n-extract.mjs";
 
 const enFile = "src/locales/en.json";
@@ -45,6 +46,7 @@ const masterEn = {
   ...chunk4Translations,
   ...chunk5Translations,
   ...chunk6Translations,
+  ...chunk7Translations,
 };
 
 // Check against all codebase keys

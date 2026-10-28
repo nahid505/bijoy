@@ -55,6 +55,15 @@ describe("locales (src/locales/bn.json, en.json)", () => {
     expect(translate("en", "অচেনা লেখা")).toBe("অচেনা লেখা");
   });
 
+  it("রিপোর্ট menu: the daily reports in order; the milling report only with the rice mill module (not in its own menu)", () => {
+    const reports = NAV.find((e) => e.key === "reports")!.children!.map((c) => c.href);
+    expect(reports.slice(0, 6)).toEqual(["/reports/daily-cash", "/reports/daily-sales", "/reports/daily-purchase", "/reports/daily-milling", "/reports/daily-stock", "/reports/daily-summary"]);
+    const milling = NAV.find((e) => e.key === "reports")!.children!.find((c) => c.href === "/reports/daily-milling")!;
+    expect(milling.module).toBe("RICE_MILL");
+    expect(NAV.find((e) => e.key === "rice-mill")!.children!.some((c) => c.href === "/reports/daily-milling")).toBe(false);
+    expect([translate("en", milling.label), translate("bn", milling.label)]).toEqual(["Daily Rice Milling Report", "ডেইলি ধান ভাঙানো হিসাব"]);
+  });
+
   it("every sidebar label has an English translation", () => {
     const labels = NAV.flatMap((e) => [e.label, ...(e.children ?? []).map((c) => c.label)]);
     const missing = labels.filter((l) => translate("en", l) === l);

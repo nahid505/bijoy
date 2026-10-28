@@ -114,7 +114,7 @@ export function screenTranslator(dict: Dict): ScreenTranslator {
     if (parts.length < 3) return undefined;
     let changed = false;
     const out = parts.map((x, i) => {
-      if (i % 2 === 1 || !BN_LETTER.test(x)) return x;
+      if (i % 2 === 1 || !BN_LETTER.test(x) || !hasWords(x)) return x; // separators, and dates / numbers (made English later)
       const v = depth > 2 ? exact(x.trim()) : one(x.trim(), depth);
       if (v === undefined) return null;
       changed = true;

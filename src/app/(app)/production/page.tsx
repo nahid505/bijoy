@@ -100,7 +100,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: S
                   const main = num(ins[0]?.baseQuantity ?? 0);
                   return (
                     <tr key={v.id}>
-                      <td><Link prefetch={false} href={`/vouchers/v/${v.id}`} className="font-semibold text-brand-700 hover:underline">{v.voucherNo}</Link><span className="block text-xs text-slate-500">{formatDate(v.date)}</span></td>
+                      <td><Link prefetch={false} href={`/production/${v.id}`} className="font-semibold text-brand-700 hover:underline">{v.voucherNo}</Link><span className="block text-xs text-slate-500">{formatDate(v.date)}</span></td>
                       <td className="text-sm">{v.productionRun?.recipe?.name ?? "—"}</td>
                       <td className="text-sm">{ins.map((i) => <span key={i.id} className="block">{i.product.name}: {formatQty(num(i.baseQuantity))} {i.product.unit.name}</span>)}</td>
                       <td className="text-sm">{outs.map((i) => <span key={i.id} className="block">{i.product.name}: {formatQty(num(i.baseQuantity))} {i.product.unit.name} <span className="text-xs text-slate-500">({toBnDigits(yieldPercent(num(i.baseQuantity), main))}%)</span></span>)}</td>

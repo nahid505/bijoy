@@ -69,7 +69,15 @@ export function ProductForm({
         <Field label="বারকোড" name="barcode"><input id="barcode" name="barcode" defaultValue={defaults.barcode ?? ""} className="input" /></Field>
         {depot ? (
           <>
-            <input type="hidden" name="categoryId" value={defaults.categoryId ?? ""} />
+            <Field label="পণ্য গ্রুপ / ক্যাটাগরি" name="categoryId">
+              <select id="categoryId" name="categoryId" defaultValue={defaults.categoryId ?? ""} className="input">
+                <option value="">{t("— তালিকা থেকে —")}</option>
+                {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </Field>
+            <Field label="নতুন গ্রুপ" name="newCategoryName" hint={t("তালিকায় না থাকলে নাম লিখুন — সংরক্ষণে যোগ হবে")}>
+              <input id="newCategoryName" name="newCategoryName" className="input" maxLength={80} placeholder={t("যেমন: বিস্কুট")} />
+            </Field>
             <Field label="কোম্পানি / ব্র্যান্ড" name="brandId">
               <select id="brandId" name="brandId" defaultValue={defaults.brandId ?? ""} className="input">
                 <option value="">{t("— তালিকা থেকে —")}</option>

@@ -178,7 +178,8 @@ export async function loadProduction(businessId: string, voucherId: string) {
     include: {
       productionRun: { include: { recipe: { select: { id: true, name: true } } } },
       adjustmentAccount: { select: { id: true, name: true, code: true, kind: true } },
-      items: { orderBy: { lineNo: "asc" }, include: { product: lineProduct, warehouse: { select: { id: true, name: true } } } },
+      items: { orderBy: { lineNo: "asc" }, include: { product: lineProduct, warehouse: { select: { id: true, name: true } }, unit: { select: { name: true, baseUnitId: true } } } },
+      createdBy: { select: { name: true } },
     },
   });
 }

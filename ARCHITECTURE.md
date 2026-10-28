@@ -104,7 +104,7 @@ Opening balances (ledgers, customers, suppliers, opening stock) are **OPENING vo
 ## 7. Reports & export
 Each report is a `ReportDef` (`src/server/reports/definitions.ts`) returning a typed `ReportResult` (columns with formats, rows with group/subtotal/total styling, summary). The same result drives:
 - the screen (`ReportPage`, with filters for date range, as-of date, search, ledger, warehouse and voucher type),
-- print/PDF (A4 print CSS with business letterhead),
+- print/PDF (A4 print CSS with business letterhead; the screen heading is not printed, the letterhead carries the title and the subtitle — the stock report's says the period and the warehouse; every table cell is ruled on paper),
 - `/api/reports/[slug]` CSV (UTF-8 BOM) and `?format=xlsx` (styled workbook via exceljs).
 
 The **integrity** report re-checks the invariants on live data: every voucher balances, the trial balance totals agree, each party ledger matches its invoices and payments, product stock caches match their movements, and inventory value matches the inventory ledger. The **cash flow** report (direct method) shows opening + net = closing.
@@ -403,11 +403,24 @@ A new top group is listed last and is never "direct".
 
 **Figures.** `dailyCash` in `src/server/reports/daily-cash.ts` computes, from journal entries only:
 - পূর্বের জমা: the balance of the chosen accounts before the date (opening-balance vouchers dated on the day are brought forward here);
-- receipts and payments: one line per voucher, netted over the chosen accounts, so a transfer between two of them (cash → bank) drops out; each line shows the party or the other side's accounts, the voucher number and type, and the narration;
+- receipts and payments: each voucher netted over the chosen accounts, so a transfer between two of them (cash → bank) drops out; then **one line per ledger, never joined**: a voucher with a party (sale, purchase, collection, supplier payment) is one line for the party; otherwise every counter ledger on the other side (credits for a receipt, debits for a payment, netted per ledger, in entry order) is its own line with its own amount — a payment to rent 300 and bank 200 gives two lines, নং ১ and ২. When a voucher also holds entries that do not touch cash, the cash amount is allotted to those ledgers in entry order, so the lines always add up to the cash moved;
 - আজকের রিসিট, মোট রিসিট = পূর্বের জমা + আজকের রিসিট, মোট পেমেন্ট;
 - অবশিষ্ট ক্যাশ = মোট রিসিট − মোট পেমেন্ট. This always equals the ledger balance at the end of the day, and it is the next day's পূর্বের জমা.
 
-**Layout and print.** Two ruled columns like a cash khata: খরচ / পেমেন্ট on the left (with closing and a balancing সর্বমোট), জমা / রিসিট on the right. Both sides are padded to the same number of rows so the totals line up. Printing uses A4 portrait with the business header, the two columns side by side, the closing in words and signature lines; on phones receipts are stacked above payments. PDF is the browser's print → Save as PDF, as for every report (keeps Bangla shaping). Excel and CSV come from the generic `/api/reports/daily-cash?date=&scope=` export through the `DAILY_CASH_REPORT` registry entry.
+**Layout and print.** A ruled cash khata in one table (`CashBook`, `#cash-book`): খরচ / পেমেন্ট on the left, জমা / রিসিট on the right, each নং | বিবরণ | টাকা at fixed widths (`table-fixed`: নং 40 px / 8 mm, টাকা 128 px / 27 mm, বিবরণ the rest — the same on both sides), a thicker rule between the sides. Payment line i and receipt line i share a row, so lines and totals always line up whatever a বিবরণ holds; the footer pairs মোট পেমেন্ট / আজকের রিসিট, অবশিষ্ট ক্যাশ, and the balancing সর্বমোট / মোট রিসিট on one row. Every cell of every row, the empty filler rows too, has a 1px `border-slate-300` rule (a shade darker, slate-400, on paper); amounts are right-aligned and never wrap. Cells carry `data-side="pay" | "receipt"`. Phones get the two sides as separate stacked tables (receipts first). Printing uses A4 portrait with the business header, the two columns side by side, the closing in words and signature lines; on phones receipts are stacked above payments. PDF is the browser's print → Save as PDF, as for every report (keeps Bangla shaping). Excel and CSV come from the generic `/api/reports/daily-cash?date=&scope=` export through the `DAILY_CASH_REPORT` registry entry.
+
+**বিবরণ cell: two rows** (`cashLineTitle` / `cashLineDetail`):
+- **Row 1** (normal size, medium weight): the line's ledger, then who entered the voucher in brackets — "ডিপো ক্যাশ (Delower)". No brackets when nobody is recorded.
+- **Row 2** (smaller, below): "বর্তমান জের:", the balance (debit − credit, shown with its side) of that ledger right after the voucher — a running balance through the day, so on today's sheet the last line of a ledger is its balance now — then the ledger's address (customer / supplier) when it has one. Only the parts there are; no empty commas or brackets.
+- Nothing else: no voucher number, type or narration (on screen or on paper). The account name in row 1 links to the voucher (plain text when printed). On paper rows never split across pages and long names / addresses wrap instead of being cut (`.daily-cash` print rules in `globals.css`).
+- In English the label and digits are English; the user's name and the address are data (`data-keep-lang`) and stay as written. CSV / Excel carry both rows in the বিবরণ column.
+
+## 6j-2. Daily stock report (দৈনিক স্টক রিপোর্ট)
+**Where.** `/reports/daily-stock?date=&warehouseId=` (`reports:view`); the sidebar's রিপোর্ট menu (after the daily purchase report) and "বিক্রয়, ক্রয় ও মজুদ" on the reports page.
+
+**Figures** (`dailyStock`, `src/server/reports/daily-stock.ts`, from stock movements, general products only as in the stock report): per product — পূর্বের মজুদ (in − out before the day), উৎপাদন / ক্রয় (the day's movements in: purchase, production output, stock journal in, returns, opening stock …), বিক্রয় / ব্যবহার (the day's movements out: sale, production input, write-off …), আজকের মজুদ = পূর্বের + উৎপাদন / ক্রয় − বিক্রয় / ব্যবহার. One warehouse or all. Products with no stock and no movement are left out. The totals row adds up each column per unit (units are never added together).
+
+**Layout and print.** The heading is the same on screen and paper: company (left), "দৈনিক স্টক রিপোর্ট" and the warehouse (centre), the date (right). Filters (date, previous / next day, warehouse) and the print, Excel and CSV buttons are not printed; the table is ruled cell by cell and fits an A4 page, with signature lines. Excel / CSV come from the `daily-stock` report entry.
 
 ## 6k. Daily purchase report (ডেইলি ক্রয় রিপোর্ট)
 **Where.** `/reports/daily-purchase` (`purchases:view`). It belongs to the PURCHASE module (`reports: ["daily-purchase"]`), so a company without the module neither sees it nor can export it. It is listed under "বিক্রয়, ক্রয় ও মজুদ" and in the sidebar's রিপোর্ট menu.
@@ -835,8 +848,10 @@ A fund transfer is cash → cash. It is neither income nor expense, and the cash
 - Low-stock and expiry alerts for a depot product are marked "ডিপো —" (low stock) and open `/depot/products/[id]`.
 
 **Screens.**
-- **`/depot/products`** (menu "ডিপো পণ্য তালিকা", just before "ডিলার তালিকা"): code, name, company / brand, DP, dealer rate, commission and current depot stock; search, brand and status filters; active count and stock value.
-- **`/depot/products/new`** and **`/[id]/edit`**: name, code / barcode, company / brand (pick one, or type a new name — created on save), unit, company price / DP, dealer sale rate (the market-sale challan's default rate), commission type and value (the % shows its taka per unit), minimum stock, batch tracking and opening stock.
+- **`/depot/products`** (menu "ডিপো পণ্য তালিকা", just before "ডিলার তালিকা"): serial, code, name, product group, company / brand, DP, dealer rate, commission, current depot stock and stock value; search, product group (`?group=<id>` or `none`), brand and status filters; active count and stock value.
+  - **Grouped view** (`?view=grouped`, "☰ তালিকা | ▤ গ্রুপ অনুযায়ী"): every matching product (no paging) under its group's heading, groups by name with "গ্রুপ ছাড়া" last; each group ends with a subtotal of stock and stock value (at average cost), and the list with a grand total. Stock of different units is never added up: "১২০ কার্টন · ৪০ পিস".
+  - **Print / PDF:** "🖨 প্রিন্ট" prints at once when every row is on the page (grouped view, or a single page); otherwise it opens `?print=1`, which lists every matching product and opens the print dialog by itself. On paper: the business letterhead (`PrintHeader`) with "ডিপো পণ্য তালিকা", the date and the filters; a boxed table (`.print-grid` in `globals.css`) of serial, code, name, group, DP, dealer rate, stock and value; sidebar, header, filters, view switch, buttons, brand and commission columns hidden. Every label follows the UI language.
+- **`/depot/products/new`** and **`/[id]/edit`**: name, code / barcode, product group / category and company / brand (pick one, or type a new name — created on save, reused by name in any case), unit, company price / DP, dealer sale rate (the market-sale challan's default rate), commission type and value (the % shows its taka per unit), minimum stock, batch tracking and opening stock.
 - **`/depot/products/[id]`**: stock card.
 - A depot product opened at `/products/…` redirects to `/depot/products/…`, and the other way round.
 - In a depot business both product forms show a "ডিপো পণ্য" switch, disabled once the product has transactions.
@@ -930,7 +945,25 @@ All slip number fields convert Bangla / mixed digits. The voucher page, the prin
 
 **Fix:** the production form's default date used UTC, so between midnight and 6 am in Bangladesh it was the previous day. It now uses `toDateInput()` (Asia/Dhaka) like every other form.
 
+**ডেইলি ধান ভাঙানো হিসাব** (`/reports/daily-milling?date=`, `reports:view`; in the sidebar's রিপোর্ট menu between the daily purchase and the daily stock report — only while the rice mill module is on — and on the reports page). `dailyMilling` (`services/rice-mill.ts`) turns each production entry of the day with paddy going in into one row: batch no. (the entry's number) and date, the paddy varieties (input product names), bags and weight (kg and মণ), the rice, কুঁড়া, খুদ and তুষ / ভূসি produced (kg and bags), each one's yield against the paddy plus the process loss, and who entered it; then the day's totals and summary cards.
+- Output kind from the product name (`millOutputKind`): কুঁড়া / bran, খুদ / ভাঙা চাল / broken, তুষ / ভূসি / husk; anything else is rice.
+- Weights in kg (`toKg`: মণ ×40, টন ×1000, গ্রাম ÷1000). Bags: the quantity when entered in a bag unit (বস্তা), else kg ÷ the business's one bag unit on that base unit; "—" when unknown.
+- No party data, so open to party-restricted users. Print: A4 landscape with letterhead and signature lines; Excel / CSV from the `daily-milling` report entry (one row per batch and the total).
+
+**Production batch** (`/production/[id]`, `production:view`; the production list, the daily milling report and its export link here). Cards: batch no. and date, raw material used (kg, মণ, bags), output and yield, wastage / process loss (kg when every line is a weight, else in the one shared unit); date, recipe, who entered it, reference; the raw material table (bags, quantity, মণ, cost at average rate) and the output table (kind badge on a rice mill, bags, quantity, yield, cost share, cost) with total output and loss; material, extra and output costs. "প্রিন্ট চালান" prints it as a production slip with letterhead and signature lines; links to the accounting entry and, with `production:manage`, the edit page. Bags use the same rule as the milling report (`bagUnits` / `lineBags`).
+
+**Recipe print** (`/production/recipes/[id]`): "প্রিন্ট / PDF" beside the other buttons. On paper the edit form gives way to a recipe sheet — letterhead, name, code, description, raw materials per batch, products and by-products per batch with each one's % of the main raw material and cost share, total output and process loss. Users who may only view see the same sheet on screen.
+
 **Tests:** `tests/integration/rice-mill.test.ts`.
+
+## 6x. Ledger / খতিয়ান statement (`/accounts/[id]`)
+The page reads the account and `statement()` for the period (`?from=&to=`, default this fiscal year) on the server; `LedgerStatement` (`src/components/ledger-statement.tsx`) renders it.
+- **Toolbar:** ← back (to the party's profile, else the account list), the name, live search and filter icons, a date-range picker ("১ জুলাই ২০২৬ – ২৮ অক্টোবর ২০২৬"; this month, all since the books' start, or any two dates), "বিস্তারিত দেখান" (voucher no., note and who entered it on / off), a voucher-type filter, print, Excel / CSV (the ledger report export, with `reports:view`) and share (the Web Share sheet; the link is copied where there is none).
+- **Table:** তারিখ (type badge, then the date) | বিবরণ | জমা (credit) | খরচ (debit) | ব্যালেন্স (running, "Dr" / "Cr"). Badges: Opening slate-500, Purchase indigo-700, Journal pink-700, Payment purple-700, Sale sky-600, Receipt amber-600, the rest teal. বিবরণ: the counter ledgers, then the voucher no. (amber, mono), the note (grey) and who entered it (emerald). The first line is the balance brought forward. Rows highlight on hover and open the voucher on click.
+- **Footer:** "[n] মোট" (entries shown), the জমা and খরচ totals of the lines shown (marked when a search or filter is on) and the net at the end of the period — পাওনা (Dr) in green, দেনা (Cr) in red.
+- **Search / filter** run in the browser over the period's lines: voucher no., who entered it, counter ledgers, note or type.
+- **Phones:** the same lines as cards (badge, date, ± amount, বিবরণ, balance) and the totals. **Paper:** the business letterhead with the party's mobile / address, a ruled table (`.print-grid`), badges as outlines; toolbar, top bar and sidebar hidden; columns sized for A4.
+- **Languages:** every label through the dictionary; the ledger columns read জমা / খরচ in Bangla and Credit / Debit in English; names and notes are data (`data-keep-lang`).
 
 ## 7b. UI runtime notes
 - **Language** (`bl_lang` cookie, 1 year; default `bn`):

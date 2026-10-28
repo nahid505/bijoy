@@ -195,6 +195,7 @@ export const productSchema = z.object({
   depotCommissionType: z.enum(["FIXED", "PERCENT"]).optional(), // absent = unchanged
   isDepotProduct: z.boolean().optional(), // absent = unchanged (new product: general)
   newBrandName: optionalText(80).optional(), // depot form: company / brand typed in — created when not found
+  newCategoryName: optionalText(80).optional(), // depot form: product group typed in — created when not found
   minStock: nonNegQty.default(0),
   openingStock: nonNegQty.default(0),
   openingRate: money.default(0),

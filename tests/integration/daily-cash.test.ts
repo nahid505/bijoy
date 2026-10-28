@@ -11,7 +11,8 @@ import { setAccountOpening, systemAccounts, type Ctx } from "@/server/services/a
 import { saveParty } from "@/server/services/master";
 import { saveCashVoucher, saveJournalVoucher } from "@/server/services/voucher";
 import { balancesBefore } from "@/server/services/ledger";
-import { dailyCash, DAILY_CASH_REPORT } from "@/server/reports/daily-cash";
+import { cashLineDetail, cashLineTitle, dailyCash, DAILY_CASH_REPORT } from "@/server/reports/daily-cash";
+import { formatDrCr } from "@/lib/format";
 import { toCsv } from "@/server/reports/export";
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
@@ -32,7 +33,7 @@ run("ডেইলী জমা-খরচ হিসাব (daily cash book)", () 
     key = (k: string) => accounts.find((a) => a.systemKey === k)!.id;
     await prisma.$transaction((tx) => setAccountOpening(tx, ctx, acc.CASH, 10_000));
 
-    const customer = await saveParty(ctx, "CUSTOMER", party("রহিম ট্রেডার্স"));
+    const customer = await saveParty(ctx, "CUSTOMER", { ...party("রহিম ট্রেডার্স"), address: "বীরগঞ্জ, দিনাজপুর" });
     const supplier = await saveParty(ctx, "SUPPLIER", party("মেঘনা এন্টারপ্রাইজ"));
     const pay = (date: string, accountId: string, amount: number, narration: string | null = null) =>
       saveCashVoucher(ctx, "PAYMENT", { date: D(date), reference: null, narration, cashAccountId: acc.CASH, lines: [{ accountId, amount, narration: null }] });
@@ -49,6 +50,16 @@ run("ডেইলী জমা-খরচ হিসাব (daily cash book)", () 
       { accountId: acc.CASH, debit: 0, credit: 4_000, narration: null },
     ] });
     await pay("2026-10-11", key("RENT"), 100); // next day: not in the 10 Oct sheet
+    // 12 Oct: one payment voucher, two ledgers (rent 300, bank 200); a journal Dr cash 1 000, Dr bank 500, Cr capital 1 500
+    await saveCashVoucher(ctx, "PAYMENT", { date: D("2026-10-12"), reference: null, narration: null, cashAccountId: acc.CASH, lines: [
+      { accountId: key("RENT"), amount: 300, narration: null },
+      { accountId: key("BANK"), amount: 200, narration: null },
+    ] });
+    await saveJournalVoucher(ctx, { date: D("2026-10-12"), reference: null, narration: null, lines: [
+      { accountId: acc.CASH, debit: 1_000, credit: 0, narration: null },
+      { accountId: key("BANK"), debit: 500, credit: 0, narration: null },
+      { accountId: key("CAPITAL"), debit: 0, credit: 1_500, narration: null },
+    ] });
   });
   afterAll(async () => {
     await prisma.$disconnect();
@@ -70,6 +81,44 @@ run("ডেইলী জমা-খরচ হিসাব (daily cash book)", () 
     // closing = the cash ledger at the end of the day
     const ledger = (await balancesBefore(ctx.businessId, D("2026-10-11"), [acc.CASH])).get(acc.CASH);
     expect(d.closing).toBe(ledger);
+  });
+
+  it("বিবরণ: ledger (entered by) / current balance, address — empty parts leave no stray commas", async () => {
+    const d = await dailyCash(ctx.businessId, { date: "2026-10-10" });
+    const [fromCustomer] = d.receipts;
+    const rent = d.payments.find((l) => l.particulars === "দোকান/অফিস ভাড়া")!;
+    const supplier = d.payments.find((l) => l.particulars === "মেঘনা এন্টারপ্রাইজ")!;
+    expect([fromCustomer.enteredBy, fromCustomer.address, fromCustomer.balance]).toEqual(["Cash", "বীরগঞ্জ, দিনাজপুর", -5_000]); // the customer paid 5 000: credit
+    expect(cashLineTitle(fromCustomer)).toBe("রহিম ট্রেডার্স (Cash)");
+    expect(cashLineDetail(fromCustomer, (n) => formatDrCr(n))).toBe("বর্তমান জের: ৳ ৫,০০০.০০ ক্রেডিট, বীরগঞ্জ, দিনাজপুর");
+    // no address: just the balance — running through the days (500 on 9 Oct + 1 200 today)
+    expect([rent.address, rent.balance]).toEqual([null, 1_700]);
+    expect(cashLineDetail(rent, (n) => formatDrCr(n))).toBe("বর্তমান জের: ৳ ১,৭০০.০০ ডেবিট");
+    expect(supplier.balance).toBe(3_000);
+    // nothing known: no second row, no brackets
+    expect(cashLineDetail({ address: null, balance: null }, String)).toBe("");
+    expect(cashLineTitle({ particulars: "নগদ", enteredBy: null })).toBe("নগদ");
+  });
+
+  it("several ledgers in one voucher: one line each, its own amount, never joined", async () => {
+    const d = await dailyCash(ctx.businessId, { date: "2026-10-12" });
+    const name = async (k: string) => (await prisma.account.findUniqueOrThrow({ where: { id: key(k) } })).name;
+    const [rentName, bankName, capitalName] = await Promise.all(["RENT", "BANK", "CAPITAL"].map(name));
+    expect(d.payments.map((l) => [l.particulars, l.amount])).toEqual([[rentName, 300], [bankName, 200]]);
+    expect(d.payments.every((l) => !l.particulars.includes(","))).toBe(true);
+    expect(new Set(d.payments.map((l) => l.key)).size).toBe(2); // one voucher, two lines
+    expect(d.payments[0].voucherId).toBe(d.payments[1].voucherId);
+    // each line: its own ledger's running balance (rent 500 + 1 200 + 100 + 300; bank 4 000 + 200)
+    expect(d.payments.map((l) => l.balance)).toEqual([2_100, 4_200]);
+    // the journal: only 1 000 of the 1 500 capital came into cash — the line carries the cash amount
+    expect(d.receipts.map((l) => [l.particulars, l.amount])).toEqual([[capitalName, 1_000]]);
+    expect(d.totalPayments).toBe(500);
+    expect(d.todayReceipts).toBe(1_000);
+    expect(d.closing).toBe((await balancesBefore(ctx.businessId, D("2026-10-13"), [acc.CASH])).get(acc.CASH));
+    // cash + bank: bank is now one of "our" accounts — rent alone is paid out, capital brings in the whole 1 500
+    const both = await dailyCash(ctx.businessId, { date: "2026-10-12", scope: "cash-bank" });
+    expect(both.payments.map((l) => [l.particulars, l.amount])).toEqual([[rentName, 300]]);
+    expect(both.receipts.map((l) => [l.particulars, l.amount])).toEqual([[capitalName, 1_500]]);
   });
 
   it("cash + bank: the transfer between them nets out", async () => {

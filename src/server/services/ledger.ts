@@ -92,6 +92,8 @@ export interface StatementLine {
   voucherNo: string;
   voucherType: VoucherType;
   narration: string | null;
+  /** who entered the voucher */
+  enteredBy: string | null;
   against: string; // counter ledgers
   accountName?: string;
   debit: number;
@@ -118,7 +120,7 @@ export async function statement(businessId: string, accountIds: string[], range:
     where: { businessId, ...(scope.length === 1 ? scope[0] : { OR: scope }), ...(range.gte || range.lt ? { date: range } : {}) },
     orderBy: [{ date: "asc" }, { voucher: { createdAt: "asc" } }, { lineNo: "asc" }],
     take: opts.take ?? 5000,
-    include: { voucher: { select: { id: true, voucherNo: true, type: true, narration: true } }, account: { select: { name: true } } },
+    include: { voucher: { select: { id: true, voucherNo: true, type: true, narration: true, createdBy: { select: { name: true } } } }, account: { select: { name: true } } },
   });
 
   // Counter ledgers ("against") for each voucher
@@ -144,6 +146,7 @@ export async function statement(businessId: string, accountIds: string[], range:
       voucherNo: e.voucher.voucherNo,
       voucherType: e.voucher.type,
       narration: e.voucher.narration ?? e.narration,
+      enteredBy: e.voucher.createdBy?.name?.trim() || null,
       against: [...(against.get(e.voucherId) ?? [])].join(", "),
       accountName: e.account.name,
       debit,

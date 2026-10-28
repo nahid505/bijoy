@@ -15,8 +15,9 @@ import { saveProduction } from "@/server/services/production";
 import { deleteVoucher, saveCashVoucher, saveTradeVoucher } from "@/server/services/voucher";
 import { balancesBefore } from "@/server/services/ledger";
 import { trialBalance } from "@/server/services/report";
-import { millProducts, millSales, millStock, millSummary } from "@/server/services/rice-mill";
-import { RICE_MILL_REPORT } from "@/server/reports/rice-mill";
+import { dailyMilling, millOutputKind, millProducts, millSales, millStock, millSummary, toKg } from "@/server/services/rice-mill";
+import { DAILY_MILLING_REPORT, RICE_MILL_REPORT } from "@/server/reports/rice-mill";
+import { dailyStock, DAILY_STOCK_REPORT } from "@/server/reports/daily-stock";
 
 const run = process.env.TEST_DATABASE_URL || process.env.TEST_MYSQL_URL ? describe : describe.skip;
 const D = (s: string) => new Date(`${s}T00:00:00.000Z`);
@@ -122,6 +123,51 @@ run("auto rice mill", () => {
     expect(m.purchase.byVariety[0].variety).toBe("মিনিকেট");
     const ids = await millProducts(ctx.businessId);
     expect([ids.paddy, ids.outputs.sort()]).toEqual([[p.paddy], [p.rice, p.broken, p.bran, p.husk].sort()]);
+  });
+
+  it("daily milling: one row per batch — paddy, rice / কুঁড়া / খুদ / তুষ in kg and bags, yield %, operator; day totals", async () => {
+    const day = { gte: D("2026-10-12"), lt: D("2026-10-13") };
+    const d = await dailyMilling(ctx.businessId, day);
+    expect(d.rows).toHaveLength(1);
+    const [r] = d.rows;
+    expect(r.batchNo).toMatch(/^PRD/);
+    expect([r.paddyNames, r.enteredBy]).toEqual(["ধান", "Mill"]);
+    // the business's one bag unit "বস্তা (৫০ কেজি)" turns kg into bags
+    expect([r.paddy.kg, r.paddy.mon, r.paddy.bags]).toEqual([5000, 125, 100]);
+    expect([r.rice, r.bran, r.broken, r.husk]).toEqual([{ kg: 3300, bags: 66 }, { kg: 400, bags: 8 }, { kg: 250, bags: 5 }, { kg: 1000, bags: 20 }]);
+    expect(r.yields).toEqual({ rice: 66, bran: 8, broken: 5, husk: 20, loss: 1 });
+    expect([d.totals.paddy.kg, d.totals.rice.kg, d.yields.rice]).toEqual([5000, 3300, 66]);
+    // another day: nothing
+    expect((await dailyMilling(ctx.businessId, { gte: D("2026-10-13"), lt: D("2026-10-14") })).rows).toEqual([]);
+    // the export: the batch and the day's total
+    const rep = await DAILY_MILLING_REPORT.run({ business: { id: ctx.businessId, currencySymbol: "৳", fiscalYearStartMonth: 7 } } as never, { date: "2026-10-12" });
+    expect(rep.rows.map((x) => x.kind ?? "normal")).toEqual(["normal", "total"]);
+    expect(String(rep.rows[0].cells.rice)).toContain("৬৬ বস্তা");
+  });
+
+  it("daily stock: opening + in − out = closing per product, per day and warehouse; totals per unit", async () => {
+    // 10 Oct: the slip brings 7 960 kg paddy; 12 Oct: milling takes 5 000 kg paddy and gives 4 950 kg rice / by-products
+    const day12 = await dailyStock(ctx.businessId, { date: "2026-10-12" });
+    const row = (id: string) => day12.rows.find((r) => r.id === id)!;
+    expect(row(p.paddy)).toMatchObject({ opening: 7960, in: 0, out: 5000, closing: 2960, unit: "কেজি" });
+    expect(row(p.rice)).toMatchObject({ opening: 0, in: 3300, out: 0, closing: 3300 });
+    expect(day12.totals).toEqual({ opening: { "কেজি": 7960 }, in: { "কেজি": 4950 }, out: { "কেজি": 5000 }, closing: { "কেজি": 7910 } });
+    for (const r of day12.rows) expect(r.closing).toBe(Math.round((r.opening + r.in - r.out) * 1000) / 1000);
+    // a quiet day: stock carried, nothing in or out; products without stock or movement are left out
+    const day11 = await dailyStock(ctx.businessId, { date: "2026-10-11" });
+    expect(day11.rows.map((r) => [r.id, r.opening, r.in, r.out, r.closing])).toEqual([[p.paddy, 7960, 0, 0, 7960]]);
+    // one warehouse: the same here (one warehouse); an unknown id falls back to all
+    expect((await dailyStock(ctx.businessId, { date: "2026-10-12", warehouseId: warehouseId })).totals).toEqual(day12.totals);
+    expect((await dailyStock(ctx.businessId, { date: "2026-10-12", warehouseId: "nope" })).warehouse).toBeNull();
+    // the export
+    const rep = await DAILY_STOCK_REPORT.run({ business: { id: ctx.businessId, currencySymbol: "৳", fiscalYearStartMonth: 7 } } as never, { date: "2026-10-12" });
+    expect(rep.rows.at(-1)?.kind).toBe("total");
+    expect(String(rep.rows.at(-1)?.cells.closing)).toContain("কেজি");
+  });
+
+  it("output kinds by name; quantities as kg", () => {
+    expect(["মিনিকেট চাল", "কুঁড়া", "কুড়া", "খুদ", "ভাঙা চাল", "তুষ", "ভূসি", "Rice Bran", "Husk"].map(millOutputKind)).toEqual(["rice", "bran", "bran", "broken", "broken", "husk", "husk", "bran", "husk"]);
+    expect([toKg(2, "মণ"), toKg(1.5, "টন"), toKg(500, "গ্রাম"), toKg(7, "কেজি")]).toEqual([80, 1500, 0.5, 7]);
   });
 
   it("rice / by-product sales: party ledger as usual; revenue, cost and profit per product", async () => {

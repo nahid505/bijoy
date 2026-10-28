@@ -426,9 +426,11 @@ export const REPORTS: ReportDef[] = [
         };
       });
       rows.push({ kind: "total", cells: { product: "মোট", unit: "", opening: null, in: null, out: null, closing: null, rate: null, value: round2(totalValue) } });
+      // the printout says which warehouse (godown) it covers
+      const warehouse = warehouseId ? (await prisma.warehouse.findFirst({ where: { id: warehouseId, businessId: ctx.business.id }, select: { name: true } }))?.name : null;
       return {
         title: "স্টক রিপোর্ট",
-        subtitle: periodText(from, to),
+        subtitle: `${periodText(from, to)} — ${warehouse ? `গুদাম: ${warehouse}` : "সব গুদাম"}`,
         columns: [
           { key: "product", label: "পণ্য" },
           { key: "unit", label: "ইউনিট" },
