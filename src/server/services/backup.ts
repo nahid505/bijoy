@@ -313,7 +313,7 @@ export async function restoreBackup(raw: unknown, userId: string): Promise<{ bus
         })),
       });
       const party = (x: Row) => ({ id: must(x.id), businessId, accountId: must(x.accountId), name: String(x.name), mobile: (x.mobile as string) ?? null, email: (x.email as string) ?? null, address: (x.address as string) ?? null, notes: (x.notes as string) ?? null, creditDays: Number(x.creditDays ?? 0), isActive: Boolean(x.isActive) });
-      await tx.customer.createMany({ data: data.customers.map((x) => ({ ...party(x), creditLimit: Number(x.creditLimit ?? 0), groupName: (x.groupName as string) ?? null, route: (x.route as string) ?? null, isDepotDealer: x.isDepotDealer === true })) });
+      await tx.customer.createMany({ data: data.customers.map((x) => ({ ...party(x), creditLimit: Number(x.creditLimit ?? 0), groupName: (x.groupName as string) ?? null, route: (x.route as string) ?? null, ownerName: (x.ownerName as string) ?? null, isDepotDealer: x.isDepotDealer === true })) });
       await tx.supplier.createMany({ data: data.suppliers.map(party) });
       await tx.voucher.createMany({
         data: data.vouchers.map((v) => ({

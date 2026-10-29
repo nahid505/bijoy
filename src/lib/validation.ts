@@ -157,8 +157,9 @@ export const partySchema = z.object({
   creditDays: z.coerce.number().int("পূর্ণ সংখ্যা দিন").min(0).max(3650).default(0),
   groupName: optionalText(60),
   route: optionalText(80), // depot: dealer's route / area
+  ownerName: optionalText(150), // depot dealer: proprietor / owner (name = the shop / business)
 });
-export type PartyInput = Omit<z.infer<typeof partySchema>, "groupName" | "route"> & { groupName?: string | null; route?: string | null };
+export type PartyInput = Omit<z.infer<typeof partySchema>, "groupName" | "route" | "ownerName"> & { groupName?: string | null; route?: string | null; ownerName?: string | null };
 
 export const accountSchema = z.object({
   name: requiredText("হিসাবের নাম", 150),

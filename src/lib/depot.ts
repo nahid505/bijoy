@@ -119,6 +119,14 @@ export const commissionReceivableKey = (companyAccountId: string) => `${COMMISSI
 
 export const isDepot = (businessType: string | null | undefined) => businessType === DEPOT;
 
+/** A dealer as shown in lists, pickers and its ledger: "মেসার্স রহমান ট্রেডার্স (মোঃ আব্দুর রহমান)" — the shop / business
+ *  name, the proprietor in brackets; just the shop name when no owner is recorded (or it repeats the shop name). */
+export function dealerLabel(name: string, ownerName?: string | null): string {
+  const shop = name.trim();
+  const owner = ownerName?.trim();
+  return owner && owner.toLowerCase() !== shop.toLowerCase() ? `${shop} (${owner})` : shop;
+}
+
 export type DepotCommissionType = "FIXED" | "PERCENT";
 export const COMMISSION_TYPE_LABELS: Record<DepotCommissionType, string> = { FIXED: "ফিক্সড (৳ প্রতি একক)", PERCENT: "শতাংশ (ডিপি-র %)" };
 /** A depot product's DO commission per base unit: FIXED taka, or PERCENT of the company price (DP = purchasePrice). */

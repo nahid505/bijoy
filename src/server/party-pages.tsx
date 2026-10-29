@@ -10,7 +10,7 @@ import { PartyForm } from "@/components/party-form";
 import { ReportPage } from "@/components/report-page";
 import { Badge, EmptyState, FilterBar, FilterField, PageHeader, Pagination, SortHeader, TableWrap } from "@/components/ui";
 import { can, requirePermission } from "./auth";
-import { DEPOT_ACCESS, isDepot } from "@/lib/depot";
+import { DEPOT_ACCESS, dealerLabel, isDepot } from "@/lib/depot";
 import type { BookKey } from "@/lib/book";
 import { pageOf, readParams, totalPages, type SearchParams } from "./params";
 import { balancesBefore, statement } from "./services/ledger";
@@ -33,6 +33,8 @@ const modelOf = (k: PartyPageKind): PartyKind => (k === "DEALER" ? "CUSTOMER" : 
 const bookOf = (k: PartyPageKind): BookKey => (k === "DEALER" ? "DEPOT" : "GENERAL");
 /** customers: general customers and dealers are kept apart */
 const dealerWhere = (k: PartyPageKind) => (k === "SUPPLIER" ? {} : { isDepotDealer: k === "DEALER" });
+/** a dealer reads "shop (owner)"; customers and suppliers just their name */
+const partyName = (p: { name: string; ownerName?: string | null }) => dealerLabel(p.name, p.ownerName);
 
 const CFG = {
   CUSTOMER: {
@@ -96,7 +98,7 @@ export async function PartyListPage({ kind: pageKind, searchParams }: { kind: Pa
     businessId: ctx.business.id,
     ...partyListWhere(ctx, kind),
     ...dealerWhere(pageKind), // general customers and depot dealers are separate lists
-    ...(q ? { OR: [...digitVariants(q).flatMap((v) => [{ name: ci(v) }, { address: ci(v) }]), { mobile: { contains: toAsciiDigits(q) } }] } : {}),
+    ...(q ? { OR: [...digitVariants(q).flatMap((v) => [{ name: ci(v) }, { address: ci(v) }, ...(dealer ? [{ ownerName: ci(v) }] : [])]), { mobile: { contains: toAsciiDigits(q) } }] } : {}),
     ...(p.status === "inactive" ? { isActive: false } : p.status === "all" ? {} : { isActive: true }),
     ...(kind === "CUSTOMER" && p.group ? { groupName: p.group } : {}),
   };
@@ -157,7 +159,7 @@ export async function PartyListPage({ kind: pageKind, searchParams }: { kind: Pa
                   return (
                     <tr key={r.id}>
                       {smsBulk && <td>{r.mobile && <input type="checkbox" name="sms-customer" value={r.id} aria-label={`${r.name} নির্বাচন`} />}</td>}
-                      <td><Link prefetch={false} href={`${cfg.base}/${r.id}`} className="font-semibold text-brand-700 hover:underline">{r.name}</Link>{!r.isActive && <> <Badge>{t("নিষ্ক্রিয়")}</Badge></>}</td>
+                      <td><Link prefetch={false} href={`${cfg.base}/${r.id}`} className="font-semibold text-brand-700 hover:underline">{r.name}</Link>{partyName(r) !== r.name.trim() && <span className="text-slate-600"> (<span data-keep-lang>{(r as { ownerName?: string | null }).ownerName?.trim()}</span>)</span>}{!r.isActive && <> <Badge>{t("নিষ্ক্রিয়")}</Badge></>}</td>
                       <td>{r.mobile ?? "—"}</td>
                       {isCustomer && <td className="text-xs">{groupOf(r) ? <Link prefetch={false} href={`${cfg.base}?group=${encodeURIComponent(groupOf(r)!)}`} className="hover:underline">{groupOf(r)}</Link> : "—"}</td>}
                       {dealer && <td className="text-xs">{(r as { route?: string | null }).route ?? "—"}</td>}
@@ -231,7 +233,7 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
   const manage = can(ctx, cfg.manage);
   const tabHref = (k: string) => `${cfg.base}/${party.id}?tab=${k}`;
   const shareText = encodeURIComponent(
-    `${ctx.business.name}\n${party.name} — ${cfg.balanceLabel}: ${formatMoney(due, cur)}${aging?.overdue ? `\nমেয়াদোত্তীর্ণ: ${formatMoney(aging.overdue, cur)}` : ""}\nতারিখ: ${formatDate(today)}`,
+    `${ctx.business.name}\n${partyName(party)} — ${cfg.balanceLabel}: ${formatMoney(due, cur)}${aging?.overdue ? `\nমেয়াদোত্তীর্ণ: ${formatMoney(aging.overdue, cur)}` : ""}\nতারিখ: ${formatDate(today)}`,
   );
   const mobile = party.mobile?.replace(/\D/g, "");
   const waHref = `https://wa.me/${mobile ? (mobile.startsWith("880") ? mobile : `88${mobile}`) : ""}?text=${shareText}`;
@@ -241,7 +243,7 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
       <section className="panel mb-4">
         <div className="grid gap-0 lg:grid-cols-4">
           <dl className="space-y-1 border-b border-rule p-4 text-sm lg:border-b-0 lg:border-r">
-            <p className="text-base font-bold text-ink-900">{party.name} {!party.isActive && <Badge>{t("নিষ্ক্রিয়")}</Badge>}</p>
+            <p className="text-base font-bold text-ink-900">{partyName(party)} {!party.isActive && <Badge>{t("নিষ্ক্রিয়")}</Badge>}</p>
             {party.mobile && <p>📞 {party.mobile}</p>}
             {party.email && <p>✉ {party.email}</p>}
             {party.address && <p className="text-slate-600">{party.address}</p>}
@@ -294,9 +296,9 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
         params={{ ...params, accountId: party.accountId }}
         basePath={`${cfg.base}/${party.id}`}
         omitFilters={["account"]}
-        title={party.name}
+        title={partyName(party)}
         description={`${t(cfg.title)} ${t("প্রোফাইল ও হিসাব বিবরণী (স্টেটমেন্ট)")}`}
-        crumbs={[...(dealer ? [{ label: "ডিপো ব্যবস্থাপনা" }] : []), { label: cfg.title, href: cfg.base }, { label: party.name }]}
+        crumbs={[...(dealer ? [{ label: "ডিপো ব্যবস্থাপনা" }] : []), { label: cfg.title, href: cfg.base }, { label: partyName(party) }]}
         before={profile}
         extraActions={actions}
       />
@@ -395,7 +397,7 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
 
   return (
     <>
-      <PageHeader title={party.name} description={`${cfg.title} প্রোফাইল`} crumbs={[...(dealer ? [{ label: "ডিপো ব্যবস্থাপনা" }] : []), { label: cfg.title, href: cfg.base }, { label: party.name }]} actions={actions} />
+      <PageHeader title={partyName(party)} description={`${cfg.title} প্রোফাইল`} crumbs={[...(dealer ? [{ label: "ডিপো ব্যবস্থাপনা" }] : []), { label: cfg.title, href: cfg.base }, { label: partyName(party) }]} actions={actions} />
       {profile}
       <section className="panel">{body}</section>
     </>
@@ -425,7 +427,7 @@ export async function PartyEditPage({ kind: pageKind, id }: { kind: PartyPageKin
   const opening = party ? await partyOpening(ctx.business.id, kind, party.accountId) : 0;
   return (
     <>
-      <PageHeader title={party ? `সম্পাদনা: ${party.name}` : `নতুন ${cfg.title}`} crumbs={[...(dealer ? [{ label: "ডিপো ব্যবস্থাপনা" }] : []), { label: cfg.title, href: cfg.base }, { label: party?.name ?? "নতুন" }]} />
+      <PageHeader title={party ? `সম্পাদনা: ${partyName(party)}` : `নতুন ${cfg.title}`} crumbs={[...(dealer ? [{ label: "ডিপো ব্যবস্থাপনা" }] : []), { label: cfg.title, href: cfg.base }, { label: party ? partyName(party) : "নতুন" }]} />
       <section className="panel max-w-3xl p-5">
         <PartyForm
           action={dealer ? saveDealerAction.bind(null, id) : savePartyAction.bind(null, kind, id)}
@@ -434,6 +436,7 @@ export async function PartyEditPage({ kind: pageKind, id }: { kind: PartyPageKin
           cancelHref={party ? `${cfg.base}/${party.id}` : cfg.base}
           openingHint={cfg.openingHint}
           showRoute={dealer || isDepot(ctx.business.businessType)}
+          dealer={dealer}
         />
       </section>
     </>
@@ -491,7 +494,7 @@ export async function PartyStatementPrint({ kind: pageKind, id, searchParams }: 
         <section className="flex justify-between gap-6 py-3">
           <div>
             <p className="text-xs text-slate-500">{cfg.title}</p>
-            <p className="text-base font-semibold">{party.name}</p>
+            <p className="text-base font-semibold">{partyName(party)}</p>
             <p className="text-xs text-slate-600">{[party.mobile, party.address].filter(Boolean).join(" · ")}</p>
           </div>
           <div className="text-right">

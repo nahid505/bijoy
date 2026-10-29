@@ -139,17 +139,28 @@ export default async function DailyCashPage({ searchParams }: { searchParams: Se
 // a ruled khata: every cell of every row (the empty filler rows too) has its own light rule; on paper a shade darker
 const CELL = "border border-slate-300 px-1.5 py-1 align-top print:border-slate-400";
 
-/** বিবরণ of one ledger: row 1 "ডিপো ক্যাশ (Delower)" (the name opens the voucher), row 2 "বর্তমান জের: …, address" when there is one */
+/**
+ * বিবরণ of one ledger:
+ *   row 1 "সাইফুল, বীরগঞ্জ, দিনাজপুর (Delower)" — the name opens the voucher; no address → "সাইফুল (Delower)"
+ *   row 2 "বর্তমান জের: ৳ ২,৫৫৫.০০ ডেবিট, চাউল ক্রয় বাবদ" — no note → the balance alone; neither → no second row
+ * The address, the user's name and the note are data: never translated.
+ */
 function Particulars({ l, detail }: { l: CashLine; detail: (l: CashLine) => string }) {
-  const balance = detail({ ...l, address: null });
+  const balance = detail({ ...l, narration: null });
+  const note = l.narration?.trim();
   return (
     <>
       <span className="block font-medium text-gray-800 print:text-black">
         <Link prefetch={false} href={`/vouchers/v/${l.voucherId}`} className="text-inherit hover:underline print:no-underline">{l.particulars}</Link>
+        {l.address && <>, <span data-keep-lang>{l.address}</span></>}
         {l.enteredBy && <span className="font-normal text-slate-600 print:text-black"> (<span data-keep-lang>{l.enteredBy}</span>)</span>}
       </span>
-      {/* the user's name and the address are data: never translated */}
-      {detail(l) && <span className="block text-xs text-slate-500 print:text-[9.5px] print:text-slate-700">{balance}{l.address && <>{balance ? ", " : ""}<span data-keep-lang>{l.address}</span></>}</span>}
+      {(balance || note) && (
+        <span className="block text-xs text-gray-500 print:text-[9.5px] print:text-slate-700">
+          {balance}
+          {note && <>{balance ? ", " : ""}<span data-keep-lang>{note}</span></>}
+        </span>
+      )}
     </>
   );
 }

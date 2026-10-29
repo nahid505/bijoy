@@ -3,7 +3,7 @@ import { allowedAccounts, partyListWhere, voucherScopeWhere } from "../party-sco
 // Depot reports (business type DEPOT): delivery register, market dues by route / area, company commission.
 import { prisma, num } from "@/lib/db";
 import { round2, round3 } from "@/lib/calc";
-import { DEPOT_ACCESS, DEPOT_CASH_NAME, DEPOT_MODE_SHORT, isDepot } from "@/lib/depot";
+import { DEPOT_ACCESS, DEPOT_CASH_NAME, DEPOT_MODE_SHORT, dealerLabel, isDepot } from "@/lib/depot";
 import { addDays, dayOrToday, formatDate, formatMoney, formatQty as formatQtyText, toBnDigits } from "@/lib/format";
 import { reportPeriod } from "../period";
 import { balancesBefore } from "../services/ledger";
@@ -73,10 +73,10 @@ async function marketDuesByRoute(ctx: AppContext, p: Record<string, string | und
   if (!isDepot(ctx.business.businessType)) return notDepot(title);
   const asOf = dayOrToday(p.asOf);
   const q = p.q?.trim().toLowerCase();
-  const dealers = await prisma.customer.findMany({ where: { businessId: ctx.business.id, isDepotDealer: true, ...partyListWhere(ctx, "CUSTOMER") }, select: { id: true, accountId: true, name: true, mobile: true, route: true } });
+  const dealers = await prisma.customer.findMany({ where: { businessId: ctx.business.id, isDepotDealer: true, ...partyListWhere(ctx, "CUSTOMER") }, select: { id: true, accountId: true, name: true, ownerName: true, mobile: true, route: true } });
   const balances = await balancesBefore(ctx.business.id, new Date(`${addDays(asOf, 1)}T00:00:00.000Z`), dealers.map((d) => d.accountId), "DEPOT");
   const due = dealers
-    .map((d) => ({ ...d, route: d.route?.trim() || NO_ROUTE, due: round2(balances.get(d.accountId) ?? 0) }))
+    .map((d) => ({ ...d, name: dealerLabel(d.name, d.ownerName), route: d.route?.trim() || NO_ROUTE, due: round2(balances.get(d.accountId) ?? 0) }))
     .filter((d) => d.due > 0 && (!q || [d.name, d.mobile, d.route].some((x) => x?.toLowerCase().includes(q))));
   const routes = [...new Set(due.map((d) => d.route))].sort((a, b) => (a === NO_ROUTE ? 1 : b === NO_ROUTE ? -1 : a.localeCompare(b, "bn")));
   const rows: ReportRow[] = [];
@@ -188,9 +188,9 @@ async function freeSchemeReport(ctx: AppContext, p: Record<string, string | unde
 async function dealerLedger(ctx: AppContext, p: Record<string, string | undefined>): Promise<ReportResult> {
   const title = "ডিলার লেজার (ডিপো হিসাব)";
   if (!isDepot(ctx.business.businessType)) return notDepot(title);
-  const dealer = p.accountId ? await prisma.customer.findFirst({ where: { businessId: ctx.business.id, accountId: p.accountId, isDepotDealer: true, ...partyListWhere(ctx, "CUSTOMER") }, select: { name: true, accountId: true } }) : null;
+  const dealer = p.accountId ? await prisma.customer.findFirst({ where: { businessId: ctx.business.id, accountId: p.accountId, isDepotDealer: true, ...partyListWhere(ctx, "CUSTOMER") }, select: { name: true, ownerName: true, accountId: true } }) : null;
   if (!dealer) return { title, columns: [], rows: [], emptyMessage: "ডিলার নির্বাচন করুন" };
-  return ledgerReport(ctx, p, [dealer.accountId], `ডিলার লেজার: ${dealer.name}`, "DEPOT");
+  return ledgerReport(ctx, p, [dealer.accountId], `ডিলার লেজার: ${dealerLabel(dealer.name, dealer.ownerName)}`, "DEPOT");
 }
 
 /** A company's depot-book ledger: stock in, DO releases, payments and commission adjustments (its general ledger is separate). */

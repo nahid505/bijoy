@@ -507,6 +507,7 @@ model Customer {
   creditLimit   Decimal        @default(0) @db.Decimal(14, 2) // 0 = no limit
   creditDays    Int            @default(0) // payment terms: invoice due = date + creditDays
   groupName     String? // customer group (e.g. "পাইকারি", "এলাকা: মিরপুর") — used for group SMS
+  ownerName     String?        @db.Text // depot dealer: proprietor / owner (name = the shop / business)
   route         String?        @db.Text // depot: dealer's route / area (market dues by route)
   /// depot dealer: kept out of the general customer list / pickers; their trade lives in the DEPOT book
   isDepotDealer Boolean        @default(false)

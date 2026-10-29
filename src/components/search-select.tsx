@@ -327,7 +327,7 @@ function QuickCreateDialog({ kind, dealer = false, depot = false, initialName, u
       const r =
         kind === "products"
           ? await quickCreateProductAction({ name: get("qcName"), code: get("qcCode"), barcode: get("qcBarcode"), unitId: get("qcUnit"), purchasePrice: get("qcPurchase"), salePrice: get("qcSale"), depot })
-          : await quickCreatePartyAction(kind === "customers" ? "CUSTOMER" : "SUPPLIER", { name: get("qcName"), mobile: get("qcMobile"), dealer });
+          : await quickCreatePartyAction(kind === "customers" ? "CUSTOMER" : "SUPPLIER", { name: get("qcName"), mobile: get("qcMobile"), ownerName: get("qcOwner"), dealer });
       if (r.ok) onCreated(r.item);
       else {
         setMessage(r.message);
@@ -351,10 +351,17 @@ function QuickCreateDialog({ kind, dealer = false, depot = false, initialName, u
         <h2 className="text-base font-bold text-ink-900">{t("নতুন {noun} তৈরি করুন", { noun: t(dealer ? "ডিলার" : NOUN[kind]) })}</h2>
         {message && <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{message}</p>}
         <div>
-          <label className="label" htmlFor="qcName">{t("নাম *")}</label>
-          <input id="qcName" name="qcName" defaultValue={initialName} required autoFocus className="input" />
+          <label className="label" htmlFor="qcName">{t(dealer ? "প্রতিষ্ঠানের নাম *" : "নাম *")}</label>
+          <input id="qcName" name="qcName" defaultValue={initialName} required autoFocus className="input" placeholder={dealer ? t("যেমন: মেসার্স রহমান ট্রেডার্স") : undefined} />
           {err("name") && <p className="mt-1 text-xs text-red-600">{err("name")}</p>}
         </div>
+        {dealer && (
+          <div>
+            <label className="label" htmlFor="qcOwner">{t("মালিকের নাম")}</label>
+            <input id="qcOwner" name="qcOwner" className="input" maxLength={150} placeholder={t("যেমন: মোঃ আব্দুর রহমান")} />
+            {err("ownerName") && <p className="mt-1 text-xs text-red-600">{err("ownerName")}</p>}
+          </div>
+        )}
         {kind !== "products" ? (
           <div>
             <label className="label" htmlFor="qcMobile">{t("মোবাইল")}</label>

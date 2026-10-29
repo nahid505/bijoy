@@ -6,6 +6,7 @@ import { UserError } from "@/lib/errors";
 import { NATURE_LABELS } from "@/lib/accounting";
 import { canHaveSubgroups, groupDepth, MAX_GROUP_DEPTH, NO_SUBGROUP_KEYS, orderGroupTree } from "@/lib/account-groups";
 import { ciEquals } from "@/lib/dialect";
+import { dealerLabel } from "@/lib/depot";
 import type { AccountGroupInput, PartyInput, ProductInput } from "@/lib/validation";
 import { getAccountOpening, setAccountOpening, type Ctx, type Tx } from "./accounting";
 import { setOpeningStock } from "./inventory";
@@ -40,7 +41,9 @@ export async function saveParty(ctx: Ctx, kind: PartyKind, input: PartyInput, id
   return prisma.$transaction(async (tx) => {
     const cfg = PARTY[kind];
     const base = { name: input.name, mobile: input.mobile, email: input.email, address: input.address, notes: input.notes, creditDays: input.creditDays };
-    const data = kind === "CUSTOMER" ? { ...base, creditLimit: input.creditLimit, groupName: input.groupName ?? null, ...(input.route !== undefined ? { route: input.route } : {}) } : base;
+    const data = kind === "CUSTOMER" ? { ...base, creditLimit: input.creditLimit, groupName: input.groupName ?? null, ...(input.route !== undefined ? { route: input.route } : {}), ...(input.ownerName !== undefined ? { ownerName: input.ownerName } : {}) } : base;
+    /** the ledger of a dealer reads "shop (owner)", so vouchers, statements and pickers show both names */
+    const ledgerName = (dealer: boolean, ownerName?: string | null) => (dealer ? dealerLabel(input.name, ownerName) : input.name);
     let accountId: string;
     let partyId: string;
     if (id) {
@@ -53,11 +56,14 @@ export async function saveParty(ctx: Ctx, kind: PartyKind, input: PartyInput, id
       partyId = existing.id;
       if (kind === "CUSTOMER") await tx.customer.update({ where: { id }, data });
       else await tx.supplier.update({ where: { id }, data });
-      await tx.account.update({ where: { id: accountId }, data: { name: input.name } });
+      const stored = existing as { isDepotDealer?: boolean; ownerName?: string | null };
+      const owner = input.ownerName !== undefined ? input.ownerName : stored.ownerName;
+      const dealer = !!stored.isDepotDealer;
+      await tx.account.update({ where: { id: accountId }, data: { name: ledgerName(dealer, owner) } });
     } else {
       const group = await groupByKey(tx, ctx.businessId, cfg.group);
       const account = await tx.account.create({
-        data: { businessId: ctx.businessId, groupId: group.id, nature: group.nature, name: input.name, kind: kind as AccountKind },
+        data: { businessId: ctx.businessId, groupId: group.id, nature: group.nature, name: ledgerName(kind === "CUSTOMER" && !!opts.dealer, input.ownerName), kind: kind as AccountKind },
       });
       accountId = account.id;
       const party =

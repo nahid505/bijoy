@@ -45,10 +45,11 @@ export async function savePartyAction(pageKind: PartyPageKind, id: string | null
     if (id) await assertPartyKind(ctx.business.id, pageKind, id);
     const input = parseForm(partySchema, fd);
     if (!fd.has("route")) delete (input as { route?: string | null }).route; // form without the depot field: keep the stored route
+    if (!fd.has("ownerName")) delete (input as { ownerName?: string | null }).ownerName; // only the dealer form has the owner
     if (id) await assertPartyRecordAllowed(ctx, kind, id);
     const saved = await saveParty(ctx.svc, kind, input, id ?? undefined, { dealer: pageKind === "DEALER" });
     if (!id) await assignToCreator(ctx, kind, saved.id); // a restricted user keeps what they create
-    await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: id ? "UPDATE" : "CREATE", entity: cfg.entity, entityId: saved.id, details: { name: input.name, opening: input.openingBalance } });
+    await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: id ? "UPDATE" : "CREATE", entity: cfg.entity, entityId: saved.id, details: { name: input.name, ...(input.ownerName ? { owner: input.ownerName } : {}), opening: input.openingBalance } });
     return saved.id;
   });
   if (!result.ok) return toResult(result);

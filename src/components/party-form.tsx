@@ -15,6 +15,7 @@ export interface PartyDefaults {
   creditDays?: number;
   groupName?: string | null;
   route?: string | null;
+  ownerName?: string | null;
 }
 
 export function PartyForm({
@@ -24,6 +25,7 @@ export function PartyForm({
   openingHint,
   kind = "CUSTOMER",
   showRoute = false,
+  dealer = false,
 }: {
   action: FormAction;
   defaults?: PartyDefaults;
@@ -32,12 +34,21 @@ export function PartyForm({
   kind?: "CUSTOMER" | "SUPPLIER";
   /** depot businesses: the dealer's route / area */
   showRoute?: boolean;
+  /** depot dealer: the shop / business name and the proprietor, two fields */
+  dealer?: boolean;
 }) {
   const t = useT();
   return (
     <ActionForm action={action}>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="নাম *" name="name"><input id="name" name="name" defaultValue={defaults.name} className="input" required maxLength={200} /></Field>
+        {dealer ? (
+          <>
+            <Field label="প্রতিষ্ঠানের নাম *" name="name"><input id="name" name="name" defaultValue={defaults.name} className="input" required maxLength={200} placeholder={t("যেমন: মেসার্স রহমান ট্রেডার্স")} /></Field>
+            <Field label="মালিকের নাম" name="ownerName"><input id="ownerName" name="ownerName" defaultValue={defaults.ownerName ?? ""} className="input" maxLength={150} placeholder={t("যেমন: মোঃ আব্দুর রহমান")} /></Field>
+          </>
+        ) : (
+          <Field label="নাম *" name="name"><input id="name" name="name" defaultValue={defaults.name} className="input" required maxLength={200} /></Field>
+        )}
         <Field label="মোবাইল" name="mobile"><input id="mobile" name="mobile" type="tel" defaultValue={defaults.mobile ?? ""} className="input" inputMode="tel" placeholder="01XXXXXXXXX" /></Field>
         <Field label="ইমেইল" name="email"><input id="email" name="email" type="email" defaultValue={defaults.email ?? ""} className="input" /></Field>
         <Field label="প্রারম্ভিক ব্যালেন্স (৳)" name="openingBalance" hint={openingHint}>

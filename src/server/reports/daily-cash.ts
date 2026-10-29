@@ -15,7 +15,7 @@ import "server-only";
 //   the cash amount is allotted to those ledgers in entry order, so the lines always add up to the cash moved. Opening-balance vouchers dated on the
 // day (the books start date) count in পূর্বের জমা.
 //
-// বিবরণ of a line, two rows:  "<ledger> (<entered by>)"  /  "বর্তমান জের: <balance>, <address>"
+// বিবরণ of a line, two rows:  "<ledger>, <address> (<entered by>)"  /  "বর্তমান জের: <balance>, <note>"
 // The balance is the line's own ledger right after that voucher — its running balance through the day, so on today's
 // report the last line of a ledger shows its balance now.
 import type { VoucherType } from "@prisma/client";
@@ -100,7 +100,7 @@ export async function dailyCash(businessId: string, params: { date?: string; sco
           partyAccountId: true,
           partyAccount: { select: { name: true } },
           createdBy: { select: { name: true } },
-          entries: { orderBy: { lineNo: "asc" }, select: { accountId: true, debit: true, credit: true, account: { select: { name: true } } } },
+          entries: { orderBy: { lineNo: "asc" }, select: { accountId: true, debit: true, credit: true, narration: true, account: { select: { name: true } } } },
         },
       })
     : [];
@@ -178,7 +178,9 @@ export async function dailyCash(businessId: string, params: { date?: string; sco
         enteredBy,
         address: part.accountId ? (addressOf.get(part.accountId) ?? null) : null,
         balance: part.accountId ? (runAfter.get(`${part.accountId}|${v.id}`) ?? null) : null,
-        narration: v.narration, amount: part.amount,
+        // the note: the line's own (a voucher with several ledgers can note each), else the voucher's
+        narration: (part.accountId ? v.entries.find((e) => e.accountId === part.accountId && e.narration?.trim())?.narration?.trim() : null) || v.narration?.trim() || null,
+        amount: part.amount,
       };
       (amount > 0 ? receipts : payments).push(line);
     }
@@ -192,14 +194,15 @@ export async function dailyCash(businessId: string, params: { date?: string; sco
   };
 }
 
-/** বিবরণ row 1: "ডিপো ক্যাশ (Delower)" — no brackets when nobody is recorded */
-export function cashLineTitle(l: Pick<CashLine, "particulars" | "enteredBy">): string {
-  return l.enteredBy ? `${l.particulars} (${l.enteredBy})` : l.particulars;
+/** বিবরণ row 1: "সাইফুল, বীরগঞ্জ, দিনাজপুর (Delower)" — no address → "সাইফুল (Delower)"; no brackets when nobody is recorded */
+export function cashLineTitle(l: Pick<CashLine, "particulars" | "address" | "enteredBy">): string {
+  const name = [l.particulars, l.address].filter(Boolean).join(", ");
+  return l.enteredBy ? `${name} (${l.enteredBy})` : name;
 }
 
-/** বিবরণ row 2: "বর্তমান জের: ৳ ৫,০০০.০০ ডেবিট, বীরগঞ্জ, দিনাজপুর" — only the parts there are ("" when none) */
-export function cashLineDetail(l: Pick<CashLine, "address" | "balance">, money: (n: number) => string, label = "বর্তমান জের:"): string {
-  return [l.balance !== null ? `${label} ${money(l.balance)}` : null, l.address].filter(Boolean).join(", ");
+/** বিবরণ row 2: "বর্তমান জের: ৳ ২,৫৫৫.০০ ডেবিট, চাউল ক্রয় বাবদ" — no note → the balance alone ("" when neither) */
+export function cashLineDetail(l: Pick<CashLine, "balance" | "narration">, money: (n: number) => string, label = "বর্তমান জের:"): string {
+  return [l.balance !== null ? `${label} ${money(l.balance)}` : null, l.narration?.trim() || null].filter(Boolean).join(", ");
 }
 
 const typeLabel = (t: VoucherType) => VOUCHER_TYPES[t as VoucherTypeKey]?.label ?? t;

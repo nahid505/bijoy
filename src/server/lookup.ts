@@ -10,7 +10,7 @@ import { balancesBefore } from "./services/ledger";
 import { partyAging } from "./services/aging";
 import { bookAccountWhere } from "./services/accounting";
 import type { BookKey } from "@/lib/book";
-import { commissionPerUnit } from "@/lib/depot";
+import { commissionPerUnit, dealerLabel } from "@/lib/depot";
 import { digitVariants, toAsciiDigits } from "@/lib/digits";
 import { ci, rawRows, sql } from "@/lib/dialect";
 
@@ -80,6 +80,7 @@ export async function searchParties(businessId: string, kind: PartyKind, q: stri
           ? {
               OR: [
                 ...digitVariants(query).map((v) => ({ name: ci(v) })), // "চাল 50" also finds "চাল ৫০"
+                ...(kind === "CUSTOMER" && opts.dealer ? digitVariants(query).map((v) => ({ ownerName: ci(v) })) : []), // a dealer by its proprietor
                 { id: query },
                 { accountId: query },
                 { account: { code: ci(asciiDigits(query)) } },
@@ -90,11 +91,11 @@ export async function searchParties(businessId: string, kind: PartyKind, q: stri
       };
   const select = { id: true, name: true, mobile: true, accountId: true, creditDays: true, account: { select: { code: true, group: { select: { name: true } } } } } as const;
   const rows = (kind === "CUSTOMER"
-    ? await prisma.customer.findMany({ where, select: { ...select, creditLimit: true }, orderBy: { name: "asc" }, take: opts.accountIds ? undefined : take * 3 })
+    ? await prisma.customer.findMany({ where, select: { ...select, creditLimit: true, ownerName: true }, orderBy: { name: "asc" }, take: opts.accountIds ? undefined : take * 3 })
     : await prisma.supplier.findMany({ where, select, orderBy: { name: "asc" }, take: opts.accountIds ? undefined : take * 3 })) as {
-    id: string; name: string; mobile: string | null; accountId: string; creditDays: number; creditLimit?: unknown; account: { code: string | null; group: { name: string } };
+    id: string; name: string; ownerName?: string | null; mobile: string | null; accountId: string; creditDays: number; creditLimit?: unknown; account: { code: string | null; group: { name: string } };
   }[];
-  const top = (query ? rank(rows, query, (r) => ({ name: r.name, exact: [r.account.code, r.mobile?.replace(/\D/g, ""), r.id, r.accountId], partial: [r.mobile?.replace(/\D/g, ""), r.account.code] })) : rows).slice(0, opts.accountIds ? undefined : take);
+  const top = (query ? rank(rows, query, (r) => ({ name: r.name, exact: [r.account.code, r.mobile?.replace(/\D/g, ""), r.id, r.accountId], partial: [r.mobile?.replace(/\D/g, ""), r.account.code, r.ownerName] })) : rows).slice(0, opts.accountIds ? undefined : take);
   if (top.length === 0) return [];
   const ids = top.map((r) => r.accountId);
   const [bal, aging] = await Promise.all([
@@ -105,7 +106,8 @@ export async function searchParties(businessId: string, kind: PartyKind, q: stri
   return top.map((r) => ({
     id: r.accountId,
     partyId: r.id,
-    name: r.name,
+    name: dealerLabel(r.name, r.ownerName), // a dealer: "shop (owner)"
+
     code: r.account.code,
     group: r.account.group.name,
     balance: bal.get(r.accountId) ?? 0,

@@ -410,10 +410,10 @@ A new top group is listed last and is never "direct".
 **Layout and print.** A ruled cash khata in one table (`CashBook`, `#cash-book`): খরচ / পেমেন্ট on the left, জমা / রিসিট on the right, each নং | বিবরণ | টাকা at fixed widths (`table-fixed`: নং 40 px / 8 mm, টাকা 128 px / 27 mm, বিবরণ the rest — the same on both sides), a thicker rule between the sides. Payment line i and receipt line i share a row, so lines and totals always line up whatever a বিবরণ holds; the footer pairs মোট পেমেন্ট / আজকের রিসিট, অবশিষ্ট ক্যাশ, and the balancing সর্বমোট / মোট রিসিট on one row. Every cell of every row, the empty filler rows too, has a 1px `border-slate-300` rule (a shade darker, slate-400, on paper); amounts are right-aligned and never wrap. Cells carry `data-side="pay" | "receipt"`. Phones get the two sides as separate stacked tables (receipts first). Printing uses A4 portrait with the business header, the two columns side by side, the closing in words and signature lines; on phones receipts are stacked above payments. PDF is the browser's print → Save as PDF, as for every report (keeps Bangla shaping). Excel and CSV come from the generic `/api/reports/daily-cash?date=&scope=` export through the `DAILY_CASH_REPORT` registry entry.
 
 **বিবরণ cell: two rows** (`cashLineTitle` / `cashLineDetail`):
-- **Row 1** (normal size, medium weight): the line's ledger, then who entered the voucher in brackets — "ডিপো ক্যাশ (Delower)". No brackets when nobody is recorded.
-- **Row 2** (smaller, below): "বর্তমান জের:", the balance (debit − credit, shown with its side) of that ledger right after the voucher — a running balance through the day, so on today's sheet the last line of a ledger is its balance now — then the ledger's address (customer / supplier) when it has one. Only the parts there are; no empty commas or brackets.
-- Nothing else: no voucher number, type or narration (on screen or on paper). The account name in row 1 links to the voucher (plain text when printed). On paper rows never split across pages and long names / addresses wrap instead of being cut (`.daily-cash` print rules in `globals.css`).
-- In English the label and digits are English; the user's name and the address are data (`data-keep-lang`) and stay as written. CSV / Excel carry both rows in the বিবরণ column.
+- **Row 1** (normal size, `font-medium text-gray-800`): the line's ledger, its address (customer / supplier) after a comma, then who entered the voucher in brackets — "সাইফুল, বীরগঞ্জ, দিনাজপুর (Delower)"; no address → "সাইফুল (Delower)"; no brackets when nobody is recorded.
+- **Row 2** (smaller, `text-xs text-gray-500`): "বর্তমান জের:", the balance (debit − credit, shown with its side) of that ledger right after the voucher — a running balance through the day, so on today's sheet the last line of a ledger is its balance now — then the note after a comma: the line's own journal-line note, else the voucher's narration — "বর্তমান জের: ৳ ২,৫৫৫.০০ ডেবিট, চাউল ক্রয় বাবদ". Only the parts there are; no empty commas, brackets or second row.
+- No voucher number or type (on screen or on paper). The account name in row 1 links to the voucher (plain text when printed). On paper rows never split across pages and long names / addresses wrap instead of being cut (`.daily-cash` print rules in `globals.css`).
+- In English the label and digits are English; the address, the user's name and the note are data (`data-keep-lang`) and stay as written. CSV / Excel carry both rows in the বিবরণ column.
 
 ## 6j-2. Daily stock report (দৈনিক স্টক রিপোর্ট)
 **Where.** `/reports/daily-stock?date=&warehouseId=` (`reports:view`); the sidebar's রিপোর্ট menu (after the daily purchase report) and "বিক্রয়, ক্রয় ও মজুদ" on the reports page.
@@ -701,6 +701,10 @@ The integrity report, the stock-valuation comparison and the restore check use A
 - **List and profile:** dealers are kept out of the general customer list, pickers, reports and the general chart of accounts (`bookAccountWhere`). Their list, profile and statement live at `/depot/dealers` (`PartyListPage` / `PartyDetailPage` kind `DEALER`, read from the DEPOT book). `/customers/<dealer>` redirects there.
 - **Creating:** new dealers come from `/depot/dealers/new` (`saveDealerAction`) or from the challan's picker, "+ নতুন ডিলার তৈরি করুন" (`SearchSelect book="depot"` → `/api/lookup/...&book=depot` → `quickCreatePartyAction(..., { dealer: true })`).
 - **Challans:** they accept only dealers.
+- **Names:** a dealer has a shop / business name, "প্রতিষ্ঠানের নাম *" (`Customer.name`, required), and a proprietor, "মালিকের নাম" (`Customer.ownerName`, optional). Both the form and the challan's quick-create dialog ask for both. `dealerLabel()` (`src/lib/depot.ts`) shows them as "মেসার্স রহমান ট্রেডার্স (মোঃ আব্দুর রহমান)": just the shop name when there is no owner, or when the owner repeats the shop name.
+  - The dealer's ledger (`Account.name`) is saved in that form, so vouchers, statements, the daily cash book and every account picker show both names. `saveParty` renames the ledger when either name changes.
+  - An edit from a form without the owner field keeps the stored owner. General customers and suppliers keep their plain name.
+  - The dealer list, profile, edit page, depot reports and the dealer picker use the same label. The list search and the picker also find a dealer by the owner's name.
 
 `assertBookAccounts` keeps the books apart on save:
 - a GENERAL voucher may not use a dealer or a `DEPOT_*` account;
@@ -730,7 +734,7 @@ The integrity report, the stock-valuation comparison and the restore check use A
 - in depot businesses, purchases / returns / payments with a depot company, and receipts / payments / journals / openings / returns that post to a dealer or a `DEPOT_*` account → DEPOT;
 - entries follow their voucher.
 
-**Backups** carry `book` and `isDepotDealer`. Older backups restore as GENERAL.
+**Backups** carry `book`, `isDepotDealer` and `ownerName`. Older backups restore as GENERAL, with no owner.
 
 **Further depot-book rules (integration audit):**
 - **Returns:** a return always lives in its invoice's book (`tradeVoucherTx`); forcing the other book is refused. A stock-in return (SIR-) or market-sale return (MSR-) stays in the depot book, and the return editor loads dealers for a depot invoice. The voucher page's "বাকি আদায়" opens the depot collection for a depot sale.

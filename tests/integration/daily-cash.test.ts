@@ -83,21 +83,27 @@ run("ডেইলী জমা-খরচ হিসাব (daily cash book)", () 
     expect(d.closing).toBe(ledger);
   });
 
-  it("বিবরণ: ledger (entered by) / current balance, address — empty parts leave no stray commas", async () => {
+  it("বিবরণ: ledger, address (entered by) / current balance, note — empty parts leave no stray commas", async () => {
     const d = await dailyCash(ctx.businessId, { date: "2026-10-10" });
     const [fromCustomer] = d.receipts;
     const rent = d.payments.find((l) => l.particulars === "দোকান/অফিস ভাড়া")!;
     const supplier = d.payments.find((l) => l.particulars === "মেঘনা এন্টারপ্রাইজ")!;
-    expect([fromCustomer.enteredBy, fromCustomer.address, fromCustomer.balance]).toEqual(["Cash", "বীরগঞ্জ, দিনাজপুর", -5_000]); // the customer paid 5 000: credit
-    expect(cashLineTitle(fromCustomer)).toBe("রহিম ট্রেডার্স (Cash)");
-    expect(cashLineDetail(fromCustomer, (n) => formatDrCr(n))).toBe("বর্তমান জের: ৳ ৫,০০০.০০ ক্রেডিট, বীরগঞ্জ, দিনাজপুর");
-    // no address: just the balance — running through the days (500 on 9 Oct + 1 200 today)
+    expect([fromCustomer.enteredBy, fromCustomer.address, fromCustomer.balance, fromCustomer.narration]).toEqual(["Cash", "বীরগঞ্জ, দিনাজপুর", -5_000, "বাকি আদায়"]); // the customer paid 5 000: credit
+    // row 1: name, address (user); row 2: balance, note
+    expect(cashLineTitle(fromCustomer)).toBe("রহিম ট্রেডার্স, বীরগঞ্জ, দিনাজপুর (Cash)");
+    expect(cashLineDetail(fromCustomer, (n) => formatDrCr(n))).toBe("বর্তমান জের: ৳ ৫,০০০.০০ ক্রেডিট, বাকি আদায়");
+    // no address: name (user); the note follows the balance — running through the days (500 on 9 Oct + 1 200 today)
     expect([rent.address, rent.balance]).toEqual([null, 1_700]);
-    expect(cashLineDetail(rent, (n) => formatDrCr(n))).toBe("বর্তমান জের: ৳ ১,৭০০.০০ ডেবিট");
-    expect(supplier.balance).toBe(3_000);
-    // nothing known: no second row, no brackets
-    expect(cashLineDetail({ address: null, balance: null }, String)).toBe("");
-    expect(cashLineTitle({ particulars: "নগদ", enteredBy: null })).toBe("নগদ");
+    expect(cashLineTitle(rent)).toBe("দোকান/অফিস ভাড়া (Cash)");
+    expect(cashLineDetail(rent, (n) => formatDrCr(n))).toBe("বর্তমান জের: ৳ ১,৭০০.০০ ডেবিট, অক্টোবরের ভাড়া");
+    // no note: the balance alone
+    expect(supplier.narration).toBeNull();
+    expect(cashLineDetail(supplier, (n) => formatDrCr(n))).toBe("বর্তমান জের: ৳ ৩,০০০.০০ ডেবিট");
+    // nothing known: no second row, no comma, no brackets
+    expect(cashLineDetail({ balance: null, narration: null }, String)).toBe("");
+    expect(cashLineDetail({ balance: null, narration: "  " }, String)).toBe("");
+    expect(cashLineTitle({ particulars: "নগদ", address: null, enteredBy: null })).toBe("নগদ");
+    expect(cashLineTitle({ particulars: "নগদ", address: "", enteredBy: "Delower" })).toBe("নগদ (Delower)");
   });
 
   it("several ledgers in one voucher: one line each, its own amount, never joined", async () => {

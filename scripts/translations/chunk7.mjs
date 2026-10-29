@@ -95,4 +95,9 @@ export const chunk7Translations = {
   "আজকের মজুদ = পূর্বের মজুদ + উৎপাদন / ক্রয় − বিক্রয় / ব্যবহার। ভিন্ন ইউনিটের পরিমাণ যোগ না করে ইউনিট অনুযায়ী মোট দেখানো হয়েছে।": "Closing stock = opening stock + production / purchase − sales / consumption. Quantities in different units are not added together; totals are per unit.",
   "স্টোর কিপার": "Store keeper",
   "নির্দিষ্ট দিনের পূর্বের মজুদ, উৎপাদন বা ক্রয়, বিক্রয় বা ব্যবহার ও আজকের মজুদ — পণ্যভিত্তিক, গুদাম অনুযায়ী": "Opening stock, production or purchase, sales or consumption and closing stock of a day — per product, by warehouse",
+  // depot dealer: shop / business name and proprietor
+  "প্রতিষ্ঠানের নাম *": "Business / Shop Name *",
+  "প্রতিষ্ঠানের নাম": "Business / Shop Name",
+  "যেমন: মেসার্স রহমান ট্রেডার্স": "e.g. Messrs Rahman Traders",
+  "যেমন: মোঃ আব্দুর রহমান": "e.g. Md. Abdur Rahman",
 };
