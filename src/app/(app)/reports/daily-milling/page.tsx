@@ -5,6 +5,7 @@ import { addDays, dayOrToday, dayRange, formatDate, formatQty, toBnDigits } from
 import { PrintButton } from "@/components/forms";
 import { FilterField, PageHeader, PrintHeader, StatCard } from "@/components/ui";
 import { requirePermission } from "@/server/auth";
+import { REPORT_ACCESS } from "@/lib/permissions";
 import { getT } from "@/server/i18n";
 import { readParams, type SearchParams } from "@/server/params";
 import { reportOpenFor } from "@/server/reports/registry";
@@ -20,7 +21,7 @@ const CELL = "border border-slate-300 px-2 py-1.5 align-top print:border-slate-4
  * each against the paddy, and who entered it — with the day's totals. Print (A4 landscape), Excel and CSV.
  */
 export default async function DailyMillingPage({ searchParams }: { searchParams: SearchParams }) {
-  const ctx = await requirePermission("reports:view");
+  const ctx = await requirePermission(REPORT_ACCESS.dailyMilling);
   if (!reportOpenFor(ctx, "daily-milling")) redirect("/forbidden");
   const t = await getT();
   const p = await readParams(searchParams);

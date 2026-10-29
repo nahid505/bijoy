@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/ui";
 import { requirePermission } from "@/server/auth";
 import { FEATURE_KEYS } from "@/lib/features";
 import { isDepot } from "@/lib/depot";
+import { businessModules } from "@/lib/business-types";
 import { saveRoleAction } from "@/server/actions/business";
 import { RoleForm } from "../role-form";
 
@@ -14,7 +15,7 @@ export default async function NewRolePage() {
   return (
     <>
       <PageHeader title="নতুন রোল" crumbs={[{ label: "রোল ও অনুমতি", href: "/roles" }, { label: "নতুন" }]} />
-      <section className="panel p-5"><RoleForm action={saveRoleAction.bind(null, null)} offFeatures={off} depot={isDepot(ctx.business.businessType)} /></section>
+      <section className="panel p-5"><RoleForm action={saveRoleAction.bind(null, null)} offFeatures={off} depot={isDepot(ctx.business.businessType)} riceMill={businessModules(ctx.business.businessTypes).has("RICE_MILL")} /></section>
     </>
   );
 }

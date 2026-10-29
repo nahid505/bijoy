@@ -9,12 +9,13 @@ import { savePaddyPurchaseAction } from "@/server/actions/paddy";
 import { loadPaddyPurchase } from "@/server/services/paddy";
 import { PaddyPurchaseForm } from "../../paddy-form";
 import { canSeeVoucher } from "@/server/party-scope";
+import { RICE_MILL_ACCESS } from "@/lib/rice-mill";
 
 export const metadata: Metadata = { title: "ধান ক্রয় সম্পাদনা" };
 
 export default async function EditPaddyPurchasePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const ctx = await requirePermission("purchases:edit");
+  const ctx = await requirePermission(RICE_MILL_ACCESS.paddyEdit);
   const [pp, warehouses] = await Promise.all([
     loadPaddyPurchase(ctx.business.id, id),
     prisma.warehouse.findMany({ where: { businessId: ctx.business.id }, orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true } }),

@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { prisma, num } from "@/lib/db";
 import { normalizeThresholds } from "@/lib/expiry";
 import { hasPermission, type Permission } from "@/lib/permissions";
+import { riceMillBlocked } from "@/lib/rice-mill";
 import { SESSION_COOKIE, SESSION_MAX_AGE_SECONDS, createSessionToken, verifySessionToken } from "@/lib/session";
 import { clientIpFrom, trustedProxyHops } from "@/lib/client-ip";
 import { activeSessionUser, createSession, revokeSession } from "./services/sessions";
@@ -116,7 +117,9 @@ export const getContext = cache(async (): Promise<AppContext | null> => {
   // a suspended subscription leaves only the billing pages (to pay / contact the platform)
   const billingOnly = strList(m.role.permissions).filter((p) => p === "*" || p === "billing:view" || p === "billing:manage").map((p) => (p === "*" ? ["billing:view", "billing:manage"] : [p])).flat();
   const partyScope = await loadPartyScope(b.id, user.id, restrictionsOf(m.role.permissions, isOwner));
-  const permissions = eff?.blocked ? billingOnly : !on.has("MULTI_USER") && !isOwner ? [] : [...strList(m.role.permissions), ...blockedPermissions(off).map((x) => `!${x}`)];
+  // the rice-mill keys open shared screens (paddy slips, milling batches, sales): refused outside a rice-mill business
+  const moduleBlocks = riceMillBlocked(strList(b.businessTypes));
+  const permissions = eff?.blocked ? billingOnly : !on.has("MULTI_USER") && !isOwner ? [] : [...strList(m.role.permissions), ...[...blockedPermissions(off), ...moduleBlocks].map((x) => `!${x}`)];
   return {
     user,
     business: {

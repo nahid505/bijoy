@@ -8,13 +8,14 @@ import { readParams, type SearchParams } from "@/server/params";
 import { balancesBefore, listAccounts } from "@/server/services/ledger";
 import { accountScopeWhere } from "@/server/party-scope";
 import { bookAccountWhere } from "@/server/services/accounting";
+import { REPORT_ACCESS } from "@/lib/permissions";
 
 export const metadata: Metadata = { title: "লেজার (চার্ট অব অ্যাকাউন্টস)" };
 
 const KIND_LABEL: Record<string, string> = { CASH: "নগদ", BANK: "ব্যাংক", CUSTOMER: "কাস্টমার", SUPPLIER: "সরবরাহকারী" };
 
 export default async function AccountsPage({ searchParams }: { searchParams: SearchParams }) {
-  const ctx = await requirePermission("accounts:view");
+  const ctx = await requirePermission(REPORT_ACCESS.ledgerView);
   const p = await readParams(searchParams);
   const q = p.q?.trim().toLowerCase();
   const nature = p.nature && p.nature in NATURE_LABELS ? (p.nature as Nature) : undefined;

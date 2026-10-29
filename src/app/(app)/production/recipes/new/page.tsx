@@ -4,11 +4,12 @@ import { requirePermission } from "@/server/auth";
 import { saveRecipeAction } from "@/server/actions/production";
 import { productionFormData } from "@/server/services/production";
 import { RecipeForm } from "../../production-forms";
+import { RICE_MILL_ACCESS } from "@/lib/rice-mill";
 
 export const metadata: Metadata = { title: "নতুন রেসিপি" };
 
 export default async function NewRecipePage() {
-  const ctx = await requirePermission("production:manage");
+  const ctx = await requirePermission(RICE_MILL_ACCESS.milling);
   const { units } = await productionFormData(ctx.business.id);
   return (
     <>

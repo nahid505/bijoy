@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { DEPOT_PERMISSIONS, isPermission } from "@/lib/permissions";
+import { riceMillBlocked } from "@/lib/rice-mill";
 import { isDepot } from "@/lib/depot";
 import { businessSchema, businessTypesSchema, memberSchema, newBusinessSchema, roleSchema } from "@/lib/validation";
 import { assertPermission, getContext, requireUser, setBusinessCookie, setSessionCookie } from "../auth";
@@ -191,8 +192,10 @@ export async function saveRoleAction(id: string | null, _prev: ActionState, fd: 
     const input = roleSchema.parse({
       name: fd.get("name"),
       description: fd.get("description"),
-      // depot permissions are granted only in a depot business
-      permissions: fd.getAll("permissions").map(String).filter(isPermission).filter((p) => isDepot(ctx.business.businessType) || !DEPOT_PERMISSIONS.includes(p)),
+      // depot permissions are granted only in a depot business, the rice-mill ones only in a rice-mill business
+      permissions: fd.getAll("permissions").map(String).filter(isPermission)
+        .filter((p) => isDepot(ctx.business.businessType) || !DEPOT_PERMISSIONS.includes(p))
+        .filter((p) => !riceMillBlocked(ctx.business.businessTypes).includes(p)),
     });
     if (id) {
       const role = await prisma.role.findFirst({ where: { id, businessId } });

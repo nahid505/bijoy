@@ -11,13 +11,14 @@ import { getT } from "@/server/i18n";
 import { deleteRecipeAction, saveRecipeAction } from "@/server/actions/production";
 import { getRecipe, productionFormData, recipeData } from "@/server/services/production";
 import { RecipeForm } from "../../production-forms";
+import { RICE_MILL_ACCESS } from "@/lib/rice-mill";
 
 export const metadata: Metadata = { title: "রেসিপি" };
 
 export default async function RecipePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const ctx = await requirePermission("production:view");
-  const manage = can(ctx, "production:manage");
+  const ctx = await requirePermission(RICE_MILL_ACCESS.millingView);
+  const manage = can(ctx, RICE_MILL_ACCESS.milling);
   const [recipe, { units }] = await Promise.all([getRecipe(ctx.business.id, id), productionFormData(ctx.business.id)]);
   if (!recipe) notFound();
   return (

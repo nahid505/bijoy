@@ -8,12 +8,13 @@ import { Badge, EmptyState, PageHeader, TableWrap } from "@/components/ui";
 import { can, requirePermission } from "@/server/auth";
 import { riceMillTemplateAction } from "@/server/actions/production";
 import { listRecipes } from "@/server/services/production";
+import { RICE_MILL_ACCESS } from "@/lib/rice-mill";
 
 export const metadata: Metadata = { title: "রেসিপি (BOM)" };
 
 export default async function RecipesPage() {
-  const ctx = await requirePermission("production:view");
-  const manage = can(ctx, "production:manage");
+  const ctx = await requirePermission(RICE_MILL_ACCESS.millingView);
+  const manage = can(ctx, RICE_MILL_ACCESS.milling);
   const recipes = await listRecipes(ctx.business.id);
   return (
     <>

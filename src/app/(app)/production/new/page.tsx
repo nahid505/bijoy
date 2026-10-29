@@ -7,11 +7,12 @@ import { readParams, type SearchParams } from "@/server/params";
 import { saveProductionAction } from "@/server/actions/production";
 import { productionFormData } from "@/server/services/production";
 import { ProductionForm } from "../production-forms";
+import { RICE_MILL_ACCESS } from "@/lib/rice-mill";
 
 export const metadata: Metadata = { title: "নতুন উৎপাদন" };
 
 export default async function NewProductionPage({ searchParams }: { searchParams: SearchParams }) {
-  const ctx = await requirePermission("production:manage");
+  const ctx = await requirePermission(RICE_MILL_ACCESS.milling);
   const p = await readParams(searchParams);
   const data = await productionFormData(ctx.business.id);
   const recipe = data.recipes.find((r) => r.id === p.recipe) ?? (data.recipes.length === 1 ? data.recipes[0] : null);

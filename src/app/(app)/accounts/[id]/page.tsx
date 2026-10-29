@@ -14,6 +14,7 @@ import { readParams, type SearchParams } from "@/server/params";
 import { reportPeriod } from "@/server/period";
 import { statement } from "@/server/services/ledger";
 import { deleteAccountAction, toggleAccountAction } from "@/server/actions/masters";
+import { REPORT_ACCESS } from "@/lib/permissions";
 
 export const metadata: Metadata = { title: "লেজার" };
 
@@ -23,7 +24,7 @@ export const metadata: Metadata = { title: "লেজার" };
  * Search, the type filter and "বিস্তারিত" work in the browser (LedgerStatement); Excel / CSV use the ledger report.
  */
 export default async function AccountLedgerPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SearchParams }) {
-  const ctx = await requirePermission("accounts:view");
+  const ctx = await requirePermission(REPORT_ACCESS.ledgerView);
   const { id } = await params;
   const a = await prisma.account.findFirst({ where: { id, businessId: ctx.business.id }, include: { group: true, customer: true, supplier: true } });
   if (!a) notFound();
@@ -75,7 +76,8 @@ export default async function AccountLedgerPage({ params, searchParams }: { para
         toText={formatDate(to)}
         booksFrom={toDateInput(ctx.business.booksStartDate)}
         exportHref={`/api/reports/ledger${buildQuery({ accountId: a.id, from, to })}`}
-        canExport={can(ctx, "reports:view")}
+        canExport={can(ctx, REPORT_ACCESS.ledgerExport)}
+        canPrint={can(ctx, REPORT_ACCESS.ledgerPrint)}
         printHeader={
           <>
             <PrintHeader business={ctx.business} title={`${t("লেজার / খতিয়ান")}: ${a.name}`} subtitle={`${formatDate(from)} — ${formatDate(to)}`} />

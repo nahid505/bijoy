@@ -13,6 +13,7 @@ import { ci } from "@/lib/dialect";
 import type { BookFilter, BookKey } from "@/lib/book";
 import { allowedAccounts, canOpenLedger, partyListWhere, voucherScopeWhere } from "../party-scope";
 import { digitVariants, toAsciiDigits } from "@/lib/digits";
+import { REPORT_ACCESS } from "@/lib/permissions";
 
 const typeLabel = (t: VoucherType) => VOUCHER_TYPES[t as VoucherTypeKey].label;
 const periodText = (from: string, to: string) => `${formatDate(from)} — ${formatDate(to)}`;
@@ -273,7 +274,7 @@ export const REPORTS: ReportDef[] = [
     title: "লেজার রিপোর্ট",
     description: "যেকোনো হিসাবের বিস্তারিত খতিয়ান ও চলমান ব্যালেন্স",
     filters: ["account", "range", "q"],
-    permission: "reports:view",
+    permission: REPORT_ACCESS.ledgerReport,
     async run(ctx, p) {
       const account = p.accountId ? await prisma.account.findFirst({ where: { id: p.accountId, businessId: ctx.business.id } }) : null;
       if (!account) return { title: "লেজার রিপোর্ট", columns: [], rows: [], emptyMessage: "রিপোর্ট দেখতে একটি হিসাব (লেজার) নির্বাচন করুন" };

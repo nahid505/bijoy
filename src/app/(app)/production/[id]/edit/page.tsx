@@ -8,12 +8,13 @@ import { canChangeEntryDate } from "@/server/entry-date";
 import { saveProductionAction } from "@/server/actions/production";
 import { loadProduction, productionFormData, toProductOption } from "@/server/services/production";
 import { ProductionForm } from "../../production-forms";
+import { RICE_MILL_ACCESS } from "@/lib/rice-mill";
 
 export const metadata: Metadata = { title: "উৎপাদন সম্পাদনা" };
 
 export default async function EditProductionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const ctx = await requirePermission("production:manage");
+  const ctx = await requirePermission(RICE_MILL_ACCESS.milling);
   const [v, data] = await Promise.all([loadProduction(ctx.business.id, id), productionFormData(ctx.business.id)]);
   if (!v) notFound();
   return (

@@ -9,14 +9,15 @@ import { can, requirePermission } from "@/server/auth";
 import { pageOf, readParams, totalPages, type SearchParams } from "@/server/params";
 import { riceMillTemplateAction } from "@/server/actions/production";
 import { listProductions, listRecipes, productionSummary } from "@/server/services/production";
+import { RICE_MILL_ACCESS } from "@/lib/rice-mill";
 
 export const metadata: Metadata = { title: "উৎপাদন ব্যবস্থাপনা" };
 
 const day = (s?: string) => (s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(`${s}T00:00:00.000Z`) : undefined);
 
 export default async function ProductionPage({ searchParams }: { searchParams: SearchParams }) {
-  const ctx = await requirePermission("production:view");
-  const manage = can(ctx, "production:manage");
+  const ctx = await requirePermission(RICE_MILL_ACCESS.millingView);
+  const manage = can(ctx, RICE_MILL_ACCESS.milling);
   const cur = ctx.business.currencySymbol;
   const p = await readParams(searchParams);
   const page = pageOf(p);

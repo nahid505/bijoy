@@ -12,10 +12,11 @@ import { guard, parseJsonPayload, toResult, type ActionState } from "../action-u
 import { assertEntryDate, originalEntryDate } from "../entry-date";
 import { createRiceMillTemplate, deleteRecipe, saveProduction, saveRecipe } from "../services/production";
 import { voucherSnapshot } from "../services/voucher";
+import { RICE_MILL_ACCESS } from "@/lib/rice-mill";
 
 export async function saveRecipeAction(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const r = await guard(async () => {
-    const ctx = await assertPermission("production:manage");
+    const ctx = await assertPermission(RICE_MILL_ACCESS.milling);
     const input = parseJsonPayload(recipeSchema, fd);
     const recipe = await saveRecipe(ctx.svc, input, id ?? undefined);
     await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: id ? "UPDATE" : "CREATE", entity: "Recipe", entityId: recipe.id, details: { name: input.name, inputs: input.inputs, outputs: input.outputs } });
@@ -29,7 +30,7 @@ export async function saveRecipeAction(id: string | null, _prev: ActionState, fd
 
 export async function deleteRecipeAction(id: string, _prev: ActionState, _fd: FormData): Promise<ActionState> {
   const r = await guard(async () => {
-    const ctx = await assertPermission("production:manage");
+    const ctx = await assertPermission(RICE_MILL_ACCESS.milling);
     const recipe = await deleteRecipe(ctx.svc, id);
     await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: "DELETE", entity: "Recipe", entityId: id, details: { name: recipe.name } });
     return recipe;
@@ -42,7 +43,7 @@ export async function deleteRecipeAction(id: string, _prev: ActionState, _fd: Fo
 
 export async function riceMillTemplateAction(_prev: ActionState, _fd: FormData): Promise<ActionState> {
   const r = await guard(async () => {
-    const ctx = await assertPermission("production:manage");
+    const ctx = await assertPermission(RICE_MILL_ACCESS.milling);
     const res = await createRiceMillTemplate(ctx.svc);
     if (res.created) await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: "CREATE", entity: "Recipe", entityId: res.recipeId, details: { template: "rice-mill" } });
     return res;
@@ -55,7 +56,7 @@ export async function riceMillTemplateAction(_prev: ActionState, _fd: FormData):
 
 export async function saveProductionAction(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const r = await guard(async () => {
-    const ctx = await assertPermission("production:manage");
+    const ctx = await assertPermission(RICE_MILL_ACCESS.milling);
     const input = parseJsonPayload(productionSchema, fd);
     assertEntryDate(ctx, input.date, await originalEntryDate(ctx.business.id, id));
     if (!id && !ctx.features.includes("MULTI_WAREHOUSE")) input.warehouseId = null; // → main warehouse

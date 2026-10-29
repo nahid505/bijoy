@@ -10,11 +10,11 @@ export const dynamic = "force-dynamic";
 // Who may search what: anyone who can view the list, or who needs it to record a voucher (depot keys: the
 // depot forms' dealer / company / product / cash pickers; they are granted only in a depot business).
 const ACCESS: Record<string, Permission[]> = {
-  customers: ["customers:view", "sales:view", "sales:create", "vouchers:create", "reports:view", "users:manage", "depot:delivery_manage", "depot:collection_create", "depot:reports_view"],
-  suppliers: ["suppliers:view", "purchases:view", "purchases:create", "vouchers:create", "reports:view", "users:manage", "depot:delivery_manage", "depot:stock_in", "depot:collection_create", "depot:reports_view"],
-  products: ["inventory:view", "sales:create", "purchases:create", "stock:adjust", "production:manage", "depot:delivery_manage", "depot:stock_in", "depot:scheme_manage", "depot:stock_adjust", "depot:products_manage"],
+  customers: ["customers:view", "sales:view", "sales:create", "vouchers:create", "reports:view", "users:manage", "depot:delivery_manage", "depot:collection_create", "depot:reports_view", "auto_rice_mill.sales:create", "auto_rice_mill.sales:view"],
+  suppliers: ["suppliers:view", "purchases:view", "purchases:create", "vouchers:create", "reports:view", "users:manage", "depot:delivery_manage", "depot:stock_in", "depot:collection_create", "depot:reports_view", "auto_rice_mill.procurement:create", "auto_rice_mill.procurement:view"],
+  products: ["inventory:view", "sales:create", "purchases:create", "stock:adjust", "production:manage", "depot:delivery_manage", "depot:stock_in", "depot:scheme_manage", "depot:stock_adjust", "depot:products_manage", "auto_rice_mill.sales:create", "auto_rice_mill.milling:create", "auto_rice_mill.procurement:create"],
   employees: ["payroll:view", "payroll:attendance"],
-  accounts: ["accounts:view", "users:manage", "vouchers:create", "vouchers:view", "reports:view", "sales:create", "purchases:create", "production:manage", "depot:delivery_manage", "depot:stock_in", "depot:collection_create", "depot:expense_manage"],
+  accounts: ["accounts:view", "users:manage", "vouchers:create", "vouchers:view", "reports:view", "sales:create", "purchases:create", "production:manage", "depot:delivery_manage", "depot:stock_in", "depot:collection_create", "depot:expense_manage", "auto_rice_mill.sales:create", "auto_rice_mill.milling:create", "auto_rice_mill.procurement:create", "reports.ledger:view"],
 };
 // Who may use the picker's "create new" (the same permission the create action checks).
 const CREATE: Record<string, Permission> = { customers: "customers:manage", suppliers: "suppliers:manage", products: "inventory:manage", accounts: "accounts:manage", employees: "payroll:manage" };

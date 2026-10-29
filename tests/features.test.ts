@@ -67,7 +67,7 @@ describe("feature registry", () => {
     expect(featureForPath("/production/new")).toBe("PRODUCTION");
     expect(featureForPath("/production/recipes/abc")).toBe("PRODUCTION");
     expect(ownerFeature("production:manage")).toBe("PRODUCTION");
-    expect(blockedPermissions(["PRODUCTION"])).toEqual(["production:view", "production:manage"]);
+    expect(blockedPermissions(["PRODUCTION"])).toEqual(["production:view", "production:manage", "auto_rice_mill.milling:view", "auto_rice_mill.milling:create"]); // the milling keys open the same screens
     expect(featureForPath("/productsx")).toBeNull();
     for (const core of ["/dashboard", "/reports/trial-balance", "/reports/ledger", "/account", "/billing", "/payrolls", null]) {
       expect(featureForPath(core)).toBeNull();

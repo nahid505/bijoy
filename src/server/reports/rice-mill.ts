@@ -5,6 +5,7 @@ import { KG_PER_MON } from "@/lib/paddy";
 import { reportPeriod } from "../period";
 import { dailyMilling, millSales, millStock, millSummary } from "../services/rice-mill";
 import type { ReportDef, ReportResult, ReportRow } from "./types";
+import { REPORT_ACCESS } from "@/lib/permissions";
 
 const qtyText = (q: number, unit: string) => {
   const kg = /কেজি|kg/i.test(unit);
@@ -100,7 +101,7 @@ export const DAILY_MILLING_REPORT: ReportDef = {
   title: "ডেইলি ধান ভাঙানো হিসাব",
   description: "দিনের প্রতিটি মিলিং ব্যাচ — ধানের জাত, বস্তা ও পরিমাণ, উৎপাদিত চাল, কুঁড়া, খুদ ও তুষ, ফলন % ও অপারেটর",
   filters: [],
-  permission: "reports:view",
+  permission: REPORT_ACCESS.dailyMilling,
   async run(ctx, p) {
     const date = dayOrToday(p.date);
     const d = await dailyMilling(ctx.business.id, dayRange(date, date));

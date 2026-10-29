@@ -7,12 +7,13 @@ import { can, requirePermission } from "@/server/auth";
 import { pageOf, readParams, totalPages, type SearchParams } from "@/server/params";
 import { listPaddyPurchases } from "@/server/services/paddy";
 import { voucherScopeWhere } from "@/server/party-scope";
+import { RICE_MILL_ACCESS } from "@/lib/rice-mill";
 
 export const metadata: Metadata = { title: "ধান ক্রয়" };
 const day = (s?: string) => (s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(`${s}T00:00:00.000Z`) : undefined);
 
 export default async function PaddyPurchasesPage({ searchParams }: { searchParams: SearchParams }) {
-  const ctx = await requirePermission("purchases:view");
+  const ctx = await requirePermission(RICE_MILL_ACCESS.paddyView);
   const cur = ctx.business.currencySymbol;
   const p = await readParams(searchParams);
   const page = pageOf(p);
@@ -23,7 +24,7 @@ export default async function PaddyPurchasesPage({ searchParams }: { searchParam
         title="ধান ক্রয় (ওজন স্লিপ)"
         description="বস্তা, মোট ওজন, ঢলতা, নিট ওজন, মণ ও দর — সংরক্ষণ করলে সাধারণ ক্রয় ভাউচার হয়: স্টক, সরবরাহকারীর বাকি ও হিসাব একসাথে"
         crumbs={[{ label: "লেনদেন" }, { label: "ধান ক্রয়" }]}
-        actions={can(ctx, "purchases:create") ? <Link prefetch={false} href="/purchases/paddy/new" className="btn-primary">+ নতুন ধান ক্রয়</Link> : undefined}
+        actions={can(ctx, RICE_MILL_ACCESS.paddyCreate) ? <Link prefetch={false} href="/purchases/paddy/new" className="btn-primary">+ নতুন ধান ক্রয়</Link> : undefined}
       />
       <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="মোট বস্তা" value={toBnDigits(sums.bags)} />

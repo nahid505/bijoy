@@ -1,4 +1,5 @@
-import type { Permission } from "./permissions";
+import { REPORT_ACCESS, type Permission } from "./permissions";
+import { RICE_MILL_ACCESS } from "./rice-mill";
 import { DEPOT_ACCESS } from "./depot";
 import type { BusinessModule } from "./business-types";
 
@@ -82,10 +83,10 @@ export const NAV: NavEntry[] = [
     module: "RICE_MILL",
     highlight: true,
     children: [
-      { href: "/purchases/paddy", label: "ধান ক্রয় ও স্কেল", permission: "purchases:view" },
-      { href: "/production", label: "মিলিং ও প্রসেসিং", permission: "production:view" },
-      { href: "/rice-mill/stock", label: "চাল ও উপজাত স্টক", permission: "inventory:view" },
-      { href: "/rice-mill/sales", label: "চাল ও কুঁড়া/ভূসি বিক্রয়", permission: "sales:view" },
+      { href: "/purchases/paddy", label: "ধান ক্রয় ও স্কেল", permission: RICE_MILL_ACCESS.paddyView },
+      { href: "/production", label: "মিলিং ও প্রসেসিং", permission: RICE_MILL_ACCESS.millingView },
+      { href: "/rice-mill/stock", label: "চাল ও উপজাত স্টক", permission: RICE_MILL_ACCESS.stock },
+      { href: "/rice-mill/sales", label: "চাল ও কুঁড়া/ভূসি বিক্রয়", permission: RICE_MILL_ACCESS.salesView },
       { href: "/reports/rice-mill", label: "মিল লাভ-ক্ষতি ও স্টক রিপোর্ট", permission: "reports:view" },
     ],
   },
@@ -111,7 +112,7 @@ export const NAV: NavEntry[] = [
     label: "হিসাব",
     icon: I.book,
     children: [
-      { href: "/accounts", label: "লেজার", permission: "accounts:view" },
+      { href: "/accounts", label: "লেজার", permission: REPORT_ACCESS.ledgerView },
       { href: "/accounts/cash", label: "ক্যাশ", permission: "accounts:view" },
       { href: "/accounts/bank", label: "ব্যাংক", permission: "accounts:view" },
       { href: "/accounts/debtors", label: "দেনাদার", permission: "accounts:view" },
@@ -180,8 +181,8 @@ export const NAV: NavEntry[] = [
       { href: "/reports/daily-cash", label: "ডেইলী জমা-খরচ হিসাব", permission: "accounts:view" },
       { href: "/reports/daily-sales", label: "ডেইলি বিক্রয় রিপোর্ট", permission: "sales:view" },
       { href: "/reports/daily-purchase", label: "ডেইলি ক্রয় রিপোর্ট", permission: "purchases:view" },
-      { href: "/reports/daily-milling", label: "ডেইলি ধান ভাঙানো হিসাব", permission: "reports:view", module: "RICE_MILL" },
-      { href: "/reports/daily-stock", label: "দৈনিক স্টক রিপোর্ট", permission: "reports:view" },
+      { href: "/reports/daily-milling", label: "ডেইলি ধান ভাঙানো হিসাব", permission: REPORT_ACCESS.dailyMilling, module: "RICE_MILL" },
+      { href: "/reports/daily-stock", label: "দৈনিক স্টক রিপোর্ট", permission: REPORT_ACCESS.dailyStock },
       { href: "/reports/daily-summary", label: "দৈনিক সারসংক্ষেপ", permission: "reports:view" },
       { href: "/reports/day-book", label: "ডে বুক", permission: "reports:view" },
       { href: "/reports/ledger", label: "লেজার রিপোর্ট", permission: "reports:view" },

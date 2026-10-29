@@ -44,7 +44,7 @@ const BADGE: Partial<Record<LedgerType, string>> = {
 };
 
 export function LedgerStatement({
-  name, subtitle, backHref, rows, opening, closing, currency, from, to, fromText, toText, booksFrom, exportHref, canExport, printHeader,
+  name, subtitle, backHref, rows, opening, closing, currency, from, to, fromText, toText, booksFrom, exportHref, canExport, canPrint = true, printHeader,
 }: {
   name: string;
   subtitle: string;
@@ -62,6 +62,8 @@ export function LedgerStatement({
   /** /api/reports/ledger?… (CSV; &format=xlsx for Excel) */
   exportHref: string;
   canExport: boolean;
+  /** reports.ledger:print (or accounts:view): the print button; without it the page prints only a notice */
+  canPrint?: boolean;
   printHeader: React.ReactNode;
 }) {
   const t = useT();
@@ -139,7 +141,8 @@ export function LedgerStatement({
   );
 
   return (
-    <div className="ledger-statement">
+    <div className={canPrint ? "ledger-statement" : "ledger-statement ledger-no-print"}>
+      {!canPrint && <p className="print-only text-sm" id="ledger-print-denied">{t("এই খতিয়ান প্রিন্ট করার অনুমতি নেই")}</p>}
       {/* ── toolbar (not printed) */}
       <div className="no-print mb-3 space-y-2">
         <div className="flex items-center gap-2">
@@ -203,7 +206,7 @@ export function LedgerStatement({
             )}
           </div>
           <span className="ml-auto flex flex-wrap gap-2">
-            <button type="button" id="ledger-print" className="btn-secondary" onClick={() => window.print()}>🖨 {t("প্রিন্ট")}</button>
+            {canPrint && <button type="button" id="ledger-print" className="btn-secondary" onClick={() => window.print()}>🖨 {t("প্রিন্ট")}</button>}
             {canExport && <a href={`${exportHref}${exportHref.includes("?") ? "&" : "?"}format=xlsx`} className="btn-secondary" id="ledger-xlsx">⬇ Excel</a>}
             {canExport && <a href={exportHref} className="btn-secondary" id="ledger-csv">⬇ CSV</a>}
             <button type="button" id="ledger-share" className="btn-secondary" onClick={share} aria-label={t("শেয়ার")}>⤴ {t("শেয়ার")}</button>

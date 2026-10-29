@@ -24,10 +24,22 @@ export function depotVoucherPermissions(type: VoucherTypeKey, action: VoucherAct
 }
 
 /**
+ * Rice-mill permissions that also open a general-book voucher: a milling batch (PRODUCTION), a rice sale (SALES, view /
+ * create only) and the purchase voucher behind a paddy slip (view only). They work only in a rice-mill business: auth
+ * blocks them elsewhere.
+ */
+export function riceMillVoucherPermissions(type: VoucherTypeKey, action: VoucherAction): Permission[] {
+  if (type === "PRODUCTION") return action === "view" ? ["auto_rice_mill.milling:view", "auto_rice_mill.milling:create"] : ["auto_rice_mill.milling:create"];
+  if (type === "SALES") return action === "view" ? ["auto_rice_mill.sales:view", "auto_rice_mill.sales:create"] : action === "create" ? ["auto_rice_mill.sales:create"] : [];
+  if (type === "PURCHASE" && action === "view") return ["auto_rice_mill.procurement:view", "auto_rice_mill.procurement:create"];
+  return [];
+}
+
+/**
  * Every permission that opens (type, action) here — any one is enough. The depot permissions open only
  * depot-book vouchers (book DEPOT; challans always) in a depot business — never a general purchase / receipt.
  */
 export function voucherAccess(type: VoucherTypeKey, action: VoucherAction, businessType: string | null | undefined, book: string = "GENERAL"): Permission[] {
   const depot = isDepot(businessType) && (book === "DEPOT" || type === "DEPOT_DELIVERY");
-  return [voucherPermission(type, action), ...(depot ? depotVoucherPermissions(type, action) : [])];
+  return [voucherPermission(type, action), ...(depot ? depotVoucherPermissions(type, action) : []), ...(book === "DEPOT" ? [] : riceMillVoucherPermissions(type, action))];
 }

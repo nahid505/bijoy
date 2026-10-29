@@ -4,6 +4,7 @@ import { formatMoney, formatQty, toBnDigits } from "@/lib/format";
 import { EmptyState, PageHeader, StatCard, TableWrap } from "@/components/ui";
 import { can, requirePermission } from "@/server/auth";
 import { millStock, type MillStockRow } from "@/server/services/rice-mill";
+import { RICE_MILL_ACCESS } from "@/lib/rice-mill";
 
 export const metadata: Metadata = { title: "চাল ও উপজাত স্টক" };
 
@@ -30,7 +31,7 @@ function StockTable({ id, rows, currency }: { id: string; rows: MillStockRow[]; 
 
 /** Paddy (raw material) and rice / by-products (চাল, খুদ, কুঁড়া, তুষ …) in stock now. */
 export default async function RiceMillStockPage() {
-  const ctx = await requirePermission("inventory:view");
+  const ctx = await requirePermission(RICE_MILL_ACCESS.stock);
   const cur = ctx.business.currencySymbol;
   const s = await millStock(ctx.business.id);
   const paddyKg = s.paddy.filter((r) => r.mon !== null).reduce((t, r) => t + r.stock, 0);
@@ -42,8 +43,8 @@ export default async function RiceMillStockPage() {
         crumbs={[{ label: "অটো রাইস মিল ব্যবস্থাপনা" }, { label: "চাল ও উপজাত স্টক" }]}
         actions={
           <>
-            {can(ctx, "purchases:create") && <Link prefetch={false} href="/purchases/paddy/new" className="btn-secondary">+ ধান ক্রয়</Link>}
-            {can(ctx, "production:manage") && <Link prefetch={false} href="/production/new" className="btn-primary">+ মিলিং ব্যাচ</Link>}
+            {can(ctx, RICE_MILL_ACCESS.paddyCreate) && <Link prefetch={false} href="/purchases/paddy/new" className="btn-secondary">+ ধান ক্রয়</Link>}
+            {can(ctx, RICE_MILL_ACCESS.milling) && <Link prefetch={false} href="/production/new" className="btn-primary">+ মিলিং ব্যাচ</Link>}
           </>
         }
       />

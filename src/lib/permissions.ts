@@ -6,6 +6,11 @@ export const PERMISSION_GROUPS = [
     permissions: [
       { key: "dashboard:view", label: "ড্যাশবোর্ড দেখা" },
       { key: "reports:view", label: "রিপোর্ট দেখা ও এক্সপোর্ট" },
+      // single reports, for a role without reports:view (reports:view opens these too)
+      { key: "reports.daily_milling:view", label: "ডেইলি ধান ভাঙানো হিসাব দেখা", hint: "অটো রাইস মিল ব্যবসায় — দিনের মিলিং ব্যাচ, ধান ও উৎপাদিত চাল/উপজাত (প্রিন্ট ও Excel সহ)" },
+      { key: "reports.daily_stock:view", label: "দৈনিক স্টক রিপোর্ট দেখা", hint: "পূর্বের মজুদ, উৎপাদন/ক্রয়, বিক্রয়/ব্যবহার ও আজকের মজুদ (প্রিন্ট ও Excel সহ)" },
+      { key: "reports.ledger:view", label: "লেজার/খতিয়ান স্টেটমেন্ট দেখা", hint: "হিসাব খাতের তালিকা ও প্রতিটি খাতের খতিয়ান স্টেটমেন্ট, লেজার রিপোর্ট" },
+      { key: "reports.ledger:print", label: "লেজার/খতিয়ান স্টেটমেন্ট প্রিন্ট ও এক্সপোর্ট", hint: "খতিয়ানের প্রিন্ট, Excel ও CSV — খতিয়ান দেখার অনুমতিও লাগবে" },
     ],
   },
   {
@@ -124,6 +129,22 @@ export const PERMISSION_GROUPS = [
     ],
   },
   {
+    // business type AUTO_RICE_MILL only (module RICE_MILL: the role form hides the group elsewhere, saving drops the keys and
+    // auth blocks them). Each key opens its rice-mill screens beside the general key they used before, so existing roles
+    // keep working. Where each one opens: RICE_MILL_ACCESS in src/lib/rice-mill.ts.
+    label: "অটো রাইস মিল ব্যবস্থাপনা",
+    module: "RICE_MILL",
+    permissions: [
+      { key: "auto_rice_mill.procurement:view", label: "ধান ক্রয় ও স্কেল ওজন দেখা", hint: "ধান ক্রয়ের ওজন স্লিপ তালিকা ও স্লিপ" },
+      { key: "auto_rice_mill.procurement:create", label: "ধান ক্রয় ও স্কেল ওজন এন্ট্রি ও সম্পাদনা", hint: "নতুন ধান ক্রয় (ওজন স্লিপ) এন্ট্রি ও সম্পাদনা" },
+      { key: "auto_rice_mill.milling:view", label: "ধান প্রসেসিং / মিলিং ব্যাচ দেখা", hint: "মিলিং ব্যাচ, রেসিপি ও ব্যাচ চালান" },
+      { key: "auto_rice_mill.milling:create", label: "মিলিং ব্যাচ তৈরি ও সম্পাদনা", hint: "নতুন মিলিং ব্যাচ ও রেসিপি তৈরি, সম্পাদনা ও মুছা" },
+      { key: "auto_rice_mill.inventory:view", label: "চাল ও উপজাত স্টক দেখা", hint: "ধান, চাল, কুঁড়া, ভূসি ও খুদের মজুদ" },
+      { key: "auto_rice_mill.sales:view", label: "চাল ও উপজাত বিক্রয় দেখা", hint: "চাল ও কুঁড়া/ভূসি বিক্রয়ের তালিকা ও ইনভয়েস" },
+      { key: "auto_rice_mill.sales:create", label: "চাল ও উপজাত বিক্রয় এন্ট্রি", hint: "নতুন বিক্রয় ইনভয়েস তৈরি" },
+    ],
+  },
+  {
     // business type DEPOT only (the role form hides the group elsewhere). A role with only these keys works the
     // depot alone: depot dashboard, challans, stock in, market collection and depot reports — no ledgers,
     // general vouchers, profit & loss or settings. Where each one opens: DEPOT_ACCESS in src/lib/depot.ts.
@@ -132,7 +153,7 @@ export const PERMISSION_GROUPS = [
     permissions: [
       { key: "depot:view", label: "ড্যাশবোর্ড ও চালান দেখা", hint: "ডিপো ড্যাশবোর্ড, ডেলিভারি চালান তালিকা ও চালান প্রিন্ট" },
       { key: "depot:delivery_manage", label: "ডেলিভারি চালান তৈরি ও সম্পাদন", hint: "ডিও রিলিজ ও মার্কেট সেলস চালান তৈরি, সম্পাদনা ও মুছা (চালান থেকে নতুন ডিলারও)" },
-      { key: "depot:dealers_manage", label: "ডিলার তালিকা ও ব্যবস্থাপনা", hint: "ডিলার তৈরি, সম্পাদনা, নিষ্ক্রিয়/মুছা; ডিলারের প্রোফাইল ও লেজার" },
+      { key: "depot:dealers_manage", label: "ডিলার তালিকা ও ব্যবস্থাপনা (প্রতিষ্ঠান/মালিকের তথ্যসহ)", hint: "ডিলার তৈরি, সম্পাদনা (প্রতিষ্ঠানের নাম, মালিকের নাম, রুট…), নিষ্ক্রিয়/মুছা; ডিলারের প্রোফাইল ও লেজার" },
       { key: "depot:products_manage", label: "ডিপো পণ্য তালিকা ও ব্যবস্থাপনা", hint: "ডিপো (ডিলারি) পণ্য তৈরি, সম্পাদনা, নিষ্ক্রিয়/মুছা — ডিপি, ডিলার রেট, কমিশন ও ডিপো স্টক" },
       { key: "depot:stock_in", label: "স্টক ইন — কোম্পানি থেকে প্রাপ্তি", hint: "কোম্পানি থেকে পণ্য গ্রহণ (ফ্রি সহ) এন্ট্রি ও দেখা" },
       { key: "depot:stock_adjust", label: "স্টক সমন্বয় (ডিপো)", hint: "ডিপোর পণ্যের ঘাটতি/উদ্বৃত্ত/ক্ষতি সমন্বয় — না থাকলে মেনু ও পেজ বন্ধ" },
@@ -174,6 +195,22 @@ export function hasPermission(granted: readonly string[], required: Permission |
   if (granted.includes(`!${required}`)) return false;
   return granted.includes("*") || granted.includes(required);
 }
+
+/** The single-report keys: each opens its report beside the general key. */
+export const REPORT_ACCESS = {
+  dailyMilling: ["reports.daily_milling:view", "reports:view"],
+  dailyStock: ["reports.daily_stock:view", "reports:view"],
+  /** chart of accounts list and a ledger's statement (/accounts, /accounts/[id]) */
+  ledgerView: ["reports.ledger:view", "accounts:view"],
+  /** the statement's print button (and printing it) */
+  ledgerPrint: ["reports.ledger:print", "accounts:view"],
+  /** the statement's Excel / CSV and the ledger report */
+  ledgerExport: ["reports.ledger:print", "reports:view"],
+  ledgerReport: ["reports.ledger:view", "reports:view"],
+} as const satisfies Record<string, readonly Permission[]>;
+
+/** The auto rice mill group's keys (module RICE_MILL only). */
+export const RICE_MILL_PERMISSIONS: Permission[] = PERMISSION_GROUPS.flatMap((g) => ("module" in g && g.module === "RICE_MILL" ? g.permissions.map((p) => p.key) : []));
 
 /** The depot permission group's keys (business type DEPOT only). */
 export const DEPOT_PERMISSIONS: Permission[] = PERMISSION_GROUPS.flatMap((g) => ("depotOnly" in g && g.depotOnly ? g.permissions.map((p) => p.key) : []));

@@ -9,6 +9,7 @@ import { readParams, type SearchParams } from "@/server/params";
 import { reportPeriod } from "@/server/period";
 import { isRestricted } from "@/server/party-scope";
 import { millSales } from "@/server/services/rice-mill";
+import { RICE_MILL_ACCESS } from "@/lib/rice-mill";
 
 export const metadata: Metadata = { title: "চাল ও কুঁড়া/ভূসি বিক্রয়" };
 
@@ -17,7 +18,7 @@ export const metadata: Metadata = { title: "চাল ও কুঁড়া/ভ
  * sale) — this page lists those with a mill product and the totals per product.
  */
 export default async function RiceMillSalesPage({ searchParams }: { searchParams: SearchParams }) {
-  const ctx = await requirePermission("sales:view");
+  const ctx = await requirePermission(RICE_MILL_ACCESS.salesView);
   const p = await readParams(searchParams);
   const { from, to, range } = reportPeriod(p, ctx.business.fiscalYearStartMonth);
   const cur = ctx.business.currencySymbol;
@@ -33,7 +34,7 @@ export default async function RiceMillSalesPage({ searchParams }: { searchParams
         actions={
           <>
             {can(ctx, "reports:view") && !restricted && <Link prefetch={false} href={`/reports/rice-mill?from=${from}&to=${to}`} className="btn-secondary">মিল রিপোর্ট</Link>}
-            {can(ctx, "sales:create") && <Link prefetch={false} href="/vouchers/sales/new" className="btn-primary">+ নতুন বিক্রয়</Link>}
+            {can(ctx, RICE_MILL_ACCESS.salesCreate) && <Link prefetch={false} href="/vouchers/sales/new" className="btn-primary">+ নতুন বিক্রয়</Link>}
           </>
         }
       />

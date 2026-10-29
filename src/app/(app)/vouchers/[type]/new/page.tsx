@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/ui";
 import { can, requireContext } from "@/server/auth";
 import { readParams, type SearchParams } from "@/server/params";
 import { VoucherEditor } from "@/server/voucher-editor";
-import { voucherAccess, voucherPermission } from "@/server/voucher-permissions";
+import { voucherAccess } from "@/server/voucher-permissions";
 import { isDepot } from "@/lib/depot";
 
 export const metadata: Metadata = { title: "নতুন ভাউচার" };
@@ -29,7 +29,8 @@ export default async function NewVoucherPage({ params, searchParams }: { params:
   if (!type) notFound();
   const ctx = await requireContext();
   // general vouchers only — depot stock in / collection / company payment have their own depot pages (depot book)
-  if (!can(ctx, voucherPermission(type, "create"))) {
+  // general-book access (a rice-mill sales key also opens the sales invoice in a rice-mill business)
+  if (!can(ctx, voucherAccess(type, "create", ctx.business.businessType, "GENERAL"))) {
     const depotPage = DEPOT_NEW[type];
     if (depotPage && isDepot(ctx.business.businessType) && can(ctx, voucherAccess(type, "create", ctx.business.businessType, "DEPOT"))) redirect(depotPage);
     redirect("/forbidden");

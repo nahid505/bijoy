@@ -12,6 +12,7 @@ import { prisma, num } from "@/lib/db";
 import { round3 } from "@/lib/calc";
 import { dayOrToday, dayRange, formatDate, formatQty } from "@/lib/format";
 import type { ReportDef, ReportRow } from "./types";
+import { REPORT_ACCESS } from "@/lib/permissions";
 
 export interface DailyStockRow {
   id: string;
@@ -71,7 +72,7 @@ export const DAILY_STOCK_REPORT: ReportDef = {
   title: "দৈনিক স্টক রিপোর্ট",
   description: "নির্দিষ্ট দিনের পূর্বের মজুদ, উৎপাদন বা ক্রয়, বিক্রয় বা ব্যবহার ও আজকের মজুদ — পণ্যভিত্তিক, গুদাম অনুযায়ী",
   filters: [],
-  permission: "reports:view",
+  permission: REPORT_ACCESS.dailyStock,
   async run(ctx, p) {
     const d = await dailyStock(ctx.business.id, { date: p.date, warehouseId: p.warehouseId });
     const rows: ReportRow[] = d.rows.map((r, i) => ({

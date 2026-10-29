@@ -12,6 +12,7 @@ import { can, requirePermission } from "@/server/auth";
 import { getT } from "@/server/i18n";
 import { loadProduction } from "@/server/services/production";
 import { bagUnits, lineBags, millOutputKind, toKg, type MillOutputKind } from "@/server/services/rice-mill";
+import { RICE_MILL_ACCESS } from "@/lib/rice-mill";
 
 export const metadata: Metadata = { title: "উৎপাদন ব্যাচ" };
 
@@ -26,7 +27,7 @@ const WEIGHT = /কেজি|kg|মণ|mon|টন|ton|গ্রাম|gram/i;
  */
 export default async function ProductionBatchPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const ctx = await requirePermission("production:view");
+  const ctx = await requirePermission(RICE_MILL_ACCESS.millingView);
   const [v, bagOf] = await Promise.all([loadProduction(ctx.business.id, id), bagUnits(ctx.business.id)]);
   if (!v) notFound();
   const t = await getT();
@@ -69,7 +70,7 @@ export default async function ProductionBatchPage({ params }: { params: Promise<
             <>
               <PrintButton label="প্রিন্ট চালান" />
               <Link prefetch={false} href={`/vouchers/v/${v.id}`} className="btn-secondary">{t("হিসাবের এন্ট্রি")}</Link>
-              {can(ctx, "production:manage") && <Link prefetch={false} href={`/production/${v.id}/edit`} className="btn-secondary">{t("সম্পাদনা")}</Link>}
+              {can(ctx, RICE_MILL_ACCESS.milling) && <Link prefetch={false} href={`/production/${v.id}/edit`} className="btn-secondary">{t("সম্পাদনা")}</Link>}
             </>
           }
         />

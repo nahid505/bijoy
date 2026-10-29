@@ -5,6 +5,7 @@ import { addDays, formatDate, formatQty, toBnDigits } from "@/lib/format";
 import { PrintButton } from "@/components/forms";
 import { FilterField } from "@/components/ui";
 import { requirePermission } from "@/server/auth";
+import { REPORT_ACCESS } from "@/lib/permissions";
 import { getT } from "@/server/i18n";
 import { readParams, type SearchParams } from "@/server/params";
 import { reportOpenFor } from "@/server/reports/registry";
@@ -20,7 +21,7 @@ const CELL = "border border-slate-300 px-2 py-1.5 print:border-slate-500 print:p
  * title | date) is the same on screen and on paper; print fits one ruled A4 page.
  */
 export default async function DailyStockPage({ searchParams }: { searchParams: SearchParams }) {
-  const ctx = await requirePermission("reports:view");
+  const ctx = await requirePermission(REPORT_ACCESS.dailyStock);
   if (!reportOpenFor(ctx, "daily-stock")) redirect("/forbidden");
   const t = await getT();
   const p = await readParams(searchParams);

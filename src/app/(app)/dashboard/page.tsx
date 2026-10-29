@@ -17,6 +17,8 @@ import { AccountSummary, LatestNotifications, RecentPurchases } from "./account-
 import { FEATURES, type FeatureDef } from "@/lib/features";
 import { isDepot } from "@/lib/depot";
 import { DepotPanel } from "./depot-panel";
+import { riceMillHome } from "@/lib/rice-mill";
+import { businessModules } from "@/lib/business-types";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: (await getT())("ড্যাশবোর্ড") };
@@ -95,7 +97,9 @@ export default async function DashboardPage() {
         </>
       );
     }
-    redirect("/forbidden");
+    // rice-mill-only role (scale operator, mill supervisor…): its first rice-mill screen
+    const mill = businessModules(ctx.business.businessTypes).has("RICE_MILL") ? riceMillHome((p) => can(ctx, p)) : null;
+    redirect(mill ?? "/forbidden");
   }
   // trial / subscription over: whoever handles billing chooses first — renew, or continue on the free plan
   if (ctx.subscription?.status === "EXPIRED" && can(ctx, "billing:manage")) redirect("/billing?expired=1");

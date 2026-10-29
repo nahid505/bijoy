@@ -134,6 +134,8 @@ html[data-lang-pending] body {
   .table thead th { background: #eee !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .print-only { display: block !important; }
   a { color: inherit !important; text-decoration: none !important; }
+  /* ledger statement without reports.ledger:print: the paper carries only the notice */
+  .ledger-no-print > :not(#ledger-print-denied) { display: none !important; }
 
   /* report tables (stock report and every generic report): ruled on paper — every cell boxed, rows kept whole */
   .print-area .table th, .print-area .table td { border: 1px solid #94a3b8 !important; padding: 3px 6px !important; }

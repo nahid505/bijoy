@@ -968,6 +968,38 @@ The page reads the account and `statement()` for the period (`?from=&to=`, defau
 - **Search / filter** run in the browser over the period's lines: voucher no., who entered it, counter ledgers, note or type.
 - **Phones:** the same lines as cards (badge, date, ± amount, বিবরণ, balance) and the totals. **Paper:** the business letterhead with the party's mobile / address, a ruled table (`.print-grid`), badges as outlines; toolbar, top bar and sidebar hidden; columns sized for A4.
 - **Languages:** every label through the dictionary; the ledger columns read জমা / খরচ in Bangla and Credit / Debit in English; names and notes are data (`data-keep-lang`).
+- **Permissions (6y):** the list and statement open with `reports.ledger:view` or `accounts:view`. The print button, and printing itself, need `reports.ledger:print` or `accounts:view`; without either, the paper carries only the notice "এই খতিয়ান প্রিন্ট করার অনুমতি নেই". Excel / CSV need `reports.ledger:print` or `reports:view`.
+
+## 6y. Rice mill and single-report permissions; the role form
+**Keys** (`src/lib/permissions.ts`):
+- **"অটো রাইস মিল ব্যবস্থাপনা" group** (`module: "RICE_MILL"`, `RICE_MILL_PERMISSIONS`):
+  - `auto_rice_mill.procurement:view` / `:create`: paddy slips (create includes edit).
+  - `auto_rice_mill.milling:view` / `:create`: milling batches and recipes.
+  - `auto_rice_mill.inventory:view`: rice and by-product stock.
+  - `auto_rice_mill.sales:view` / `:create`: rice sales.
+- **"ড্যাশবোর্ড ও রিপোর্ট" card:** `reports.daily_milling:view`, `reports.daily_stock:view`, `reports.ledger:view` and `reports.ledger:print`.
+- **Depot:** the depot items (challan view / create, dealer with business / owner details, market collection, depot expense) were already covered by the depot group (6p): `depot:view`, `depot:delivery_manage`, `depot:dealers_manage`, `depot:collection_create` and `depot:expense_manage`. They were not duplicated.
+
+**Any of.** Each new key opens its screens beside the general key the screen used before, so existing roles keep working:
+- `RICE_MILL_ACCESS` (`src/lib/rice-mill.ts`) covers the rice-mill menu, the paddy and production pages and actions, the rice-mill stock and sales pages.
+- `REPORT_ACCESS` (`src/lib/permissions.ts`) covers the daily milling and daily stock pages and report entries, the ledger list and statement, and the ledger report.
+- `riceMillVoucherPermissions` (in `voucherAccess`) covers vouchers. A milling batch: view / create / edit / delete. A sales invoice: view and create only. The purchase voucher behind a paddy slip: view only. None of these apply in the depot book.
+- The pickers (`/api/lookup`) accept the keys the sales, paddy and milling forms need.
+- The new keys belong to the feature whose screens they open (SALES, PURCHASE, INVENTORY, PRODUCTION, ACCOUNTING; see 6d). Switching that feature off blocks them too.
+
+**Only in a rice-mill business:**
+- The role form shows the group only when the RICE_MILL module is on, or when the role already holds such a key.
+- `saveRoleAction` drops the keys elsewhere.
+- auth adds `!key` blocks for them in any business without the module (`riceMillBlocked`), so they never open a shared screen of another business, not even through `*`.
+- A role without `dashboard:view` lands on its first rice-mill screen (`riceMillHome`) instead of 403.
+
+**Role form** (`src/app/(app)/roles/role-form.tsx`):
+- Every group is a card with an icon, a ticked / total count and its own select-all (`.perm-card`, `.perm-count`, `.perm-select-all`). The form's header shows "n নির্বাচিত".
+- The depot and rice-mill cards span the full width (amber and emerald). Their select-alls are `#depot-select-all` and `#rice-mill-select-all`.
+- Presets: "🏬 শুধু ডিপো" and "🌾 শুধু রাইস মিল".
+- Permission keys are shown as data, so they are not translated.
+
+**Tests:** `tests/rice-mill-permissions.test.ts`.
 
 ## 7b. UI runtime notes
 - **Language** (`bl_lang` cookie, 1 year; default `bn`):

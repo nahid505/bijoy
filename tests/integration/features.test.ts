@@ -24,7 +24,7 @@ vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
 
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
-import { hasPermission } from "@/lib/permissions";
+import { hasPermission, RICE_MILL_PERMISSIONS } from "@/lib/permissions";
 import { SESSION_COOKIE, createSessionToken } from "@/lib/session";
 import { registerAction } from "@/server/actions/auth";
 import { saveCatalogAction } from "@/server/actions/masters";
@@ -105,7 +105,8 @@ run("feature management", () => {
     expect(new Set(owned.map((o) => o.permission)).size).toBe(5); // one row per action, five distinct payroll permissions
     const ctx = await ctxNow();
     expect(ctx.features).toEqual(expect.arrayContaining(["HRM", "PRODUCT_EXPIRY", "MULTI_USER", "MULTI_WAREHOUSE"]));
-    expect(ctx.permissions.some((p) => p.startsWith("!"))).toBe(false);
+    // no feature blocks; only the rice-mill keys, refused outside a rice-mill business
+    expect(ctx.permissions.filter((p) => p.startsWith("!")).map((p) => p.slice(1))).toEqual(RICE_MILL_PERMISSIONS);
   });
 
   it("HRM off: payroll permissions refused everywhere (actions, API), data kept; on again restores access", async () => {

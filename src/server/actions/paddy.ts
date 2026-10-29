@@ -13,10 +13,11 @@ import { assertEntryDate, originalEntryDate } from "../entry-date";
 import { savePaddyPurchase } from "../services/paddy";
 import { voucherSnapshot } from "../services/voucher";
 import { assertPartiesAllowed, assertVoucherAllowed } from "../party-scope";
+import { RICE_MILL_ACCESS } from "@/lib/rice-mill";
 
 export async function savePaddyPurchaseAction(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const r = await guard(async () => {
-    const ctx = await assertPermission(id ? "purchases:edit" : "purchases:create");
+    const ctx = await assertPermission(id ? RICE_MILL_ACCESS.paddyEdit : RICE_MILL_ACCESS.paddyCreate);
     const input = parseJsonPayload(paddyPurchaseSchema, fd);
     await assertVoucherAllowed(ctx, id);
     await assertPartiesAllowed(ctx, [input.partyAccountId, input.cashAccountId]);
