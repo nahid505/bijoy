@@ -12,6 +12,7 @@ import { createAccountGroup, deleteAccount, deleteParty, deleteProduct, saveAcco
 import { assertFeature } from "../features";
 import { assertPartyRecordAllowed, assignToCreator } from "../party-scope";
 import { DEPOT_ACCESS, isDepot } from "@/lib/depot";
+import { saveLedgerImageUpload, savePartyImageUpload } from "@/lib/ledger-upload";
 
 // ───────────────────────── customers & suppliers ─────────────────────────
 
@@ -43,7 +44,11 @@ export async function savePartyAction(pageKind: PartyPageKind, id: string | null
     const ctx = await assertPermission(cfg.perm);
     if (pageKind === "DEALER" && !isDepot(ctx.business.businessType)) throw new UserError("ডিলার শুধু ডিপো ব্যবসায়");
     if (id) await assertPartyKind(ctx.business.id, pageKind, id);
+    const uploadedImage = await savePartyImageUpload(fd);
     const input = parseForm(partySchema, fd);
+    if (uploadedImage !== undefined) {
+      input.imageUrl = uploadedImage;
+    }
     if (!fd.has("route")) delete (input as { route?: string | null }).route; // form without the depot field: keep the stored route
     if (!fd.has("ownerName")) delete (input as { ownerName?: string | null }).ownerName; // only the dealer form has the owner
     if (id) await assertPartyRecordAllowed(ctx, kind, id);
@@ -93,6 +98,10 @@ export async function saveAccountAction(id: string | null, _prev: ActionState, f
   const result = await guard(async () => {
     const ctx = await assertPermission("accounts:manage");
     const input = parseForm(accountSchema, fd);
+    const uploadedImage = await saveLedgerImageUpload(fd);
+    if (uploadedImage !== undefined) {
+      input.imageUrl = uploadedImage;
+    }
     const accountId = await saveAccount(ctx.svc, input, id ?? undefined);
     await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: id ? "UPDATE" : "CREATE", entity: "Account", entityId: accountId, details: { name: input.name, opening: input.openingBalance, side: input.openingSide } });
     return accountId;

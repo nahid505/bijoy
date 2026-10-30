@@ -1,6 +1,7 @@
 "use server";
 
 import bcrypt from "bcryptjs";
+import { randomInt } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
@@ -17,6 +18,9 @@ import { createLoginChallenge, readLoginChallenge } from "../sms/challenge";
 import { issueOtp, otpAvailable, verifyOtp } from "../sms/otp";
 import { enqueueSms, kickSmsQueue } from "../sms/queue";
 import { renderTemplate, SMS_EVENT } from "@/lib/sms-text";
+import { looksLikeEmail, normalizeBdMobile } from "@/lib/mobile";
+import { sendSms } from "@/lib/sms";
+import { sendOtpEmail } from "@/lib/mail";
 
 // Always run one bcrypt compare so response time does not reveal whether an email exists.
 let dummyHash: string | null = null;
@@ -134,44 +138,172 @@ export async function requestRegistrationOtpAction(_prev: ActionState, fd: FormD
   return result.ok ? { ok: true, message: "আপনার মোবাইলে ৬ অঙ্কের কোড পাঠানো হয়েছে (৫ মিনিট বৈধ)" } : toLoginResult(result);
 }
 
-const RESET_SENT = "এই নম্বরে কোনো অ্যাকাউন্ট থাকলে ৬ অঙ্কের কোড পাঠানো হয়েছে (৫ মিনিট বৈধ)।";
+const RESET_SENT = "এই নম্বর বা ইমেইলে কোনো অ্যাকাউন্ট থাকলে ৬ অঙ্কের ওটিপি কোড পাঠানো হয়েছে (৫ মিনিট বৈধ)।";
 
-/** Step 1 of password reset. The answer never reveals whether the number has an account. */
+/** Step 1 of password reset. Accepts 11-digit BD mobile or email. */
 export async function requestPasswordResetAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const result = await guard(async () => {
-    const mobile = mobileSchema.parse(String(fd.get("mobile") ?? ""));
-    if (!otpAvailable()) throw new UserError("এই মুহূর্তে এসএমএস দিয়ে পাসওয়ার্ড রিসেট সম্ভব নয় — প্রশাসকের সাথে যোগাযোগ করুন");
-    const user = await prisma.user.findUnique({ where: { mobile }, select: { id: true, isActive: true } });
-    if (user?.isActive) {
-      try {
-        await issueOtp(prisma, "PASSWORD_RESET", mobile, { clientIp: await getClientIp(), userId: user.id });
-      } catch (e) {
-        if (e instanceof UserError && /অনেকবার|অপেক্ষা/.test(e.message ?? "")) throw e;
-        console.error("[sms] password reset code not sent:", e instanceof Error ? e.message : e);
-      }
-    } else if (await reserveAttempt(prisma, `otp:PASSWORD_RESET:${mobile}`, { max: 3, windowMs: 15 * 60_000, lockMs: 15 * 60_000 }, new Date())) {
-      // the same limit applies to unknown numbers, so limits do not reveal which numbers exist
-      throw new UserError("অনেকবার কোড চাওয়া হয়েছে। কিছুক্ষণ পর আবার চেষ্টা করুন।");
+    const raw = String(fd.get("identifier") ?? fd.get("mobile") ?? fd.get("email") ?? "").trim();
+    if (!raw) {
+      throw new UserError("সঠিক মোবাইল নম্বর বা ইমেইল দিন", { identifier: ["সঠিক মোবাইল নম্বর বা ইমেইল দিন"], mobile: ["সঠিক মোবাইল নম্বর দিন"] });
     }
-    return mobile;
+
+    const isEmail = looksLikeEmail(raw);
+    let mobile: string | null = null;
+    let email: string | null = null;
+
+    if (isEmail) {
+      email = raw.toLowerCase().trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        throw new UserError("সঠিক ইমেইল ঠিকানা দিন", { identifier: ["সঠিক ইমেইল ঠিকানা দিন"] });
+      }
+    } else {
+      mobile = normalizeBdMobile(raw);
+      if (!mobile) {
+        throw new UserError("সঠিক মোবাইল নম্বর (১১ ডিজিট) দিন", { identifier: ["সঠিক মোবাইল নম্বর দিন"], mobile: ["সঠিক মোবাইল নম্বর দিন"] });
+      }
+    }
+
+    const user = await prisma.user.findFirst({
+      where: isEmail ? { email: { equals: email, mode: "insensitive" } } : { mobile: mobile! },
+      select: { id: true, name: true, email: true, mobile: true, isActive: true },
+    });
+
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 5 * 60_000); // 5 minutes
+    const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+
+    if (user?.isActive) {
+      // Save OTP directly on User
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { otpCode: code, otpExpires: expiresAt },
+      });
+
+      if (isEmail && user.email) {
+        try {
+          await sendOtpEmail({ to: user.email, otp: code, userName: user.name });
+        } catch (e) {
+          console.error("[mail] password reset email not sent:", e instanceof Error ? e.message : e);
+        }
+      } else if (user.mobile) {
+        try {
+          await sendSms({
+            to: user.mobile,
+            message: `বিজয় লেনদেন: পাসওয়ার্ড রিসেট কোড ${code}। ৫ মিনিট মেয়াদ।`,
+          });
+          if (otpAvailable()) {
+            await issueOtp(prisma, "PASSWORD_RESET", user.mobile, { clientIp: await getClientIp(), userId: user.id }, now);
+          }
+        } catch (e) {
+          if (e instanceof UserError && /অনেকবার|অপেক্ষা/.test(e.message ?? "")) throw e;
+          console.error("[sms] password reset code not sent:", e instanceof Error ? e.message : e);
+        }
+      }
+    } else {
+      const rateKey = isEmail ? `otp:PASSWORD_RESET:${email}` : `otp:PASSWORD_RESET:${mobile}`;
+      if (await reserveAttempt(prisma, rateKey, { max: 3, windowMs: 15 * 60_000, lockMs: 15 * 60_000 }, now)) {
+        throw new UserError("অনেকবার কোড চাওয়া হয়েছে। কিছুক্ষণ পর আবার চেষ্টা করুন।");
+      }
+    }
+
+    return isEmail ? email! : mobile!;
   });
-  return result.ok ? { ok: true, message: RESET_SENT, data: { step: "code", mobile: result.data } } : toLoginResult(result);
+
+  const value = result.ok ? result.data : "";
+  return result.ok
+    ? { ok: true, message: RESET_SENT, data: { step: "code", mobile: value, identifier: value } }
+    : toLoginResult(result);
 }
 
 /** Step 2: code + new password. Every existing session of the user is ended. */
 export async function resetPasswordAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const result = await guard(async () => {
-    const input = resetPasswordSchema.parse(formToObject(fd));
-    const user = await prisma.user.findUnique({ where: { mobile: input.mobile } });
-    if (!user?.isActive || !(await verifyOtp(prisma, "PASSWORD_RESET", input.mobile, input.otp))) {
+    const rawIdentifier = String(fd.get("identifier") ?? fd.get("mobile") ?? fd.get("email") ?? "").trim();
+    const rawOtp = String(fd.get("otp") ?? "").trim();
+    const newPassword = String(fd.get("newPassword") ?? "");
+    const confirmPassword = String(fd.get("confirmPassword") ?? "");
+
+    if (!rawIdentifier) {
+      throw new UserError("মোবাইল নম্বর বা ইমেইল দিন", { identifier: ["মোবাইল নম্বর বা ইমেইল দিন"] });
+    }
+
+    const validated = resetPasswordSchema.safeParse({
+      mobile: rawIdentifier,
+      otp: rawOtp,
+      newPassword,
+      confirmPassword,
+    });
+    if (!validated.success) {
+      const fieldErrors = validated.error.flatten().fieldErrors;
+      const firstMsg = validated.error.errors[0]?.message || "পাসওয়ার্ড সঠিক নয়";
+      throw new UserError(firstMsg, fieldErrors as Record<string, string[]>);
+    }
+
+    const isEmail = looksLikeEmail(rawIdentifier);
+    const mobile = !isEmail ? normalizeBdMobile(rawIdentifier) : null;
+    const email = isEmail ? rawIdentifier.toLowerCase() : null;
+
+    const user = await prisma.user.findFirst({
+      where: isEmail
+        ? { email: { equals: email, mode: "insensitive" } }
+        : { mobile: mobile || rawIdentifier },
+    });
+
+    if (!user || !user.isActive) {
       throw new UserError("কোডটি সঠিক নয় বা মেয়াদ শেষ হয়ে গেছে", { otp: ["কোডটি সঠিক নয় বা মেয়াদ শেষ হয়ে গেছে"] });
     }
-    await prisma.user.update({ where: { id: user.id }, data: { passwordHash: await bcrypt.hash(input.newPassword, 12) } });
+
+    const now = new Date();
+    const otpClean = rawOtp.replace(/[০-৯]/g, (d) => String("০১২৩৪৫৬৭৮৯".indexOf(d))).trim();
+    let otpValid = false;
+
+    // 1. Check against User.otpCode
+    if (user.otpCode && user.otpExpires && user.otpExpires > now && user.otpCode === otpClean) {
+      otpValid = true;
+    }
+    // 2. Check against SmsOtp table
+    if (!otpValid && user.mobile) {
+      otpValid = await verifyOtp(prisma, "PASSWORD_RESET", user.mobile, otpClean, now);
+    }
+
+    if (!otpValid) {
+      throw new UserError("কোডটি সঠিক নয় বা মেয়াদ শেষ হয়ে গেছে", { otp: ["কোডটি সঠিক নয় বা মেয়াদ শেষ হয়ে গেছে"] });
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash: await bcrypt.hash(newPassword, 12),
+        otpCode: null,
+        otpExpires: null,
+      },
+    });
+
     const revoked = await revokeAllSessions(prisma, user.id);
-    await loginSucceeded(prisma, [user.email, user.mobile], user.id); // a locked-out owner can sign in with the new password
-    await audit({ userId: user.id, action: "UPDATE", entity: "User", entityId: user.id, details: { field: "password", via: "sms-reset", sessionsRevoked: revoked } });
+    await loginSucceeded(prisma, [user.email, user.mobile].filter(Boolean) as string[], user.id);
+    await audit({
+      userId: user.id,
+      action: "UPDATE",
+      entity: "User",
+      entityId: user.id,
+      details: { field: "password", via: "otp-reset", sessionsRevoked: revoked },
+    });
   });
-  if (!result.ok) return { ok: false, message: result.message, errors: result.errors, data: { step: "code", mobile: String(fd.get("mobile") ?? "") } };
+
+  if (!result.ok) {
+    return {
+      ok: false,
+      message: result.message,
+      errors: result.errors,
+      data: {
+        step: "code",
+        mobile: String(fd.get("mobile") ?? fd.get("identifier") ?? ""),
+        identifier: String(fd.get("identifier") ?? fd.get("mobile") ?? ""),
+      },
+    };
+  }
+
   await flash("পাসওয়ার্ড পরিবর্তন হয়েছে — নতুন পাসওয়ার্ড দিয়ে লগইন করুন");
   redirect("/login");
 }

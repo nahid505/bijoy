@@ -9,6 +9,7 @@ import { canChangeEntryDate } from "@/server/entry-date";
 import { searchParties, toProductOption } from "@/server/lookup";
 import { saveDepotDeliveryAction } from "@/server/actions/depot";
 import { loadDepotDelivery } from "@/server/services/depot";
+import { inventoryOptions } from "@/server/voucher-editor";
 import { DepotDeliveryForm } from "../../../delivery-form";
 import { DepotOnlyNotice } from "../../../depot-ui";
 import { canSeeVoucher } from "@/server/party-scope";
@@ -22,10 +23,11 @@ export default async function EditDepotDeliveryPage({ params }: { params: Promis
   const d = await loadDepotDelivery(ctx.business.id, id);
   if (!d || !(await canSeeVoucher(ctx, id))) notFound(); // assigned-only roles: their parties only
   const v = d.voucher;
-  const [warehouses, dealers, companies] = await Promise.all([
+  const [warehouses, dealers, companies, inv] = await Promise.all([
     prisma.warehouse.findMany({ where: { businessId: ctx.business.id }, orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true } }),
     d.dealerAccountId ? searchParties(ctx.business.id, "CUSTOMER", "", { accountIds: [d.dealerAccountId], dealer: true }) : [],
     d.companyAccountId ? searchParties(ctx.business.id, "SUPPLIER", "", { accountIds: [d.companyAccountId], book: "DEPOT" }) : [],
+    inventoryOptions(ctx.business.id, { book: "DEPOT", includeProductIds: v.items.map((i) => i.productId) }),
   ]);
   const pay = v.payments[0];
   return (
@@ -36,6 +38,8 @@ export default async function EditDepotDeliveryPage({ params }: { params: Promis
           action={saveDepotDeliveryAction.bind(null, v.id)}
           warehouses={warehouses}
           cashAccounts={pay ? [{ id: pay.account.id, name: pay.account.name, group: "" }] : []}
+          products={inv.products}
+          categories={inv.categories}
           multiWarehouse={ctx.features.includes("MULTI_WAREHOUSE")}
           currency={ctx.business.currencySymbol}
           dateLocked={!canChangeEntryDate(ctx)}

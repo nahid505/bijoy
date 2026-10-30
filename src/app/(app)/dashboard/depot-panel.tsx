@@ -20,20 +20,20 @@ export interface DashCard {
   icon: string;
 }
 
-/** Figure cards in a 2 × 2 grid (a fifth card spans the row). */
-export function CardGrid({ cards, id }: { cards: DashCard[]; id?: string }) {
+/** Figure cards in a 2 × 2 grid (a fifth card spans the row, or 4 columns wide). */
+export function CardGrid({ cards, id, cols }: { cards: DashCard[]; id?: string; cols?: string }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-2" id={id}>
+    <div className={`grid gap-3 ${cols ?? "sm:grid-cols-2"}`} id={id}>
       {cards.map((c, i) => {
         const wide = cards.length % 2 === 1 && i === cards.length - 1;
         const body = (
           <>
-            <p className="flex items-center gap-1.5 text-xs font-medium text-slate-500"><span aria-hidden>{c.icon}</span>{c.label}</p>
-            <p className={`mt-1 text-xl font-bold tabular-nums ${c.tone}`}>{c.value}</p>
-            {c.hint && <p className="mt-0.5 text-xs text-slate-400">{c.hint}</p>}
+            <p className="flex items-center gap-1.5 text-sm sm:text-xs font-semibold text-slate-600 leading-relaxed"><span aria-hidden>{c.icon}</span>{c.label}</p>
+            <p className={`mt-1.5 text-xl sm:text-2xl font-black tabular-nums ${c.tone}`}>{c.value}</p>
+            {c.hint && <p className="mt-1 text-xs sm:text-sm text-slate-500 leading-normal truncate">{c.hint}</p>}
           </>
         );
-        const cls = `panel dash-card block px-4 py-3 ${wide ? "sm:col-span-2" : ""}`;
+        const cls = `panel dash-card block px-4.5 py-4 sm:py-3.5 transition hover:shadow-xs ${wide && !cols ? "sm:col-span-2" : ""}`;
         return c.ok ? (
           <Link prefetch={false} key={c.label} href={c.href} className={`${cls} hover:bg-brand-50/50`}>{body}</Link>
         ) : (
@@ -66,22 +66,28 @@ export async function DepotPanel({ ctx, side }: { ctx: AppContext; side?: React.
     { icon: "📦", label: t("বর্তমান ডিপো স্টক"), value: formatMoney(d?.stockValue ?? 0, cur), hint: t("{n} টি আইটেম — গড় ক্রয়মূল্যে", { n: toBnDigits(d?.stockItems ?? 0) }), href: "/depot/products", ok: can(ctx, DEPOT_ACCESS.productsView), tone: "text-brand-700" },
   ];
   return (
-    <section className="mb-4 space-y-3" aria-labelledby="depot-heading">
-      <h2 id="depot-heading" className="flex items-center gap-2 text-base font-bold text-ink-900">
-        <span aria-hidden>🏬</span> {t("ডিপো ব্যবস্থাপনা")}
-      </h2>
+    <section className="mb-6 space-y-3" aria-labelledby="depot-heading" id="depot-management-section">
+      <div className="mb-1">
+        <h2 id="depot-heading" className="flex items-center gap-2 text-lg sm:text-xl font-bold text-ink-900">
+          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-sky-100 text-sky-700 text-xs font-bold" aria-hidden>🏬</span>
+          <span>{t("ডিপো ব্যবস্থাপনা")}</span>
+        </h2>
+        <p className="mt-1 text-xs sm:text-sm font-medium text-slate-600 leading-relaxed">
+          {t("স্টক ইন, ডেলিভারি চালান, মার্কেট কালেকশন ও কমিশন বিবরণী")}
+        </p>
+      </div>
       {quick.length > 0 && (
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5" aria-label={t("ডিপো দ্রুত কাজ")}>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6" aria-label={t("ডিপো দ্রুত কাজ")}>
           {quick.map((q) => (
-            <Link prefetch={false} key={q.href} href={q.href} className={`flex items-center gap-2 rounded-lg border px-3 py-3 text-sm font-semibold transition ${q.primary ? "border-brand-600 bg-brand-600 text-white hover:bg-brand-700" : "border-rule bg-white text-ink-800 hover:border-brand-500 hover:bg-brand-50"}`}>
-              <span aria-hidden className="text-lg">{q.icon}</span>
-              {q.label}
+            <Link prefetch={false} key={q.href} href={q.href} className={`flex items-center gap-2 rounded-lg border px-3.5 py-3 text-sm font-semibold transition min-h-[44px] ${q.primary ? "border-brand-600 bg-brand-600 text-white hover:bg-brand-700" : "border-rule bg-white text-ink-800 hover:border-brand-500 hover:bg-brand-50"}`}>
+              <span aria-hidden className="text-lg sm:text-xl">{q.icon}</span>
+              <span className="truncate">{q.label}</span>
             </Link>
           ))}
         </div>
       )}
       <div className={`grid gap-4 ${side ? "lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]" : ""}`} id="depot-grid">
-        <CardGrid cards={cards} id="depot-cards" />
+        <CardGrid cards={cards} id="depot-cards" cols={side ? "sm:grid-cols-2" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4"} />
         {side}
       </div>
     </section>

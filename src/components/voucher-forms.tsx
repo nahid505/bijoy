@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { unitConversionFactor } from "@/lib/accounting";
 import { computeTotals, lineAmount, round2 } from "@/lib/calc";
-import { formatDrCr, formatMoney, formatQty } from "@/lib/format";
+import { formatDrCr, formatMoney, formatQty, toBnDigits } from "@/lib/format";
 import { SearchSelect } from "./search-select";
 import { EntryDateInput } from "./entry-date-input";
 import { ActionForm, FieldError, SubmitButton, useFormCtx, type FormAction } from "./forms";
@@ -96,6 +96,7 @@ export function TradeVoucherForm({
   cashAccounts,
   warehouses,
   products,
+  categories = [],
   units,
   batches,
   defaults,
@@ -104,6 +105,7 @@ export function TradeVoucherForm({
   allowExpiredSale = false,
   showFree = false,
   book,
+  productGrid = false,
 }: {
   kind: "SALES" | "PURCHASE" | "SALES_RETURN" | "PURCHASE_RETURN";
   action: FormAction;
@@ -111,6 +113,7 @@ export function TradeVoucherForm({
   cashAccounts: AccountOption[];
   warehouses: WarehouseOption[];
   products: ProductOption[];
+  categories?: { id: string; name: string }[];
   units: UnitOption[];
   batches: BatchOption[];
   defaults: TradeDefaults;
@@ -121,6 +124,8 @@ export function TradeVoucherForm({
   showFree?: boolean;
   /** "depot": a depot-book voucher — dealers instead of customers, depot-book balances */
   book?: "depot";
+  /** POS / Dealer challan style product cards grid and cart table */
+  productGrid?: boolean;
 }) {
   const isSale = kind === "SALES" || kind === "SALES_RETURN";
   const outgoing = kind === "SALES" || kind === "PURCHASE_RETURN";
@@ -145,8 +150,88 @@ export function TradeVoucherForm({
   const [lines, setLines] = useState<TradeLine[]>(
     defaults.items.length
       ? defaults.items.map((i) => ({ key: nextKey(), productId: i.productId, unitId: i.unitId, quantity: String(i.quantity), freeQuantity: i.freeQuantity ? String(i.freeQuantity) : "", rate: String(i.rate), discount: i.discount ? String(i.discount) : "", batchNo: i.batchNo, expiryDate: i.expiryDate, mfgDate: i.mfgDate ?? "", maxQty: i.maxQty }))
-      : [{ key: nextKey(), productId: "", unitId: "", quantity: "1", freeQuantity: "", rate: "", discount: "", batchNo: "", expiryDate: "", mfgDate: "" }],
+      : productGrid
+        ? []
+        : [{ key: nextKey(), productId: "", unitId: "", quantity: "1", freeQuantity: "", rate: "", discount: "", batchNo: "", expiryDate: "", mfgDate: "" }],
   );
+
+  const [q, setQ] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!productGrid) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "F2") {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [productGrid]);
+
+  const results = useMemo(() => {
+    if (!productGrid) return [];
+    const s = q.trim().toLowerCase();
+    let list = products;
+    if (selectedCategory) {
+      list = list.filter((p) => p.categoryId === selectedCategory);
+    }
+    if (s) {
+      list = list.filter((p) =>
+        `${p.name} ${p.code ?? ""} ${p.barcode ?? ""}`.toLowerCase().includes(s)
+      );
+    }
+    return list.slice(0, 36);
+  }, [productGrid, q, selectedCategory, products]);
+
+  function addProductFromGrid(p: ProductOption) {
+    remember(p);
+    setLines((ls) => {
+      if (ls.length === 1 && !ls[0].productId) {
+        return [
+          {
+            key: ls[0].key,
+            productId: p.id,
+            unitId: p.unitId,
+            quantity: "1",
+            freeQuantity: "",
+            rate: String(baseRate(p) || ""),
+            discount: "",
+            batchNo: "",
+            expiryDate: "",
+            mfgDate: "",
+          },
+        ];
+      }
+      const hit = ls.find((l) => l.productId === p.id && l.unitId === p.unitId);
+      if (hit) {
+        return ls.map((l) =>
+          l.key === hit.key
+            ? { ...l, quantity: String(round2((Number(l.quantity) || 0) + 1)) }
+            : l
+        );
+      }
+      return [
+        ...ls,
+        {
+          key: nextKey(),
+          productId: p.id,
+          unitId: p.unitId,
+          quantity: "1",
+          freeQuantity: "",
+          rate: String(baseRate(p) || ""),
+          discount: "",
+          batchNo: "",
+          expiryDate: "",
+          mfgDate: "",
+        },
+      ];
+    });
+    setQ("");
+    searchRef.current?.focus();
+  }
 
   const compatibleUnits = (productId: string) => {
     const p = productMap.get(productId);
@@ -227,110 +312,411 @@ export function TradeVoucherForm({
         )}
       </section>
 
-      <section className="panel">
-        <div className="panel-head flex-wrap">
-          <h2 className="panel-title">{t("পণ্য")}</h2>
-          <div className="flex flex-wrap items-center gap-2">
-            {kind === "SALES" && (
-              <select className="input w-auto py-1 text-xs" value={priceMode} onChange={(e) => setPriceMode(e.target.value as "retail" | "wholesale")} aria-label={t("মূল্য ধরন")}>
-                <option value="retail">{t("খুচরা মূল্য")}</option>
-                <option value="wholesale">{t("পাইকারি মূল্য")}</option>
-              </select>
-            )}
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="table">
-            <thead>
-              <tr>
-                <th className="w-8">#</th>
-                <th className="min-w-56">{t("পণ্য")}</th>
-                <th className="w-40">{t("ব্যাচ / মেয়াদ")}</th>
-                <th className="w-32">{t("ইউনিট")}</th>
-                <th className="w-28 text-right">{t("পরিমাণ")}</th>
-                {showFree && <th className="w-24 text-right" title={t("ফ্রি / স্কিম — স্টকে যোগ/বাদ হবে, দাম ধরা হবে না")}>{t("ফ্রি")}</th>}
-                <th className="w-32 text-right">{t("দর")}</th>
-                <th className="w-28 text-right">{t("ছাড়")}</th>
-                <th className="w-36 text-right">{t("মোট")}</th>
-                <th className="w-10" />
-              </tr>
-            </thead>
-            <tbody>
-              {lines.map((l, idx) => {
-                const p = productMap.get(l.productId);
-                const baseQty = (Number(l.quantity) || 0) * factorOf(l);
-                const short = outgoing && p && baseQty > p.stock + 1e-9;
-                return (
-                  <tr key={l.key}>
-                    <td className="text-xs text-slate-400">{idx + 1}</td>
-                    <td>
-                      <SearchSelect
-                        kind="products"
-                        value={p ?? null}
-                        onChange={(prod) => {
-                          if (prod) remember(prod);
-                          update(l.key, { productId: prod?.id ?? "", unitId: prod?.unitId ?? "", rate: prod ? String(baseRate(prod)) : "", batchNo: "", expiryDate: "", mfgDate: "" });
-                        }}
-                        placeholder={t("পণ্য খুঁজুন — নাম, কোড/SKU, বারকোড")}
-                        disabled={lockedToInvoice}
-                        create={lockedToInvoice ? false : { units }}
-                        book={book}
-                        currency={currency}
-                        unitName={(id) => unitMap.get(id)?.name ?? ""}
-                        priceOf={baseRate}
-                        ariaLabel={`${t("পণ্য")}, ${t("সারি")} ${idx + 1}`}
-                      />
-                      {short && <p className="mt-1 text-xs text-credit">{t("মজুদ মাত্র")} {formatQty(p!.stock)} {unitMap.get(p!.unitId)?.name}</p>}
-                      {l.maxQty !== undefined && <p className="mt-1 text-xs text-amber-700">{t("ফেরতযোগ্য সর্বোচ্চ")} {formatQty(l.maxQty)}</p>}
-                      <FieldError name={`items.${idx}.productId`} />
-                    </td>
-                    <td>
-                      <BatchCell product={p} inbound={!outgoing} batches={batches} warehouseId={warehouseId} batchNo={l.batchNo} expiryDate={l.expiryDate} mfgDate={l.mfgDate} fefo={kind === "SALES"} blockExpired={kind === "SALES" && !allowExpiredSale} onChange={(patch) => update(l.key, patch)} />
-                    </td>
-                    <td>
-                      <select
-                        className="input"
-                        value={l.unitId}
-                        disabled={!p}
-                        onChange={(e) => {
-                          const nu = unitMap.get(e.target.value);
-                          const old = factorOf(l);
-                          const nf = p && nu ? unitConversionFactor(nu, unitMap.get(p.unitId)!) ?? 1 : 1;
-                          update(l.key, { unitId: e.target.value, rate: l.rate ? String(round2((Number(l.rate) / old) * nf)) : l.rate });
-                        }}
-                      >
-                        {compatibleUnits(l.productId).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-                      </select>
-                    </td>
-                    <td>
-                      <input className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="0.001" value={l.quantity} onChange={(e) => update(l.key, { quantity: e.target.value })} aria-label={t("পরিমাণ")} />
-                      <FieldError name={`items.${idx}.quantity`} />
-                    </td>
-                    {showFree && (
-                      <td>
-                        <input className="input-num border-amber-300 bg-amber-50" type="text" inputMode="decimal" data-numeric min="0" step="0.001" value={l.freeQuantity} placeholder="0" onChange={(e) => update(l.key, { freeQuantity: e.target.value })} aria-label={t("ফ্রি পরিমাণ")} />
-                        <FieldError name={`items.${idx}.freeQuantity`} />
+      {productGrid ? (
+        <div className="space-y-4">
+          {/* ১. প্রোডাক্ট গ্রিড ও সার্চ সেকশন (POS / Dealer Challan Style) */}
+          <section className="panel p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                ref={searchRef}
+                className="input flex-1 text-base"
+                placeholder={`🔍 ${t("পণ্যের নাম, কোড বা বারকোড স্ক্যান করুন — Enter")}  (F2)`}
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
+                  const s = q.trim().toLowerCase();
+                  const exact = products.find((p) => p.barcode?.toLowerCase() === s || p.code?.toLowerCase() === s);
+                  const pick = exact ?? (results.length === 1 ? results[0] : undefined);
+                  if (pick) addProductFromGrid(pick);
+                }}
+                aria-label={t("পণ্য খুঁজুন")}
+              />
+
+              <div className="flex items-center gap-1.5">
+                <select
+                  className="input w-auto font-medium"
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  aria-label={t("পণ্যের গ্রুপ")}
+                >
+                  <option value="">{t("সকল গ্রুপ")}</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* প্রোডাক্ট কার্ডগুলোর গ্রিড */}
+            <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6 max-h-[380px] overflow-y-auto p-1">
+              {results.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => addProductFromGrid(p)}
+                  className="group relative flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-2.5 text-left shadow-xs transition hover:border-brand-500 hover:bg-brand-50/50 hover:shadow-sm active:scale-[0.98]"
+                >
+                  <div>
+                    <div className="mb-1.5 flex items-center justify-between gap-1 flex-wrap">
+                      {p.code ? (
+                        <span className="inline-flex items-center rounded-md bg-blue-50 px-1.5 py-0.5 text-xs font-bold text-blue-700 ring-1 ring-inset ring-blue-600/20 tabular-nums">
+                          {t("কোড: {0}", { 0: p.code })}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
+                          {t("আইটেম")}
+                        </span>
+                      )}
+                      {p.categoryName && (
+                        <span className="truncate max-w-[80px] text-[10px] text-slate-400">
+                          {p.categoryName}
+                        </span>
+                      )}
+                    </div>
+                    <p className="line-clamp-2 text-xs font-bold text-slate-900 group-hover:text-brand-700">
+                      {p.name}
+                    </p>
+                  </div>
+                  <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-baseline justify-between gap-1">
+                    <p className="text-sm font-bold tabular-nums text-brand-700">
+                      {formatMoney(baseRate(p), currency)}
+                    </p>
+                    <p className="text-[10px] font-medium text-slate-500">
+                      {t("মজুদ")} {formatQty(p.stock)}
+                    </p>
+                  </div>
+                </button>
+              ))}
+              {results.length === 0 && (
+                <p className="col-span-full py-6 text-center text-sm text-slate-400">
+                  {t("কোনো পণ্য পাওয়া যায়নি")}
+                </p>
+              )}
+            </div>
+          </section>
+
+          {/* ২. পণ্য তালিকা ও এন্ট্রি টেবিল (Cart Table) */}
+          <section className="panel overflow-hidden border border-slate-200 shadow-xs">
+            <div className="panel-head border-b border-slate-200 bg-slate-50/70 px-4 py-3 flex justify-between items-center">
+              <h2 className="panel-title flex items-center gap-2">
+                <span>{t("পণ্য তালিকা")}</span>
+                <span className="inline-flex items-center rounded-full bg-brand-100 px-2.5 py-0.5 text-xs font-bold text-brand-800">
+                  {toBnDigits(lines.filter((l) => l.productId).length)}
+                </span>
+              </h2>
+              {lines.filter((l) => l.productId).length > 0 && (
+                <button
+                  type="button"
+                  className="btn-ghost btn-sm text-credit hover:bg-rose-50"
+                  onClick={() => setLines([])}
+                >
+                  {t("সব মুছুন")}
+                </button>
+              )}
+            </div>
+
+            {lines.filter((l) => l.productId).length === 0 ? (
+              <p className="px-4 py-12 text-center text-sm text-slate-400">
+                {t("উপরে গ্রিড থেকে পণ্য বেছে নিন অথবা কোড/বারকোড স্ক্যান করে তালিকায় যোগ করুন")}
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="table w-full border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-100 text-xs font-bold text-slate-700">
+                      <th className="w-10 px-3 py-3 text-center">#</th>
+                      <th className="min-w-48 px-3 py-3 text-left">{t("পণ্যের নাম ও কোড")}</th>
+                      <th className="w-36 px-3 py-3 text-left">{t("ব্যাচ / মেয়াদ")}</th>
+                      <th className="w-28 px-3 py-3 text-left">{t("ইউনিট")}</th>
+                      <th className="w-36 px-3 py-3 text-center">{t("পরিমাণ")}</th>
+                      <th className="w-28 px-3 py-3 text-center">{t("ফ্রি পরিমাণ")}</th>
+                      <th className="w-28 px-3 py-3 text-right">{t("ক্রয় দর")}</th>
+                      <th className="w-32 px-3 py-3 text-right">{t("মোট টাকা")}</th>
+                      <th className="w-10 px-2 py-3 text-center" aria-label={t("অ্যাকশন")} />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 bg-white">
+                    {lines.filter((l) => l.productId).map((l, idx) => {
+                      const p = productMap.get(l.productId);
+                      const lineTotal = round2((Number(l.quantity) || 0) * (Number(l.rate) || 0));
+
+                      return (
+                        <tr key={l.key} className="transition-colors hover:bg-slate-50/80">
+                          {/* ১. নম্বর */}
+                          <td className="px-3 py-3 text-center text-xs font-semibold text-slate-500 tabular-nums">
+                            {toBnDigits(idx + 1)}
+                          </td>
+
+                          {/* ২. পণ্যের নাম ও কোড */}
+                          <td className="px-3 py-3">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {p?.code && (
+                                <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700 ring-1 ring-inset ring-blue-600/20 tabular-nums">
+                                  {p.code}
+                                </span>
+                              )}
+                              <span className="font-semibold text-slate-900 leading-snug">{p?.name ?? "—"}</span>
+                            </div>
+                            <FieldError name={`items.${idx}.productId`} />
+                          </td>
+
+                          {/* ৩. ব্যাচ / মেয়াদ */}
+                          <td className="px-3 py-3">
+                            <BatchCell
+                              product={p}
+                              inbound={!outgoing}
+                              batches={batches}
+                              warehouseId={warehouseId}
+                              batchNo={l.batchNo}
+                              expiryDate={l.expiryDate}
+                              mfgDate={l.mfgDate}
+                              fefo={false}
+                              onChange={(patch) => update(l.key, patch)}
+                            />
+                          </td>
+
+                          {/* ৪. ইউনিট */}
+                          <td className="px-3 py-3">
+                            <select
+                              className="input py-1 text-xs"
+                              value={l.unitId}
+                              disabled={!p}
+                              onChange={(e) => {
+                                const nu = unitMap.get(e.target.value);
+                                const old = factorOf(l);
+                                const nf = p && nu ? unitConversionFactor(nu, unitMap.get(p.unitId)!) ?? 1 : 1;
+                                update(l.key, { unitId: e.target.value, rate: l.rate ? String(round2((Number(l.rate) / old) * nf)) : l.rate });
+                              }}
+                            >
+                              {compatibleUnits(l.productId).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                            </select>
+                          </td>
+
+                          {/* ৫. পরিমাণ (Qty) */}
+                          <td className="px-3 py-3">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-base font-bold text-slate-700 shadow-2xs hover:bg-slate-100 active:bg-slate-200"
+                                aria-label={t("কমান")}
+                                onClick={() => update(l.key, { quantity: String(Math.max(round2((Number(l.quantity) || 0) - 1), 0.001)) })}
+                              >
+                                −
+                              </button>
+                              <input
+                                className="input-num h-8 w-20 text-center font-bold text-slate-900"
+                                type="text"
+                                inputMode="decimal"
+                                data-numeric
+                                min="0"
+                                step="0.001"
+                                value={l.quantity}
+                                onChange={(e) => update(l.key, { quantity: e.target.value })}
+                                aria-label={t("পরিমাণ")}
+                              />
+                              <button
+                                type="button"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-base font-bold text-slate-700 shadow-2xs hover:bg-slate-100 active:bg-slate-200"
+                                aria-label={t("বাড়ান")}
+                                onClick={() => update(l.key, { quantity: String(round2((Number(l.quantity) || 0) + 1)) })}
+                              >
+                                +
+                              </button>
+                            </div>
+                            <FieldError name={`items.${idx}.quantity`} />
+                          </td>
+
+                          {/* ৬. ফ্রি পরিমাণ (Free Qty) */}
+                          <td className="px-3 py-3">
+                            <div className="flex items-center justify-center">
+                              <input
+                                className="input-num h-8 w-20 text-center font-bold text-emerald-700 bg-emerald-50/50 border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500/20"
+                                type="text"
+                                inputMode="decimal"
+                                data-numeric
+                                min="0"
+                                step="0.001"
+                                placeholder="0"
+                                value={l.freeQuantity}
+                                onChange={(e) => update(l.key, { freeQuantity: e.target.value })}
+                                aria-label={t("ফ্রি পরিমাণ")}
+                              />
+                            </div>
+                            <FieldError name={`items.${idx}.freeQuantity`} />
+                          </td>
+
+                          {/* ৭. ক্রয় দর (Rate) */}
+                          <td className="px-3 py-3">
+                            <div className="flex items-center justify-end">
+                              <input
+                                className="input-num h-8 w-24 text-right font-bold text-slate-900"
+                                type="text"
+                                inputMode="decimal"
+                                data-numeric
+                                min="0"
+                                step="0.01"
+                                value={l.rate}
+                                onChange={(e) => update(l.key, { rate: e.target.value })}
+                                aria-label={t("ক্রয় দর")}
+                              />
+                            </div>
+                            <FieldError name={`items.${idx}.rate`} />
+                          </td>
+
+                          {/* ৮. মোট টাকা (Line Total = পরিমাণ × দর) */}
+                          <td className="px-3 py-3 text-right font-bold text-slate-900 text-sm whitespace-nowrap tabular-nums">
+                            {formatMoney(lineTotal, currency)}
+                          </td>
+
+                          {/* ৯. রিমুভ বাটন */}
+                          <td className="px-2 py-3 text-center">
+                            <button
+                              type="button"
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-rose-50 hover:text-credit transition-colors"
+                              aria-label={t("সারি মুছুন")}
+                              onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}
+                            >
+                              ✕
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-slate-300 bg-slate-50 font-bold text-slate-800 text-xs">
+                      <td colSpan={4} className="px-3 py-3 text-right">{t("মোট")}:</td>
+                      <td className="px-3 py-3 text-center tabular-nums text-slate-900">
+                        {formatQty(lines.filter((l) => l.productId).reduce((s, x) => s + (Number(x.quantity) || 0), 0))}
                       </td>
-                    )}
-                    <td><input className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="0.01" value={l.rate} onChange={(e) => update(l.key, { rate: e.target.value })} aria-label={t("দর")} /></td>
-                    <td><input className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="0.01" value={l.discount} placeholder="0" onChange={(e) => update(l.key, { discount: e.target.value })} aria-label={t("ছাড়")} /></td>
-                    <td className="num font-semibold">{formatMoney(lineAmount({ quantity: Number(l.quantity) || 0, unitPrice: Number(l.rate) || 0, discount: Number(l.discount) || 0 }), currency)}</td>
-                    <td>{lines.length > 1 && <button type="button" className="btn-ghost btn-sm text-credit" aria-label={t("সারি মুছুন")} onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}>✕</button>}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      <td className="px-3 py-3 text-center tabular-nums text-emerald-700">
+                        {formatQty(lines.filter((l) => l.productId).reduce((s, x) => s + (Number(x.freeQuantity) || 0), 0))}
+                      </td>
+                      <td className="px-3 py-3 text-right" />
+                      <td className="px-3 py-3 text-right tabular-nums text-sm font-bold text-brand-900">
+                        {formatMoney(totals.subtotal, currency)}
+                      </td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+            <div className="px-4 pb-2">
+              <FieldError name="items" />
+            </div>
+          </section>
         </div>
-        {!lockedToInvoice && (
-          <div className="flex items-center justify-between border-t border-rule px-4 py-2.5">
-            <button type="button" className="btn-secondary btn-sm" onClick={() => setLines((ls) => [...ls, { key: nextKey(), productId: "", unitId: "", quantity: "1", freeQuantity: "", rate: "", discount: "", batchNo: "", expiryDate: "", mfgDate: "" }])}>
-              + {t("আরেকটি পণ্য")}
-            </button>
-            <FieldError name="items" />
+      ) : (
+        <section className="panel">
+          <div className="panel-head flex-wrap">
+            <h2 className="panel-title">{t("পণ্য")}</h2>
+            <div className="flex flex-wrap items-center gap-2">
+              {kind === "SALES" && (
+                <select className="input w-auto py-1 text-xs" value={priceMode} onChange={(e) => setPriceMode(e.target.value as "retail" | "wholesale")} aria-label={t("মূল্য ধরন")}>
+                  <option value="retail">{t("খুচরা মূল্য")}</option>
+                  <option value="wholesale">{t("পাইকারি মূল্য")}</option>
+                </select>
+              )}
+            </div>
           </div>
-        )}
-      </section>
+          <div className="overflow-x-auto">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th className="w-8">#</th>
+                  <th className="min-w-56">{t("পণ্য")}</th>
+                  <th className="w-40">{t("ব্যাচ / মেয়াদ")}</th>
+                  <th className="w-32">{t("ইউনিট")}</th>
+                  <th className="w-28 text-right">{t("পরিমাণ")}</th>
+                  {showFree && <th className="w-24 text-right" title={t("ফ্রি / স্কিম — স্টকে যোগ/বাদ হবে, দাম ধরা হবে না")}>{t("ফ্রি")}</th>}
+                  <th className="w-32 text-right">{t("দর")}</th>
+                  <th className="w-28 text-right">{t("ছাড়")}</th>
+                  <th className="w-36 text-right">{t("মোট")}</th>
+                  <th className="w-10" />
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((l, idx) => {
+                  const p = productMap.get(l.productId);
+                  const baseQty = (Number(l.quantity) || 0) * factorOf(l);
+                  const short = outgoing && p && baseQty > p.stock + 1e-9;
+                  return (
+                    <tr key={l.key}>
+                      <td className="text-xs text-slate-400">{idx + 1}</td>
+                      <td>
+                        <SearchSelect
+                          kind="products"
+                          value={p ?? null}
+                          onChange={(prod) => {
+                            if (prod) remember(prod);
+                            update(l.key, { productId: prod?.id ?? "", unitId: prod?.unitId ?? "", rate: prod ? String(baseRate(prod)) : "", batchNo: "", expiryDate: "", mfgDate: "" });
+                          }}
+                          placeholder={t("পণ্য খুঁজুন — নাম, কোড/SKU, বারকোড")}
+                          disabled={lockedToInvoice}
+                          create={lockedToInvoice ? false : { units }}
+                          book={book}
+                          currency={currency}
+                          unitName={(id) => unitMap.get(id)?.name ?? ""}
+                          priceOf={baseRate}
+                          ariaLabel={`${t("পণ্য")}, ${t("সারি")} ${idx + 1}`}
+                        />
+                        {short && <p className="mt-1 text-xs text-credit">{t("মজুদ মাত্র")} {formatQty(p!.stock)} {unitMap.get(p!.unitId)?.name}</p>}
+                        {l.maxQty !== undefined && <p className="mt-1 text-xs text-amber-700">{t("ফেরতযোগ্য সর্বোচ্চ")} {formatQty(l.maxQty)}</p>}
+                        <FieldError name={`items.${idx}.productId`} />
+                      </td>
+                      <td>
+                        <BatchCell product={p} inbound={!outgoing} batches={batches} warehouseId={warehouseId} batchNo={l.batchNo} expiryDate={l.expiryDate} mfgDate={l.mfgDate} fefo={kind === "SALES"} blockExpired={kind === "SALES" && !allowExpiredSale} onChange={(patch) => update(l.key, patch)} />
+                      </td>
+                      <td>
+                        <select
+                          className="input"
+                          value={l.unitId}
+                          disabled={!p}
+                          onChange={(e) => {
+                            const nu = unitMap.get(e.target.value);
+                            const old = factorOf(l);
+                            const nf = p && nu ? unitConversionFactor(nu, unitMap.get(p.unitId)!) ?? 1 : 1;
+                            update(l.key, { unitId: e.target.value, rate: l.rate ? String(round2((Number(l.rate) / old) * nf)) : l.rate });
+                          }}
+                        >
+                          {compatibleUnits(l.productId).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                        </select>
+                      </td>
+                      <td>
+                        <input className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="0.001" value={l.quantity} onChange={(e) => update(l.key, { quantity: e.target.value })} aria-label={t("পরিমাণ")} />
+                        <FieldError name={`items.${idx}.quantity`} />
+                      </td>
+                      {showFree && (
+                        <td>
+                          <input className="input-num border-amber-300 bg-amber-50" type="text" inputMode="decimal" data-numeric min="0" step="0.001" value={l.freeQuantity} placeholder="0" onChange={(e) => update(l.key, { freeQuantity: e.target.value })} aria-label={t("ফ্রি পরিমাণ")} />
+                          <FieldError name={`items.${idx}.freeQuantity`} />
+                        </td>
+                      )}
+                      <td><input className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="0.01" value={l.rate} onChange={(e) => update(l.key, { rate: e.target.value })} aria-label={t("দর")} /></td>
+                      <td><input className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="0.01" value={l.discount} placeholder="0" onChange={(e) => update(l.key, { discount: e.target.value })} aria-label={t("ছাড়")} /></td>
+                      <td className="num font-semibold">{formatMoney(lineAmount({ quantity: Number(l.quantity) || 0, unitPrice: Number(l.rate) || 0, discount: Number(l.discount) || 0 }), currency)}</td>
+                      <td>{lines.length > 1 && <button type="button" className="btn-ghost btn-sm text-credit" aria-label={t("সারি মুছুন")} onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}>✕</button>}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {!lockedToInvoice && (
+            <div className="flex items-center justify-between border-t border-rule px-4 py-2.5">
+              <button type="button" className="btn-secondary btn-sm" onClick={() => setLines((ls) => [...ls, { key: nextKey(), productId: "", unitId: "", quantity: "1", freeQuantity: "", rate: "", discount: "", batchNo: "", expiryDate: "", mfgDate: "" }])}>
+                + {t("আরেকটি পণ্য")}
+              </button>
+              <FieldError name="items" />
+            </div>
+          )}
+        </section>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-5">
         <section className="panel space-y-3 p-4 lg:col-span-3">

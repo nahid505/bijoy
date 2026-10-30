@@ -9,7 +9,7 @@ export function BusinessSwitcher({ current, businesses }: { current: string; bus
   return (
     <select
       aria-label="ব্যবসা পরিবর্তন"
-      className="input w-auto max-w-[6.5rem] shrink-0 truncate py-1 text-xs sm:max-w-[14rem]"
+      className="input h-10 sm:h-9 w-auto max-w-[7.5rem] shrink-0 truncate py-1 px-2 text-xs font-semibold sm:max-w-[14rem]"
       value={current}
       disabled={pending}
       onChange={(e) => {

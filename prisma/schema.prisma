@@ -193,6 +193,8 @@ model User {
   loginAlertEnabled Boolean   @default(true) // SMS when a new session starts
   isActive          Boolean   @default(true)
   lastLoginAt       DateTime?
+  otpCode           String?
+  otpExpires        DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -327,6 +329,7 @@ model Account {
   description   String?
   bankName      String?
   accountNumber String?
+  imageUrl      String?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -500,6 +503,7 @@ model Customer {
   mobile        String?
   email         String?
   address       String?
+  imageUrl      String?
   notes         String?
   creditLimit   Decimal        @default(0) @db.Decimal(14, 2) // 0 = no limit
   creditDays    Int            @default(0) // payment terms: invoice due = date + creditDays
@@ -529,6 +533,7 @@ model Supplier {
   mobile      String?
   email       String?
   address     String?
+  imageUrl    String?
   notes       String?
   creditDays  Int            @default(0)
   isActive    Boolean        @default(true)

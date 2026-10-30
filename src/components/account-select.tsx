@@ -6,7 +6,7 @@
 // from /api/lookup/accounts (server-side search, paged), so thousands of ledgers stay fast.
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { formatDrCr } from "@/lib/format";
+import { formatDrCr, formatMoney } from "@/lib/format";
 import { accountGroupsForCreateAction, quickCreateAccountAction } from "@/server/actions/lookup";
 import { useT } from "./lang";
 import { anchoredStyle, useAnchoredPosition, useDebounced } from "./popover-utils";
@@ -240,14 +240,19 @@ export function SearchableAccountSelect({
         disabled={disabled}
         onClick={() => (open ? close() : openWith())}
         onKeyDown={onTriggerKey}
-        className={`input flex min-h-[2.25rem] items-center justify-between gap-2 pr-2 text-left ${disabled ? "bg-slate-100" : ""}`}
+        className={`input flex min-h-[2.25rem] items-center justify-between gap-2 pr-2 text-left transition-colors focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/25 ${disabled ? "bg-slate-100" : ""}`}
       >
         <span className="min-w-0 flex-1 truncate">
           {selected ? (
-            <>
-              {selected.name}
-              <span className="ml-1.5 text-xs text-slate-400">{selected.group}</span>
-            </>
+            <span className="flex items-center gap-1.5 truncate">
+              <span className="font-semibold text-gray-900 truncate">{selected.name}</span>
+              {selected.code && (
+                <span className="inline-flex shrink-0 items-center rounded bg-gray-100 px-1.5 py-0.5 text-[11px] font-medium text-gray-600">
+                  #{selected.code}
+                </span>
+              )}
+              <span className="truncate text-xs text-slate-500">{selected.group}</span>
+            </span>
           ) : value && missing !== value ? (
             <span className="text-slate-400">{t("লোড হচ্ছে…")}</span>
           ) : (
@@ -261,9 +266,9 @@ export function SearchableAccountSelect({
         <div
           ref={popRef}
           style={anchoredStyle(pos)}
-          className={`z-50 flex max-h-[min(24rem,70vh)] flex-col overflow-hidden rounded-md border border-rule bg-white text-sm shadow-xl ${pos.up ? "flex-col-reverse" : ""}`}
+          className={`z-50 flex max-h-[min(26rem,75vh)] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white text-sm shadow-xl ${pos.up ? "flex-col-reverse" : ""}`}
         >
-          <div className="border-b border-rule p-2">
+          <div className="border-b border-slate-200 bg-slate-50/70 p-2">
             <input
               ref={searchRef}
               type="search"
@@ -275,13 +280,13 @@ export function SearchableAccountSelect({
               autoComplete="off"
               spellCheck={false}
               placeholder={t("🔍 হিসাব খুঁজুন...")}
-              className="input"
+              className="input focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={onSearchKey}
             />
           </div>
-          <ul id={listId} role="listbox" aria-label={t("হিসাবের তালিকা")} className="min-h-0 flex-1 overflow-y-auto py-1" onMouseDown={(e) => e.preventDefault()}>
+          <ul id={listId} role="listbox" aria-label={t("হিসাবের তালিকা")} className="min-h-0 flex-1 overflow-y-auto py-1 divide-y divide-slate-100/60" onMouseDown={(e) => e.preventDefault()}>
             {loading && items.length === 0 && (
               <li className="flex items-center gap-2 px-3 py-2 text-xs text-slate-500" aria-live="polite">
                 <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-brand-600 border-t-transparent" /> {t("খোঁজা হচ্ছে…")}
@@ -293,10 +298,12 @@ export function SearchableAccountSelect({
             )}
             {entries.map((e, i) => {
               const isActive = i === active;
-              const base = `cursor-pointer px-3 py-1.5 ${isActive ? "bg-brand-50" : "hover:bg-ink-50"}`;
+              const base = `cursor-pointer px-3 py-2 transition-colors ${
+                isActive ? "bg-emerald-50 text-ink-950" : "hover:bg-emerald-50/50"
+              }`;
               const common = { id: `${listId}-${i}`, onMouseEnter: () => setActive(i), onClick: () => choose(i) };
               if (e.type === "none") return <li key="none" {...common} role="option" aria-selected={!value} className={`${base} text-slate-600`}>{noneLabel ? t(noneLabel) : ""}</li>;
-              if (e.type === "more") return <li key="more" {...common} role="option" aria-selected={false} className={`${base} text-center text-xs font-medium text-brand-700`}>{t("আরও হিসাব দেখুন ↓")}</li>;
+              if (e.type === "more") return <li key="more" {...common} role="option" aria-selected={false} className={`${base} text-center text-xs font-semibold text-brand-700`}>{t("আরও হিসাব দেখুন ↓")}</li>;
               if (e.type === "create") {
                 return (
                   <li key="create" {...common} role="option" aria-selected={false} className={`${base} border-t border-rule font-medium text-brand-700`}>
@@ -308,15 +315,69 @@ export function SearchableAccountSelect({
               // group headings while browsing; while searching the group is shown on each row
               const heading = !query && a.group !== lastGroup ? a.group : null;
               lastGroup = a.group;
-              const sub = [query ? a.group : null, a.code && `${t("কোড")} ${a.code}`, a.detail].filter(Boolean).join(" · ");
               return [
-                heading && <li key={`h-${i}`} role="presentation" className="bg-ink-50 px-3 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{t(heading)}</li>,
-                <li key={a.id} {...common} role="option" aria-selected={a.id === value} className={`${base} flex items-start justify-between gap-3`}>
-                  <span className="min-w-0">
-                    <span className={`block truncate ${a.id === value ? "font-semibold" : ""}`}>{a.name}</span>
-                    {sub && <span className="block truncate text-xs text-slate-500">{sub}</span>}
-                  </span>
-                  {a.balance !== undefined && <span className="shrink-0 pt-0.5 text-xs tabular-nums text-slate-500">{formatDrCr(a.balance, currency)}</span>}
+                heading && (
+                  <li
+                    key={`h-${i}`}
+                    role="presentation"
+                    className="border-y border-slate-200 bg-blue-50/70 px-3 py-1.5 text-xs font-bold text-blue-900 tracking-wide"
+                  >
+                    {t(heading)}
+                  </li>
+                ),
+                <li
+                  key={a.id}
+                  {...common}
+                  role="option"
+                  aria-selected={a.id === value}
+                  className={`${base} flex items-center justify-between gap-3 ${a.id === value ? "border-l-2 border-l-emerald-600 bg-emerald-50/30 font-semibold" : ""}`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className={`truncate text-sm font-semibold text-gray-900 ${a.id === value ? "text-emerald-900" : ""}`}>
+                        {a.name}
+                      </span>
+                      {a.code && (
+                        <span className="inline-flex shrink-0 items-center rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                          {a.code}
+                        </span>
+                      )}
+                    </div>
+                    {(query || a.detail) && (
+                      <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+                        {query && <span className="font-medium text-slate-600">{a.group}</span>}
+                        {query && a.detail && <span>·</span>}
+                        {a.detail && <span className="text-slate-400">{a.detail}</span>}
+                      </div>
+                    )}
+                  </div>
+                  {a.balance !== undefined && (() => {
+                    const n = Number(a.balance ?? 0);
+                    if (Math.abs(n) <= 0.005) {
+                      return (
+                        <span className="shrink-0 text-xs tabular-nums text-slate-400">
+                          {formatMoney(0, currency)}
+                        </span>
+                      );
+                    }
+                    const isDr = n > 0;
+                    return (
+                      <div className="shrink-0 flex items-center gap-1.5 text-right">
+                        <span className="text-sm font-bold tabular-nums text-gray-900">
+                          {formatMoney(Math.abs(n), currency)}
+                        </span>
+                        <span
+                          className={`inline-flex shrink-0 items-center rounded-md px-2 py-0.5 text-xs font-medium ${
+                            isDr
+                              ? "bg-emerald-50 text-emerald-700"
+                              : "bg-rose-50 text-rose-700"
+                          }`}
+                        >
+                          {isDr ? t("ডেবিট") : t("ক্রেডিট")}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </li>,
               ];
             })}

@@ -59,6 +59,28 @@ async function saveVoucher(type: EditableType, id: string | null, fd: FormData, 
           await assertPartiesAllowed(ctx, [input.partyAccountId, ...input.payments.map((p) => p.accountId)]);
           if (!id && !ctx.features.includes("MULTI_WAREHOUSE")) input.warehouseId = null; // → main warehouse
           voucher = await saveTradeVoucher(ctx.svc, type, input, editId, book);
+          if (book === "DEPOT" && type === "SALES") {
+            const challan = {
+              mode: "DEPOT_COLLECTION" as const,
+              doNumber: input.reference ?? null,
+              dealerAccountId: input.partyAccountId ?? null,
+              companyAccountId: null,
+              warehouseId: input.warehouseId ?? null,
+              vehicleNo: null,
+              driverName: null,
+              notes: input.narration ?? null,
+              commissionTotal: 0,
+            };
+            await prisma.depotDelivery.upsert({
+              where: { voucherId: voucher.id },
+              create: { ...challan, voucherId: voucher.id, businessId: ctx.business.id },
+              update: challan,
+            });
+            const items = await prisma.voucherItem.findMany({ where: { voucherId: voucher.id }, select: { id: true, rate: true } });
+            for (const it of items) {
+              await prisma.voucherItem.update({ where: { id: it.id }, data: { challanRate: it.rate } });
+            }
+          }
         }
         break;
       case "RECEIPT":
@@ -105,11 +127,12 @@ async function saveVoucher(type: EditableType, id: string | null, fd: FormData, 
     const c = await getContext();
     if (c) await smsForVoucher(prisma, c.business.id, v.id, c.user.id);
   }
-  await flash(`${VOUCHER_TYPES[type].long} ${v.voucherNo} সংরক্ষণ হয়েছে`);
+  await flash(v.book === "DEPOT" && type === "SALES" ? `ডিপো ডেলিভারি চালান ${v.voucherNo} সংরক্ষণ হয়েছে` : `${VOUCHER_TYPES[type].long} ${v.voucherNo} সংরক্ষণ হয়েছে`);
   revalidatePath("/", "layout");
   const then = fd.get("then");
-  if (then === "print") redirect(`/vouchers/v/${v.id}/print`);
+  if (then === "print") redirect(fd.get("from") === "dealer-challan" || v.book === "DEPOT" ? `/vouchers/v/${v.id}/print?challan=1` : `/vouchers/v/${v.id}/print`);
   if (then === "pos") redirect(`/pos?last=${v.id}`);
+  if (then === "dealer-challan") redirect(`/depot/deliveries?last=${v.id}`);
   redirect(`/vouchers/v/${v.id}`);
 }
 

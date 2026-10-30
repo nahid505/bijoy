@@ -17,7 +17,7 @@ import {
 } from "@/components/voucher-forms";
 import type { AppContext } from "./auth";
 import { canChangeEntryDate } from "./entry-date";
-import { isDepot } from "@/lib/depot";
+import { isDepot, commissionPerUnit } from "@/lib/depot";
 import { balancesBefore } from "./services/ledger";
 import { availableBatches } from "./services/inventory";
 import { saveDepotVoucherAction, saveVoucherAction } from "./actions/vouchers";
@@ -41,24 +41,69 @@ export async function accountOptions(businessId: string, where: Prisma.AccountWh
  * Units, warehouses, batches and products for inventory forms. With `productIds` only those products
  * are loaded (voucher forms search the rest on demand); without it, every active product (POS tiles).
  */
-export async function inventoryOptions(businessId: string, opts: { productIds?: string[] } = {}) {
+export async function inventoryOptions(businessId: string, opts: { productIds?: string[]; includeProductIds?: string[]; book?: BookKey } = {}) {
   const today = new Date(`${toDateInput()}T00:00:00.000Z`);
-  const [products, units, warehouses, batches] = await Promise.all([
-    // without ids (POS tiles): general products only — depot products are never sold at the POS
-    prisma.product.findMany({ where: opts.productIds ? { businessId, id: { in: [...new Set(opts.productIds)] } } : { businessId, isActive: true, isDepotProduct: false }, orderBy: { name: "asc" } }),
+  const isDepotProduct = opts.book === "DEPOT";
+  let where: Prisma.ProductWhereInput = opts.productIds
+    ? { businessId, id: { in: [...new Set(opts.productIds)] } }
+    : opts.includeProductIds?.length
+      ? { businessId, isActive: true, OR: [{ isDepotProduct }, { id: { in: opts.includeProductIds } }] }
+      : { businessId, isActive: true, isDepotProduct };
+
+  if (!opts.productIds && isDepotProduct) {
+    const hasDepot = await prisma.product.count({ where: { businessId, isActive: true, isDepotProduct: true } });
+    if (hasDepot === 0) {
+      where = opts.includeProductIds?.length
+        ? { businessId, isActive: true, OR: [{ id: { in: opts.includeProductIds } }, { isActive: true }] }
+        : { businessId, isActive: true };
+    }
+  }
+
+  const [products, units, warehouses, batches, categories] = await Promise.all([
+    // without ids (POS tiles): depot products for depot book, general products for general book
+    prisma.product.findMany({
+      where,
+      include: { category: { select: { id: true, name: true } } },
+      orderBy: { name: "asc" },
+    }),
     prisma.unit.findMany({ where: { businessId }, orderBy: { name: "asc" } }),
     prisma.warehouse.findMany({ where: { businessId }, orderBy: [{ isDefault: "desc" }, { name: "asc" }] }),
     availableBatches(prisma, businessId),
+    prisma.category.findMany({ where: { businessId }, orderBy: { name: "asc" } }),
   ]);
   return {
     products: products.map((p) => ({
-      id: p.id, name: p.name, code: p.code, barcode: p.barcode, unitId: p.unitId, trackBatch: p.trackBatch,
-      salePrice: num(p.salePrice), wholesalePrice: num(p.wholesalePrice), purchasePrice: num(p.purchasePrice), avgCost: num(p.avgCost), stock: num(p.stock),
+      id: p.id,
+      name: p.name,
+      code: p.code,
+      barcode: p.barcode,
+      unitId: p.unitId,
+      trackBatch: p.trackBatch,
+      categoryId: p.categoryId,
+      categoryName: p.category?.name ?? null,
+      salePrice: num(p.salePrice),
+      wholesalePrice: num(p.wholesalePrice),
+      purchasePrice: num(p.purchasePrice),
+      avgCost: num(p.avgCost),
+      stock: num(p.stock),
+      ...(p.depotCommissionRate !== null && p.depotCommissionRate !== undefined
+        ? {
+            depotCommissionRate: commissionPerUnit({
+              depotCommissionType: p.depotCommissionType,
+              depotCommissionRate: num(p.depotCommissionRate),
+              purchasePrice: num(p.purchasePrice),
+            }),
+          }
+        : {}),
     })),
+    categories: categories.map((c) => ({ id: c.id, name: c.name })),
     units: units.map((u) => ({ id: u.id, name: u.name, baseUnitId: u.baseUnitId, factor: num(u.factor) })),
     warehouses: warehouses.map((w) => ({ id: w.id, name: w.name })),
     batches: batches.map((b) => ({
-      productId: b.productId, warehouseId: b.warehouseId, batchNo: b.batchNo, quantity: b.quantity,
+      productId: b.productId,
+      warehouseId: b.warehouseId,
+      batchNo: b.batchNo,
+      quantity: b.quantity,
       expiryDate: b.expiryDate ? toDateInput(b.expiryDate) : null,
       daysLeft: b.expiryDate ? daysBetween(today, b.expiryDate) : null,
     })),
@@ -156,14 +201,31 @@ export async function VoucherEditor({
         warehouseId: "", discount: 0, vatPercent: type === "SALES" ? ctx.business.defaultVatPercent : 0, dueDate: "", returnOfId: "", returnOfNo: "", payments: [], items: [],
       };
     }
+    const isDepotStockIn = depot && type === "PURCHASE";
     // only the party and products already on the voucher are sent; the pickers search the rest
     const [parties, cashAccounts, inv] = await Promise.all([
       defaults.partyAccountId ? searchParties(businessId, partyKind, "", { accountIds: [defaults.partyAccountId], allowed: partyKind === "CUSTOMER" ? ctx.partyScope.customers : ctx.partyScope.suppliers, dealer: depot && partyKind === "CUSTOMER", book }) : Promise.resolve([]),
       accountOptions(businessId, { kind: { in: ["CASH", "BANK"] }, ...accountScopeWhere(ctx) }, true, false, book),
-      inventoryOptions(businessId, { productIds: defaults.items.map((i) => i.productId) }),
+      inventoryOptions(businessId, isDepotStockIn ? { book, includeProductIds: defaults.items.map((i) => i.productId) } : { productIds: defaults.items.map((i) => i.productId) }),
     ]);
     if (defaults.partyAccountId && parties.length === 0) defaults = { ...defaults, partyAccountId: "" }; // ?party= of another business / kind
-    return <TradeVoucherForm kind={type} action={action} parties={parties} cashAccounts={cashAccounts} {...warehousesFor(ctx, inv, [defaults.warehouseId])} defaults={defaults} currency={currency} cancelHref={cancelHref} allowExpiredSale={ctx.business.allowExpiredSale} showFree={isDepot(ctx.business.businessType) && (type === "PURCHASE" || type === "SALES")} book={pickerBook} />;
+    return (
+      <TradeVoucherForm
+        kind={type}
+        action={action}
+        parties={parties}
+        cashAccounts={cashAccounts}
+        {...warehousesFor(ctx, inv, [defaults.warehouseId])}
+        defaults={defaults}
+        currency={currency}
+        cancelHref={cancelHref}
+        allowExpiredSale={ctx.business.allowExpiredSale}
+        showFree={isDepot(ctx.business.businessType) && (type === "PURCHASE" || type === "SALES")}
+        book={pickerBook}
+        categories={inv.categories}
+        productGrid={isDepotStockIn}
+      />
+    );
   }
 
   if (type === "RECEIPT" || type === "PAYMENT") {

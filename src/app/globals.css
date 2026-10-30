@@ -95,9 +95,9 @@ html[data-lang-pending] body {
   .label { @apply mb-1 block text-xs font-semibold tracking-wide text-slate-600; }
 
   .panel-head {
-    @apply flex items-center justify-between gap-3 border-b border-rule bg-ink-50/60 px-4 py-2.5;
+    @apply flex items-center justify-between gap-3 border-b border-rule bg-ink-50/60 px-4 py-3 sm:py-2.5;
   }
-  .panel-title { @apply text-sm font-semibold text-ink-800; }
+  .panel-title { @apply text-base sm:text-sm font-bold sm:font-semibold text-ink-800 leading-snug; }
   .card { @apply panel; }
 
   /* Ruled ledger table */
@@ -156,6 +156,11 @@ html[data-lang-pending] body {
   /* depot dealer challan: the free-quantity highlight must survive printing */
   #dealer-lines, #dealer-lines *, .challan-slip, .challan-slip * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   #dealer-lines tr { break-inside: avoid; }
+  /* dealer challan print table: solid black borders for clear paper output */
+  .print-challan-table { border-collapse: collapse !important; width: 100%; border: 1.5px solid #000 !important; }
+  .print-challan-table th, .print-challan-table td { border: 1px solid #000 !important; padding: 4px 6px !important; }
+  .print-challan-table tr { break-inside: avoid; }
+  .print-challan-table thead { display: table-header-group; }
   /* POS slip (80 mm roll): page size set by the page itself from the slip height; no frame, full width */
   .challan-slip { width: 100% !important; margin: 0 !important; padding: 0 !important; font-size: 10.5px; }
   .challan-slip li { break-inside: avoid; }

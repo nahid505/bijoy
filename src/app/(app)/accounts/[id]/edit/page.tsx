@@ -28,7 +28,7 @@ export default async function EditAccountPage({ params }: { params: Promise<{ id
           groups={groups}
           lockGroup={a.isSystem}
           cancelHref={`/accounts/${a.id}`}
-          defaults={{ name: a.name, code: a.code, groupId: a.groupId, description: a.description, bankName: a.bankName, accountNumber: a.accountNumber, openingBalance: Math.abs(opening), openingSide: opening < 0 ? "CR" : "DR" }}
+          defaults={{ name: a.name, code: a.code, groupId: a.groupId, description: a.description, bankName: a.bankName, accountNumber: a.accountNumber, openingBalance: Math.abs(opening), openingSide: opening < 0 ? "CR" : "DR", imageUrl: a.imageUrl }}
         />
       </section>
     </>

@@ -40,7 +40,15 @@ async function hasActivity(tx: Tx, businessId: string, accountId: string) {
 export async function saveParty(ctx: Ctx, kind: PartyKind, input: PartyInput, id?: string, opts: { dealer?: boolean } = {}) {
   return prisma.$transaction(async (tx) => {
     const cfg = PARTY[kind];
-    const base = { name: input.name, mobile: input.mobile, email: input.email, address: input.address, notes: input.notes, creditDays: input.creditDays };
+    const base = {
+      name: input.name,
+      mobile: input.mobile,
+      email: input.email,
+      address: input.address,
+      notes: input.notes,
+      creditDays: input.creditDays,
+      ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
+    };
     const data = kind === "CUSTOMER" ? { ...base, creditLimit: input.creditLimit, groupName: input.groupName ?? null, ...(input.route !== undefined ? { route: input.route } : {}), ...(input.ownerName !== undefined ? { ownerName: input.ownerName } : {}) } : base;
     /** the ledger of a dealer reads "shop (owner)", so vouchers, statements and pickers show both names */
     const ledgerName = (dealer: boolean, ownerName?: string | null) => (dealer ? dealerLabel(input.name, ownerName) : input.name);
@@ -59,11 +67,24 @@ export async function saveParty(ctx: Ctx, kind: PartyKind, input: PartyInput, id
       const stored = existing as { isDepotDealer?: boolean; ownerName?: string | null };
       const owner = input.ownerName !== undefined ? input.ownerName : stored.ownerName;
       const dealer = !!stored.isDepotDealer;
-      await tx.account.update({ where: { id: accountId }, data: { name: ledgerName(dealer, owner) } });
+      await tx.account.update({
+        where: { id: accountId },
+        data: {
+          name: ledgerName(dealer, owner),
+          ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
+        },
+      });
     } else {
       const group = await groupByKey(tx, ctx.businessId, cfg.group);
       const account = await tx.account.create({
-        data: { businessId: ctx.businessId, groupId: group.id, nature: group.nature, name: ledgerName(kind === "CUSTOMER" && !!opts.dealer, input.ownerName), kind: kind as AccountKind },
+        data: {
+          businessId: ctx.businessId,
+          groupId: group.id,
+          nature: group.nature,
+          name: ledgerName(kind === "CUSTOMER" && !!opts.dealer, input.ownerName),
+          kind: kind as AccountKind,
+          imageUrl: input.imageUrl ?? null,
+        },
       });
       accountId = account.id;
       const party =
@@ -183,6 +204,7 @@ export interface AccountInput {
   accountNumber: string | null;
   openingBalance: number;
   openingSide: "DR" | "CR";
+  imageUrl?: string | null;
 }
 
 export async function saveAccount(ctx: Ctx, input: AccountInput, id?: string) {
@@ -196,6 +218,7 @@ export async function saveAccount(ctx: Ctx, input: AccountInput, id?: string) {
       description: input.description,
       bankName: kind === "BANK" ? input.bankName : null,
       accountNumber: kind === "BANK" ? input.accountNumber : null,
+      ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
     };
     let accountId: string;
     if (id) {

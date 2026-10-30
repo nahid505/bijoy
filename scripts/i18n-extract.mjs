@@ -16,6 +16,10 @@ const SKIP_FILES = [
   "src/lib/words.ts", // amount in words (Bangla number words)
   "src/lib/sms-text.ts", // SMS bodies sent to customers / suppliers (their wording is the business's)
   "src/lib/screen-translate.ts", // the on-screen translator (Bangla only in its patterns and examples)
+  "src/lib/mail.ts", // email bodies sent to users
+  "src/lib/sms.ts", // SMS bodies sent to users
+  "src/lib/ledger-upload.ts", // ledger image uploads
+  "src/components/ledger-avatar.tsx", // avatar color mapping & letter extraction
 ];
 const DATA_FILES = ["src/lib/business-defaults.json"];
 

@@ -6,6 +6,7 @@ import { prisma, num } from "@/lib/db";
 import { round2 } from "@/lib/calc";
 import { formatDate, formatDrCr, formatMoney, toDateInput } from "@/lib/format";
 import { ActionButton, PrintButton } from "@/components/forms";
+import { LedgerAvatar } from "@/components/ledger-avatar";
 import { PartyForm } from "@/components/party-form";
 import { ReportPage } from "@/components/report-page";
 import { Badge, EmptyState, FilterBar, FilterField, PageHeader, Pagination, SortHeader, TableWrap } from "@/components/ui";
@@ -159,7 +160,18 @@ export async function PartyListPage({ kind: pageKind, searchParams }: { kind: Pa
                   return (
                     <tr key={r.id}>
                       {smsBulk && <td>{r.mobile && <input type="checkbox" name="sms-customer" value={r.id} aria-label={`${r.name} নির্বাচন`} />}</td>}
-                      <td><Link prefetch={false} href={`${cfg.base}/${r.id}`} className="font-semibold text-brand-700 hover:underline">{r.name}</Link>{partyName(r) !== r.name.trim() && <span className="text-slate-600"> (<span data-keep-lang>{(r as { ownerName?: string | null }).ownerName?.trim()}</span>)</span>}{!r.isActive && <> <Badge>{t("নিষ্ক্রিয়")}</Badge></>}</td>
+                      <td>
+                        <div className="flex items-center gap-2.5">
+                          <Link prefetch={false} href={`${cfg.base}/${r.id}`} className="shrink-0">
+                            <LedgerAvatar name={r.name} imageUrl={r.imageUrl} size="sm" />
+                          </Link>
+                          <div className="min-w-0">
+                            <Link prefetch={false} href={`${cfg.base}/${r.id}`} className="font-semibold text-brand-700 hover:underline">{r.name}</Link>
+                            {partyName(r) !== r.name.trim() && <span className="text-slate-600"> (<span data-keep-lang>{(r as { ownerName?: string | null }).ownerName?.trim()}</span>)</span>}
+                            {!r.isActive && <> <Badge>{t("নিষ্ক্রিয়")}</Badge></>}
+                          </div>
+                        </div>
+                      </td>
                       <td>{r.mobile ?? "—"}</td>
                       {isCustomer && <td className="text-xs">{groupOf(r) ? <Link prefetch={false} href={`${cfg.base}?group=${encodeURIComponent(groupOf(r)!)}`} className="hover:underline">{groupOf(r)}</Link> : "—"}</td>}
                       {dealer && <td className="text-xs">{(r as { route?: string | null }).route ?? "—"}</td>}
@@ -219,8 +231,6 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
   ]);
   const aging = agingRows[0];
   const byTypeRow = (type: string) => byType.find((x) => x.type === type);
-  const totalDebit = round2(byType.filter((x) => x.type !== "OPENING").reduce((s, x) => s + num(x.debit), 0));
-  const totalCredit = round2(byType.filter((x) => x.type !== "OPENING").reduce((s, x) => s + num(x.credit), 0));
   const balance = bal.get(party.accountId) ?? 0;
   const trade =
     kind === "CUSTOMER" ? round2(num(byTypeRow("SALES")?.debit) - num(byTypeRow("SALES_RETURN")?.credit)) : round2(num(byTypeRow("PURCHASE")?.credit) - num(byTypeRow("PURCHASE_RETURN")?.debit));
@@ -242,28 +252,26 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
     <>
       <section className="panel mb-4">
         <div className="grid gap-0 lg:grid-cols-4">
-          <dl className="space-y-1 border-b border-rule p-4 text-sm lg:border-b-0 lg:border-r">
-            <p className="text-base font-bold text-ink-900">{partyName(party)} {!party.isActive && <Badge>{t("নিষ্ক্রিয়")}</Badge>}</p>
-            {party.mobile && <p>📞 {party.mobile}</p>}
-            {party.email && <p>✉ {party.email}</p>}
-            {party.address && <p className="text-slate-600">{party.address}</p>}
+          <dl className="space-y-2 border-b border-rule p-4 text-sm lg:border-b-0 lg:border-r">
+            <div className="flex items-start gap-3">
+              <LedgerAvatar name={party.name} imageUrl={party.imageUrl} size="lg" />
+              <div className="min-w-0 flex-1">
+                <p className="text-base font-bold text-ink-900 leading-snug">{partyName(party)} {!party.isActive && <Badge>{t("নিষ্ক্রিয়")}</Badge>}</p>
+                {party.mobile && <p className="text-xs text-slate-600 mt-0.5">📞 {party.mobile}</p>}
+                {party.email && <p className="text-xs text-slate-600">✉ {party.email}</p>}
+                {party.address && <p className="text-xs text-slate-600">{party.address}</p>}
+              </div>
+            </div>
             <p className="pt-1 text-xs text-slate-500">
               {kind === "CUSTOMER" && <>{t("ক্রেডিট সীমা:")} <b>{creditLimit ? formatMoney(creditLimit, cur) : t("নেই")}</b> · </>}
               {t("পরিশোধের মেয়াদ:")} <b>{party.creditDays ? `${party.creditDays} ${t("দিন")}` : t("তাৎক্ষণিক")}</b>
             </p>
           </dl>
-          <div className="grid grid-cols-2 divide-x divide-y divide-rule sm:grid-cols-4 lg:col-span-3">
+          <div className="grid grid-cols-2 divide-x divide-y divide-rule sm:grid-cols-4 sm:divide-y-0 lg:col-span-3">
             <Fig label={t("প্রারম্ভিক ব্যালেন্স")} value={formatMoney(opening, cur)} />
             <Fig label={t(kind === "CUSTOMER" ? "মোট ইনভয়েস" : "মোট ক্রয় ইনভয়েস")} value={formatMoney(trade, cur)} />
             <Fig label={t(cfg.settledLabel)} value={formatMoney(settled, cur)} tone="text-brand-700" />
             <Fig label={t(cfg.balanceLabel)} value={due >= 0 ? formatMoney(due, cur) : `${formatMoney(-due, cur)} ${t("অগ্রিম")}`} tone={due > 0 ? "cr" : "text-brand-700"} big />
-            <Fig label={t("মোট ডেবিট")} value={formatMoney(totalDebit, cur)} tone="dr" />
-            <Fig label={t("মোট ক্রেডিট")} value={formatMoney(totalCredit, cur)} tone="cr" />
-            <Fig label={t("মেয়াদোত্তীর্ণ বকেয়া")} value={formatMoney(aging?.overdue ?? 0, cur)} tone={(aging?.overdue ?? 0) > 0 ? "cr" : ""} big />
-            <Fig
-              label={kind === "CUSTOMER" && creditLimit ? t("অবশিষ্ট ক্রেডিট") : t("বয়স ০-৩০ / ৯০+ দিন")}
-              value={kind === "CUSTOMER" && creditLimit ? formatMoney(Math.max(creditLimit - due, 0), cur) : `${formatMoney(aging?.buckets["0-30"] ?? 0, cur)} / ${formatMoney(aging?.buckets["90+"] ?? 0, cur)}`}
-            />
           </div>
         </div>
       </section>
@@ -369,11 +377,7 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
     );
   } else {
     body = !aging || aging.openItems.length === 0 ? <EmptyState message={t("কোনো বকেয়া নেই ✅")} /> : (
-      <>
-        <div className="grid grid-cols-2 divide-x divide-y divide-rule border-b border-rule sm:grid-cols-4 sm:divide-y-0">
-          {AGING_BUCKETS.map((b) => <Fig key={b} label={t("{0} দিন", { 0: b })} value={formatMoney(aging.buckets[b], cur)} tone={b === "90+" && aging.buckets[b] > 0 ? "cr" : ""} />)}
-        </div>
-        <TableWrap>
+      <TableWrap>
           <table className="table">
             <thead><tr><th>{t("তারিখ")}</th><th>{t("ভাউচার")}</th><th>{t("শেষ তারিখ")}</th><th className="num">{t("বয়স (দিন)")}</th><th className="num">{t("মূল টাকা")}</th><th className="num">{t("বকেয়া")}</th><th>{t("অবস্থা")}</th></tr></thead>
             <tbody>
@@ -391,7 +395,6 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
             </tbody>
           </table>
         </TableWrap>
-      </>
     );
   }
 
@@ -492,15 +495,17 @@ export async function PartyStatementPrint({ kind: pageKind, id, searchParams }: 
           </div>
         </header>
         <section className="flex justify-between gap-6 py-3">
-          <div>
-            <p className="text-xs text-slate-500">{cfg.title}</p>
-            <p className="text-base font-semibold">{partyName(party)}</p>
-            <p className="text-xs text-slate-600">{[party.mobile, party.address].filter(Boolean).join(" · ")}</p>
+          <div className="flex items-center gap-3">
+            <LedgerAvatar name={party.name} imageUrl={party.imageUrl} size="md" />
+            <div>
+              <p className="text-xs text-slate-500">{cfg.title}</p>
+              <p className="text-base font-semibold">{partyName(party)}</p>
+              <p className="text-xs text-slate-600">{[party.mobile, party.address].filter(Boolean).join(" · ")}</p>
+            </div>
           </div>
           <div className="text-right">
             <p className="text-xs text-slate-500">সমাপনী {cfg.balanceLabel}</p>
             <p className="text-xl font-bold tabular-nums">{formatMoney(closingDue, cur)}</p>
-            {!!aging?.overdue && <p className="text-xs font-semibold text-credit">মেয়াদোত্তীর্ণ: {formatMoney(aging.overdue, cur)}</p>}
           </div>
         </section>
         <div className="overflow-x-auto print:overflow-visible"><table className="w-full border-collapse text-xs">

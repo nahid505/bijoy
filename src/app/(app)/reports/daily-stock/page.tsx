@@ -80,40 +80,43 @@ export default async function DailyStockPage({ searchParams }: { searchParams: S
           {d.rows.length === 0 ? (
             <p className="rounded border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500" id="daily-stock-empty">{t("এই দিনে কোনো মজুদ বা লেনদেন নেই")}</p>
           ) : (
-            <div className="overflow-x-auto print:overflow-visible">
+            <div className="overflow-x-auto relative print:overflow-visible">
               <table className="w-full border-collapse text-sm print:text-[10px]" id="daily-stock-table">
                 <thead className="bg-slate-50 text-xs font-semibold text-slate-700 print:bg-white">
                   <tr>
-                    <th className={`${CELL} w-12 text-center`}>{t("নং")}</th>
-                    <th className={`${CELL} text-left`}>{t("পণ্যের নাম")}</th>
-                    <th className={`${CELL} w-36 text-right`}>{t("পূর্বের মজুদ")}</th>
-                    <th className={`${CELL} w-36 text-right`}>{t("উৎপাদন / ক্রয়")}</th>
-                    <th className={`${CELL} w-36 text-right`}>{t("বিক্রয় / ব্যবহার")}</th>
-                    <th className={`${CELL} w-36 text-right`}>{t("আজকের মজুদ")}</th>
+                    <th className={`${CELL} sticky left-0 z-30 bg-slate-50 w-10 min-w-[40px] max-w-[40px] text-center print:static print:bg-white`}>{t("নং")}</th>
+                    <th className={`${CELL} sticky left-[40px] z-30 bg-slate-50 min-w-[120px] max-w-[150px] sm:max-w-none text-left border-r border-gray-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] print:static print:bg-white print:shadow-none`}>{t("পণ্যের নাম")}</th>
+                    <th className={`${CELL} w-36 min-w-[110px] text-right`}>{t("পূর্বের মজুদ")}</th>
+                    <th className={`${CELL} w-36 min-w-[110px] text-right`}>{t("উৎপাদন / ক্রয়")}</th>
+                    <th className={`${CELL} w-36 min-w-[110px] text-right`}>{t("বিক্রয় / ব্যবহার")}</th>
+                    <th className={`${CELL} w-36 min-w-[110px] text-right`}>{t("আজকের মজুদ")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {d.rows.map((r, i) => (
-                    <tr key={r.id} className="hover:bg-slate-50 print:break-inside-avoid">
-                      <td className={`${CELL} text-center tabular-nums`}>{toBnDigits(i + 1)}</td>
-                      <td className={CELL}>
-                        <Link prefetch={false} href={`/products/${r.id}`} className="text-ink-900 hover:underline print:no-underline">{r.name}</Link>
+                    <tr key={r.id} className="group hover:bg-slate-50 print:break-inside-avoid">
+                      <td className={`${CELL} sticky left-0 z-20 bg-white group-hover:bg-slate-50 w-10 min-w-[40px] max-w-[40px] text-center tabular-nums print:static`}>{toBnDigits(i + 1)}</td>
+                      <td className={`${CELL} sticky left-[40px] z-20 bg-white group-hover:bg-slate-50 min-w-[120px] max-w-[150px] sm:max-w-none border-r border-gray-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] print:static print:shadow-none`}>
+                        <Link prefetch={false} href={`/products/${r.id}`} className="text-ink-900 hover:underline font-medium break-words print:no-underline">{r.name}</Link>
                         {r.code && <span className="ml-1 text-xs text-slate-400 print:text-[9px]">({r.code})</span>}
                       </td>
-                      <td className={`${CELL} text-right tabular-nums`}>{qty(r.opening, r.unit)}</td>
-                      <td className={`${CELL} text-right tabular-nums text-emerald-700 print:text-black`}>{qty(r.in, r.unit)}</td>
-                      <td className={`${CELL} text-right tabular-nums text-red-700 print:text-black`}>{qty(r.out, r.unit)}</td>
-                      <td className={`${CELL} text-right font-semibold tabular-nums ${r.closing < 0 ? "text-credit" : ""}`}>{formatQty(r.closing)} {r.unit}</td>
+                      <td className={`${CELL} text-right tabular-nums whitespace-nowrap`}>{qty(r.opening, r.unit)}</td>
+                      <td className={`${CELL} text-right tabular-nums text-emerald-700 whitespace-nowrap print:text-black`}>{qty(r.in, r.unit)}</td>
+                      <td className={`${CELL} text-right tabular-nums text-red-700 whitespace-nowrap print:text-black`}>{qty(r.out, r.unit)}</td>
+                      <td className={`${CELL} text-right font-semibold tabular-nums whitespace-nowrap ${r.closing < 0 ? "text-credit" : ""}`}>{formatQty(r.closing)} {r.unit}</td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot className="bg-slate-50 font-bold print:bg-white" id="daily-stock-totals">
                   <tr>
-                    <td colSpan={2} className={`${CELL} border-t-2 border-t-slate-600 text-right`}>{t("মোট ({0} টি পণ্য)", { 0: toBnDigits(d.rows.length) })}</td>
-                    <td className={`${CELL} border-t-2 border-t-slate-600 text-right tabular-nums`}>{total(d.totals.opening)}</td>
-                    <td className={`${CELL} border-t-2 border-t-slate-600 text-right tabular-nums`}>{total(d.totals.in)}</td>
-                    <td className={`${CELL} border-t-2 border-t-slate-600 text-right tabular-nums`}>{total(d.totals.out)}</td>
-                    <td className={`${CELL} border-t-2 border-t-slate-600 text-right tabular-nums`}>{total(d.totals.closing)}</td>
+                    <td className={`${CELL} border-r-0 border-t-2 border-t-slate-600 sticky left-0 z-20 bg-slate-50 w-10 min-w-[40px] max-w-[40px] print:static`} />
+                    <td className={`${CELL} border-l-0 border-t-2 border-t-slate-600 text-right sticky left-[40px] z-20 bg-slate-50 min-w-[120px] max-w-[150px] sm:max-w-none border-r border-gray-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] print:static print:shadow-none`}>
+                      {t("মোট ({0} টি পণ্য)", { 0: toBnDigits(d.rows.length) })}
+                    </td>
+                    <td className={`${CELL} border-t-2 border-t-slate-600 text-right tabular-nums whitespace-nowrap`}>{total(d.totals.opening)}</td>
+                    <td className={`${CELL} border-t-2 border-t-slate-600 text-right tabular-nums whitespace-nowrap`}>{total(d.totals.in)}</td>
+                    <td className={`${CELL} border-t-2 border-t-slate-600 text-right tabular-nums whitespace-nowrap`}>{total(d.totals.out)}</td>
+                    <td className={`${CELL} border-t-2 border-t-slate-600 text-right tabular-nums whitespace-nowrap`}>{total(d.totals.closing)}</td>
                   </tr>
                 </tfoot>
               </table>

@@ -63,12 +63,7 @@ export async function ledgerReport(ctx: AppContext, p: ReportParams, accountIds:
       { key: "balance", label: "ব্যালেন্স", format: "drcr" },
     ],
     rows,
-    summary: [
-      { label: "প্রারম্ভিক", value: formatDrCr(st.opening, cur) },
-      { label: "মোট ডেবিট", value: formatMoney(st.totalDebit, cur), tone: "blue" },
-      { label: "মোট ক্রেডিট", value: formatMoney(st.totalCredit, cur), tone: "red" },
-      { label: "সমাপনী", value: formatDrCr(st.closing, cur), tone: "green" },
-    ],
+    summary: [],
   };
 }
 

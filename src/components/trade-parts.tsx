@@ -38,6 +38,8 @@ export interface ProductOption {
   trackBatch: boolean;
   /** depot: commission per base unit for a DO release */
   depotCommissionRate?: number;
+  categoryId?: string | null;
+  categoryName?: string | null;
 }
 export interface WarehouseOption {
   id: string;

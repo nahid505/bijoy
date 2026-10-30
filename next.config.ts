@@ -20,6 +20,14 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
+  async redirects() {
+    return [
+      { source: "/auto-rice-mill/paddy-purchase", destination: "/purchases/paddy/new", permanent: false },
+      { source: "/purchases/new", destination: "/vouchers/purchase/new", permanent: false },
+      { source: "/sales/new", destination: "/vouchers/sales/new", permanent: false },
+      { source: "/auto-rice-mill/milling", destination: "/production/new", permanent: false },
+    ];
+  },
 };
 
 export default nextConfig;

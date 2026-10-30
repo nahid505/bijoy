@@ -5,7 +5,7 @@
 //   ডিপো কালেকশন (মার্কেট সেলস) dealer (or cash sale), rate = sale rate, collected now → the rest is market due
 // Totals update while typing; the server recalculates when saving.
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { EntryDateInput } from "@/components/entry-date-input";
 import { ActionForm, Field, FieldError, SubmitButton, type FormAction } from "@/components/forms";
 import { SubmitThenPrint } from "@/components/voucher-forms";
@@ -13,7 +13,8 @@ import { SearchSelect } from "@/components/search-select";
 import { SearchableAccountSelect } from "@/components/account-select";
 import type { AccountOption, PartyOption, ProductOption, WarehouseOption } from "@/components/trade-parts";
 import { challanTotals, DEPOT_MODE_LABELS, depotTotals, type DepotMode } from "@/lib/depot";
-import { formatMoney, formatQty } from "@/lib/format";
+import { formatMoney, formatQty, toBnDigits } from "@/lib/format";
+import { round2 } from "@/lib/calc";
 import { useT } from "@/components/lang";
 
 export interface DepotLineState {
@@ -52,11 +53,25 @@ const purchaseRate = (p: ProductOption | null) => (p && p.purchasePrice > 0 ? St
 const rateFor = (mode: DepotMode, p: ProductOption | null) =>
   p ? (mode === "COMPANY_PAID" ? String(p.depotCommissionRate ?? 0) : p.salePrice > 0 ? String(p.salePrice) : purchaseRate(p)) : "";
 
-export function DepotDeliveryForm({ action, defaults, warehouses, cashAccounts, multiWarehouse, currency, dateLocked, lockMode, cancelHref }: {
+export function DepotDeliveryForm({
+  action,
+  defaults,
+  warehouses,
+  cashAccounts,
+  products = [],
+  categories = [],
+  multiWarehouse,
+  currency,
+  dateLocked,
+  lockMode,
+  cancelHref,
+}: {
   action: FormAction;
   defaults: DepotDefaults;
   warehouses: WarehouseOption[];
   cashAccounts: AccountOption[];
+  products?: ProductOption[];
+  categories?: { id: string; name: string }[];
   multiWarehouse: boolean;
   currency: string;
   dateLocked?: boolean;
@@ -77,6 +92,83 @@ export function DepotDeliveryForm({ action, defaults, warehouses, cashAccounts, 
   const ch = challanTotals(used.map((l) => ({ quantity: n(l.quantity), challanRate: n(challanOf(l)) })));
   const cashSale = !doRelease && !f.dealer;
   const paid = doRelease ? 0 : cashSale ? tTotals.total : Math.min(n(f.paidAmount), tTotals.total);
+
+  const [q, setQ] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "F2") {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const results = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    let list = products;
+    if (selectedCategory) {
+      list = list.filter((p) => p.categoryId === selectedCategory);
+    }
+    if (s) {
+      list = list.filter((p) =>
+        `${p.name} ${p.code ?? ""} ${p.barcode ?? ""}`.toLowerCase().includes(s)
+      );
+    }
+    return list.slice(0, 36);
+  }, [q, selectedCategory, products]);
+
+  function addProductFromGrid(p: ProductOption) {
+    setF((x) => {
+      if (x.lines.length === 1 && !x.lines[0].product && !x.lines[0].quantity) {
+        return {
+          ...x,
+          lines: [
+            {
+              key: x.lines[0].key,
+              product: p,
+              quantity: "1",
+              freeQuantity: "",
+              rate: rateFor(x.mode, p),
+              challanRate: purchaseRate(p),
+            },
+          ],
+        };
+      }
+      const hit = x.lines.find((l) => l.product?.id === p.id);
+      if (hit) {
+        return {
+          ...x,
+          lines: x.lines.map((l) =>
+            l.key === hit.key
+              ? { ...l, quantity: String(round2(n(l.quantity) + 1)) }
+              : l
+          ),
+        };
+      }
+      return {
+        ...x,
+        lines: [
+          ...x.lines,
+          {
+            key: ++seq,
+            product: p,
+            quantity: "1",
+            freeQuantity: "",
+            rate: rateFor(x.mode, p),
+            challanRate: purchaseRate(p),
+          },
+        ],
+      };
+    });
+    setQ("");
+    searchRef.current?.focus();
+  }
+
   const payload = JSON.stringify({
     mode: f.mode, date: f.date, reference: null, narration: null, doNumber: f.doNumber || null,
     companyAccountId: doRelease ? f.company?.id ?? null : null, dealerAccountId: f.dealer?.id ?? null,
@@ -139,77 +231,333 @@ export function DepotDeliveryForm({ action, defaults, warehouses, cashAccounts, 
         <Field label="ড্রাইভার" name="driverName"><input id="driverName" className="input" maxLength={80} value={f.driverName} onChange={(e) => set("driverName", e.target.value)} placeholder={t("ড্রাইভারের নাম")} /></Field>
       </div>
 
-      <section className="min-w-0 rounded-lg border border-rule" aria-label={t("পণ্য")}>
-        <div className="overflow-x-auto">
-          <table className={`table ${doRelease ? "min-w-[62rem]" : "min-w-[48rem]"}`}>
-            <thead>
-              <tr>
-                <th className="w-[30%]">{t("পণ্য")}</th>
-                <th className="text-right">{t("মূল পরিমাণ")}</th>
-                <th className="text-right">{t("ফ্রি পরিমাণ")}</th>
-                <th className="text-right" title={t("পণ্যের সর্বশেষ ক্রয়মূল্য — চালানে ছাপা হবে")}>{t("দর (ক্রয়মূল্য)")}</th>
-                <th className="text-right">{t("মোট টাকা")}</th>
-                {doRelease && <th className="text-right" title={t("ডিপোর অভ্যন্তরীণ — ডিলার কপিতে ছাপা হবে না")}>{t("কমিশন হার")}</th>}
-                {doRelease && <th className="text-right">{t("কমিশন")}</th>}
-                <th className="w-10" />
-              </tr>
-            </thead>
-            <tbody>
-              {f.lines.map((l, i) => (
-                <tr key={l.key}>
-                  <td>
-                    <SearchSelect kind="products" book="depot" id={`line-${i}`} value={l.product} onChange={(p) => setLine(l.key, { product: p, rate: rateFor(f.mode, p), challanRate: purchaseRate(p) })} placeholder={t("পণ্য খুঁজুন")} currency={currency} />
-                    <FieldError name={`lines.${i}.productId`} />
-                    {l.product && <span className="mt-0.5 block text-[11px] text-slate-500">{t("স্টক")}: {formatQty(l.product.stock)}{n(l.freeQuantity) > 0 && <> · {t("স্টক থেকে বের হবে")}: {formatQty(n(l.quantity) + n(l.freeQuantity))}</>}</span>}
-                  </td>
-                  <td>
-                    <input aria-label={t("পরিমাণ")} className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="any" value={l.quantity} onChange={(e) => setLine(l.key, { quantity: e.target.value })} />
-                    <FieldError name={`lines.${i}.quantity`} />
-                  </td>
-                  <td>
-                    <input aria-label={t("ফ্রি পরিমাণ")} className="input-num border-amber-300 bg-amber-50" type="text" inputMode="decimal" data-numeric min="0" step="any" value={l.freeQuantity} onChange={(e) => setLine(l.key, { freeQuantity: e.target.value })} placeholder="০" />
-                    <FieldError name={`lines.${i}.freeQuantity`} />
-                  </td>
-                  <td>
-                    {doRelease ? (
-                      <input aria-label={t("দর (ক্রয়মূল্য)")} className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="0.01" value={l.challanRate} onChange={(e) => setLine(l.key, { challanRate: e.target.value })} />
-                    ) : (
-                      <input aria-label={t("দর (ক্রয়মূল্য)")} className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="0.01" value={l.rate} onChange={(e) => setLine(l.key, { rate: e.target.value })} />
-                    )}
-                    <FieldError name={`lines.${i}.${doRelease ? "challanRate" : "rate"}`} />
-                  </td>
-                  <td className="num font-semibold">{money(ch.amounts[used.indexOf(l)] ?? 0)}</td>
-                  {doRelease && (
-                    <td>
-                      <input aria-label={t("কমিশন হার")} className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="0.01" value={l.rate} onChange={(e) => setLine(l.key, { rate: e.target.value })} />
-                      <FieldError name={`lines.${i}.rate`} />
-                    </td>
-                  )}
-                  {doRelease && <td className="num text-slate-600">{money(tTotals.amounts[used.indexOf(l)] ?? 0)}</td>}
-                  <td>
-                    {f.lines.length > 1 && (
-                      <button type="button" className="btn-ghost px-2" aria-label={t("সারি মুছুন")} onClick={() => setF((x) => ({ ...x, lines: x.lines.filter((y) => y.key !== l.key) }))}>✕</button>
-                    )}
-                  </td>
-                </tr>
+      {/* ১. প্রোডাক্ট গ্রিড ও সার্চ ইন্টারফেস (POS Style Selection) */}
+      <section className="panel p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            ref={searchRef}
+            className="input flex-1 text-base"
+            placeholder={`🔍 ${t("পণ্যের নাম, কোড বা বারকোড স্ক্যান করুন — Enter")}  (F2)`}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              e.preventDefault();
+              const s = q.trim().toLowerCase();
+              const exact = products.find((p) => p.barcode?.toLowerCase() === s || p.code?.toLowerCase() === s);
+              const pick = exact ?? (results.length === 1 ? results[0] : undefined);
+              if (pick) addProductFromGrid(pick);
+            }}
+            aria-label={t("পণ্য খুঁজুন")}
+          />
+
+          <div className="flex items-center gap-1.5">
+            <select
+              className="input w-auto font-medium"
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              aria-label={t("পণ্যের গ্রুপ")}
+            >
+              <option value="">{t("সকল গ্রুপ")}</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
               ))}
-            </tbody>
-            <tfoot>
-              <tr className="font-semibold">
-                <td>{t("মোট")} <span className="block text-[11px] font-normal text-slate-500">{t("স্টক থেকে বের হবে")}: <span id="total-out">{formatQty(tTotals.stockOut)}</span></span></td>
-                <td className="num" id="total-qty">{formatQty(tTotals.quantity)}</td>
-                <td className="num text-amber-800" id="total-free">{formatQty(tTotals.free)}</td>
-                <td />
-                <td className="num" id="total-amount">{money(ch.total)}</td>
-                {doRelease && <td />}
-                {doRelease && <td className="num text-slate-600" id="total-commission">{money(tTotals.total)}</td>}
-                <td />
-              </tr>
-            </tfoot>
-          </table>
+            </select>
+          </div>
         </div>
-        <div className="border-t border-rule p-2">
-          <button type="button" className="btn-secondary btn-sm" onClick={() => setF((x) => ({ ...x, lines: [...x.lines, blankLine()] }))}>{t("+ আরেকটি পণ্য")}</button>
+
+        {/* প্রোডাক্ট কার্ডগুলোর গ্রিড */}
+        <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6 max-h-[380px] overflow-y-auto p-1">
+          {results.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => addProductFromGrid(p)}
+              className="group relative flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-2.5 text-left shadow-xs transition hover:border-brand-500 hover:bg-brand-50/50 hover:shadow-sm active:scale-[0.98]"
+            >
+              <div>
+                <div className="mb-1.5 flex items-center justify-between gap-1 flex-wrap">
+                  {p.code ? (
+                    <span className="inline-flex items-center rounded-md bg-blue-50 px-1.5 py-0.5 text-xs font-bold text-blue-700 ring-1 ring-inset ring-blue-600/20 tabular-nums">
+                      {t("কোড: {0}", { 0: p.code })}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
+                      {t("আইটেম")}
+                    </span>
+                  )}
+                  {p.categoryName && (
+                    <span className="truncate max-w-[80px] text-[10px] text-slate-400">
+                      {p.categoryName}
+                    </span>
+                  )}
+                </div>
+                <p className="line-clamp-2 text-xs font-bold text-slate-900 group-hover:text-brand-700">
+                  {p.name}
+                </p>
+              </div>
+              <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-baseline justify-between gap-1">
+                <p className="text-sm font-bold tabular-nums text-brand-700">
+                  {formatMoney(doRelease ? Number(p.depotCommissionRate ?? 0) : (p.salePrice || p.purchasePrice), currency)}
+                </p>
+                <p className="text-[10px] font-medium text-slate-500">
+                  {t("মজুদ")} {formatQty(p.stock)}
+                </p>
+              </div>
+            </button>
+          ))}
+          {results.length === 0 && (
+            <p className="col-span-full py-6 text-center text-sm text-slate-400">
+              {t("কোনো পণ্য পাওয়া যায়নি")}
+            </p>
+          )}
+        </div>
+      </section>
+
+      {/* ২. ডেলিভারি চালান পণ্য তালিকা (Cart Table) */}
+      <section className="panel overflow-hidden border border-slate-200 shadow-xs">
+        <div className="panel-head border-b border-slate-200 bg-slate-50/70 px-4 py-3 flex justify-between items-center">
+          <h2 className="panel-title flex items-center gap-2">
+            <span>{t("পণ্য তালিকা")}</span>
+            <span className="inline-flex items-center rounded-full bg-brand-100 px-2.5 py-0.5 text-xs font-bold text-brand-800">
+              {toBnDigits(f.lines.filter((l) => l.product || l.quantity).length)}
+            </span>
+          </h2>
+          {f.lines.length > 0 && (
+            <button
+              type="button"
+              className="btn-ghost btn-sm text-credit hover:bg-rose-50"
+              onClick={() => setF((x) => ({ ...x, lines: [] }))}
+            >
+              {t("সব মুছুন")}
+            </button>
+          )}
+        </div>
+
+        {f.lines.length === 0 ? (
+          <p className="px-4 py-12 text-center text-sm text-slate-400">
+            {t("উপরে গ্রিড থেকে পণ্য বেছে নিন অথবা কোড/বারকোড স্ক্যান করে তালিকায় যোগ করুন")}
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="table w-full border-collapse min-w-[48rem]">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-100 text-xs font-bold text-slate-700">
+                  <th className="w-10 px-3 py-3 text-center">#</th>
+                  <th className="min-w-48 px-3 py-3 text-left">{t("পণ্যের নাম ও কোড")}</th>
+                  <th className="w-36 px-3 py-3 text-center">{t("মূল পরিমাণ")}</th>
+                  <th className="w-28 px-3 py-3 text-center">{t("ফ্রি পরিমাণ")}</th>
+                  <th className="w-32 px-3 py-3 text-right" title={t("পণ্যের সর্বশেষ ক্রয়মূল্য — চালানে ছাপা হবে")}>
+                    {t("দর / রেট")}
+                  </th>
+                  <th className="w-36 px-3 py-3 text-right">{t("মোট টাকা")}</th>
+                  <th className="w-10 px-2 py-3 text-center" aria-label={t("অ্যাকশন")} />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 bg-white">
+                {f.lines.map((l, i) => {
+                  const short = l.product && (n(l.quantity) + n(l.freeQuantity)) > l.product.stock;
+
+                  return (
+                    <tr key={l.key} className="transition-colors hover:bg-slate-50/80">
+                      {/* # */}
+                      <td className="px-3 py-3 text-center text-xs font-semibold text-slate-500 tabular-nums">
+                        {toBnDigits(i + 1)}
+                      </td>
+
+                      {/* পণ্যের নাম ও কোড */}
+                      <td className="px-3 py-3">
+                        {l.product ? (
+                          <div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {l.product.code && (
+                                <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700 ring-1 ring-inset ring-blue-600/20 tabular-nums">
+                                  {l.product.code}
+                                </span>
+                              )}
+                              <span className="font-semibold text-slate-900 leading-snug">{l.product.name}</span>
+                            </div>
+                            <span className="mt-0.5 block text-[11px] text-slate-500">
+                              {t("স্টক")}: {formatQty(l.product.stock)}
+                              {n(l.freeQuantity) > 0 && (
+                                <> · {t("স্টক থেকে বের হবে")}: {formatQty(n(l.quantity) + n(l.freeQuantity))}</>
+                              )}
+                            </span>
+                            {short && (
+                              <p className="mt-0.5 text-[11px] font-medium text-credit">
+                                {t("মজুদ অপর্যাপ্ত")}
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <SearchSelect<ProductOption>
+                            kind="products"
+                            book="depot"
+                            id={`line-${i}`}
+                            value={l.product}
+                            onChange={(p) =>
+                              setLine(l.key, {
+                                product: p,
+                                rate: rateFor(f.mode, p),
+                                challanRate: purchaseRate(p),
+                              })
+                            }
+                            placeholder={t("পণ্য খুঁজুন")}
+                            currency={currency}
+                          />
+                        )}
+                        <FieldError name={`lines.${i}.productId`} />
+                      </td>
+
+                      {/* মূল পরিমাণ */}
+                      <td className="px-3 py-3">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-base font-bold text-slate-700 shadow-2xs hover:bg-slate-100 active:bg-slate-200"
+                            aria-label={t("কমান")}
+                            onClick={() =>
+                              setLine(l.key, {
+                                quantity: String(Math.max(round2(n(l.quantity) - 1), 0.001)),
+                              })
+                            }
+                          >
+                            −
+                          </button>
+                          <input
+                            aria-label={t("পরিমাণ")}
+                            className="input-num h-8 w-20 text-center font-bold text-slate-900"
+                            type="text"
+                            inputMode="decimal"
+                            data-numeric
+                            min="0"
+                            step="any"
+                            value={l.quantity}
+                            onChange={(e) => setLine(l.key, { quantity: e.target.value })}
+                          />
+                          <button
+                            type="button"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-base font-bold text-slate-700 shadow-2xs hover:bg-slate-100 active:bg-slate-200"
+                            aria-label={t("বাড়ান")}
+                            onClick={() =>
+                              setLine(l.key, { quantity: String(round2(n(l.quantity) + 1)) })
+                            }
+                          >
+                            +
+                          </button>
+                        </div>
+                        <FieldError name={`lines.${i}.quantity`} />
+                      </td>
+
+                      {/* ফ্রি পরিমাণ */}
+                      <td className="px-3 py-3">
+                        <div className="flex items-center justify-center">
+                          <input
+                            aria-label={t("ফ্রি পরিমাণ")}
+                            className="input-num h-8 w-20 text-center font-bold text-emerald-700 bg-emerald-50/50 border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500/20"
+                            type="text"
+                            inputMode="decimal"
+                            data-numeric
+                            min="0"
+                            step="any"
+                            value={l.freeQuantity}
+                            onChange={(e) => setLine(l.key, { freeQuantity: e.target.value })}
+                            placeholder="০"
+                          />
+                        </div>
+                        <FieldError name={`lines.${i}.freeQuantity`} />
+                      </td>
+
+                      {/* দর / রেট */}
+                      <td className="px-3 py-3">
+                        <div className="flex items-center justify-end">
+                          {doRelease ? (
+                            <input
+                              aria-label={t("দর (ক্রয়মূল্য)")}
+                              className="input-num h-8 w-24 text-right font-bold text-slate-900"
+                              type="text"
+                              inputMode="decimal"
+                              data-numeric
+                              min="0"
+                              step="0.01"
+                              value={l.challanRate}
+                              onChange={(e) => setLine(l.key, { challanRate: e.target.value })}
+                            />
+                          ) : (
+                            <input
+                              aria-label={t("দর (ক্রয়মূল্য)")}
+                              className="input-num h-8 w-24 text-right font-bold text-slate-900"
+                              type="text"
+                              inputMode="decimal"
+                              data-numeric
+                              min="0"
+                              step="0.01"
+                              value={l.rate}
+                              onChange={(e) => setLine(l.key, { rate: e.target.value })}
+                            />
+                          )}
+                        </div>
+                        <FieldError name={`lines.${i}.${doRelease ? "challanRate" : "rate"}`} />
+                      </td>
+
+                      {/* মোট টাকা */}
+                      <td className="px-3 py-3 text-right font-bold text-slate-900 text-sm whitespace-nowrap tabular-nums">
+                        {money(ch.amounts[used.indexOf(l)] ?? 0)}
+                      </td>
+
+                      {/* রিমুভ বাটন */}
+                      <td className="px-2 py-3 text-center">
+                        <button
+                          type="button"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-rose-50 hover:text-credit transition-colors"
+                          aria-label={t("সারি মুছুন")}
+                          onClick={() => setF((x) => ({ ...x, lines: x.lines.filter((y) => y.key !== l.key) }))}
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-slate-300 bg-slate-50 font-bold text-slate-800 text-xs">
+                  <td colSpan={2} className="px-3 py-3 text-left">
+                    {t("মোট")}{" "}
+                    <span className="block text-[11px] font-normal text-slate-500">
+                      {t("স্টক থেকে বের হবে")}:{" "}
+                      <span id="total-out" className="font-semibold text-slate-800">
+                        {formatQty(tTotals.stockOut)}
+                      </span>
+                    </span>
+                  </td>
+                  <td className="px-3 py-3 text-center tabular-nums text-slate-900" id="total-qty">
+                    {formatQty(tTotals.quantity)}
+                  </td>
+                  <td className="px-3 py-3 text-center tabular-nums text-emerald-700" id="total-free">
+                    {formatQty(tTotals.free)}
+                  </td>
+                  <td />
+                  <td className="px-3 py-3 text-right tabular-nums text-sm font-bold text-brand-900" id="total-amount">
+                    {money(ch.total)}
+                  </td>
+                  <td />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between border-t border-rule p-2.5">
+          <button
+            type="button"
+            className="btn-secondary btn-sm"
+            onClick={() => setF((x) => ({ ...x, lines: [...x.lines, blankLine()] }))}
+          >
+            {t("+ আরেকটি পণ্য")}
+          </button>
           <FieldError name="lines" />
         </div>
       </section>

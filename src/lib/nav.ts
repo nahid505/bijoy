@@ -6,6 +6,7 @@ import type { BusinessModule } from "./business-types";
 export interface NavLink {
   href: string;
   label: string;
+  icon?: string;
   /** a list means "any of these" */
   permission: Permission | readonly Permission[];
   /** shown only while the business's types switch this module on (businessModules) */
@@ -46,6 +47,7 @@ const I = {
   puzzle: "M10 3h4v3a2 2 0 104 0V5h3v5h-1a2 2 0 100 4h1v7h-6v-1a2 2 0 10-4 0v1H4v-6h1a2 2 0 100-4H4V5h6V3z",
   factory: "M3 21V10l5 3V10l5 3V7l5 3V3h3v18H3zm4-4h2m4 0h2m4 0h0",
   db: "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zm0 0v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3",
+  fileText: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
 };
 
 export const NAV: NavEntry[] = [
@@ -134,19 +136,6 @@ export const NAV: NavEntry[] = [
       { href: "/notifications", label: "নোটিফিকেশন", permission: "inventory:view" },
     ],
   },
-  { key: "customers", label: "কাস্টমার", icon: I.user, href: "/customers", permission: "customers:view" },
-  { key: "suppliers", label: "সরবরাহকারী", icon: I.truck, href: "/suppliers", permission: "suppliers:view" },
-  {
-    key: "dues",
-    label: "বাকি ও আদায়",
-    icon: I.baki,
-    children: [
-      { href: "/dues/customers", label: "কাস্টমার বাকি", permission: "customers:view" },
-      { href: "/dues/suppliers", label: "সরবরাহকারী দেনা", permission: "suppliers:view" },
-      { href: "/vouchers/receipt/new", label: "টাকা আদায়", permission: "vouchers:create" },
-      { href: "/vouchers/payment/new", label: "সরবরাহকারীকে পরিশোধ", permission: "vouchers:create" },
-    ],
-  },
   { key: "expenses", label: "খরচ", icon: I.swap, href: "/expenses", permission: "vouchers:view" },
   {
     key: "production",
@@ -231,7 +220,7 @@ export const NAV: NavEntry[] = [
   { key: "backup", label: "ব্যাকআপ", icon: I.db, href: "/backup", permission: "backup:manage" },
 ];
 
-/** Mobile bottom bar — the most frequent destinations. */
+/** Mobile navigation tabs — the most frequent destinations. */
 /** English menu names where the menu reads better than the shared dictionary word ("পণ্য" is "Product" as a column, "Products" as a menu). */
 export const NAV_LABEL_EN: Record<string, string> = {
   পণ্য: "Products",

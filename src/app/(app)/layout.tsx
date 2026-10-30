@@ -49,7 +49,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const entries: SidebarEntry[] = NAV.flatMap((e): SidebarEntry[] => {
     if (!moduleOn(e.module)) return [];
     if (e.children) {
-      const children = e.children.filter((c) => moduleOn(c.module) && !(c.hiddenWithModule && modules.has(c.hiddenWithModule)) && allowed(c.permission, c.href)).map(({ href, label }) => ({ href, label: navLabel(label) }));
+      const children = e.children.filter((c) => moduleOn(c.module) && !(c.hiddenWithModule && modules.has(c.hiddenWithModule)) && allowed(c.permission, c.href)).map(({ href, label, icon }) => ({ href, label: navLabel(label), icon }));
       return children.length ? [{ key: e.key, label: navLabel(e.label), icon: e.icon, children, highlight: e.highlight }] : [];
     }
     return allowed(e.permission, e.href) ? [{ key: e.key, label: navLabel(e.label), icon: e.icon, href: e.href }] : [];
@@ -62,12 +62,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-screen">
       <Sidebar entries={entries} businessName={ctx.business.name} />
-      <MobileNav entries={entries} tabs={tabs} businessName={ctx.business.name} />
-      <div className="pb-16 lg:pb-0 lg:pl-60 print:p-0">
-        <header className="no-print sticky top-0 z-20 flex h-14 items-center gap-1.5 border-b border-rule bg-white px-3 sm:gap-3 sm:px-6">
+      <div className="lg:pl-60 print:p-0">
+        <header className="no-print sticky top-0 z-20 flex min-h-[64px] sm:min-h-0 sm:h-14 items-center gap-2 border-b border-rule bg-white px-3 sm:px-6 pt-3.5 pb-2.5 sm:py-0 shadow-2xs">
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-bold text-ink-900">{ctx.business.name}</p>
-            <p className="truncate text-[11px] text-slate-500">
+            <p className="truncate text-base sm:text-sm font-bold text-ink-900 leading-tight">{ctx.business.name}</p>
+            <p className="truncate text-xs sm:text-[11px] text-slate-500 leading-tight mt-0.5">
               {t("অর্থবছর")} {toBnDigits(fy.label)} · {t("আজ")} {formatDate(new Date())}
             </p>
           </div>
@@ -75,13 +74,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <Link
               prefetch={false}
               href="/notifications"
-              className="relative shrink-0 rounded border border-rule px-2 py-1 text-sm hover:bg-ink-50"
+              className="relative flex h-10 w-10 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-lg border border-rule text-base hover:bg-ink-50 transition"
               aria-label={`${t("নোটিফিকেশন")}${unread ? ` (${toBnDigits(unread)} ${t("অপঠিত")})` : ""}`}
               title={t("নোটিফিকেশন")}
             >
               <span aria-hidden>🔔</span>
               {unread > 0 && (
-                <span className="absolute -right-1.5 -top-1.5 min-w-[1.1rem] rounded-full bg-red-600 px-1 text-center text-[10px] font-bold leading-[1.1rem] text-white">
+                <span className="absolute -right-1 -top-1 flex h-4.5 min-w-[1.125rem] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white shadow-xs">
                   {unread > 99 ? "৯৯+" : toBnDigits(unread)}
                 </span>
               )}
@@ -97,12 +96,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <p className="text-[11px] text-slate-500">{ctx.roleName}</p>
           </Link>
           <form action={logoutAction} className="shrink-0">
-            <button type="submit" className="btn-secondary btn-sm" aria-label={t("লগআউট")} title={t("লগআউট")}>
-              <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4 sm:hidden" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" /></svg>
+            <button
+              type="submit"
+              className="flex h-10 min-w-[40px] sm:h-9 items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 sm:px-3 text-sm font-medium text-slate-700 shadow-2xs transition hover:border-slate-400 hover:bg-slate-50"
+              aria-label={t("লগআউট")}
+              title={t("লগআউট")}
+            >
+              <svg aria-hidden viewBox="0 0 24 24" className="h-5 w-5 sm:h-4 sm:w-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" /></svg>
               <span className="hidden sm:inline">{t("লগআউট")}</span>
             </button>
           </form>
         </header>
+        <MobileNav entries={entries} tabs={tabs} businessName={ctx.business.name} />
         <SubscriptionBanner sub={ctx.subscription} canBill={hasPermission(ctx.permissions, "billing:view")} />
         <main className="mx-auto max-w-[1400px] px-3 py-5 sm:px-6 print:max-w-none print:p-0">{children}</main>
       </div>

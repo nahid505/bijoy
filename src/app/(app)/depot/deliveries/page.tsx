@@ -62,7 +62,11 @@ export default async function DepotDeliveriesPage({ searchParams }: { searchPara
               <>
                 <Link prefetch={false} href={`/depot/deliveries${buildQuery(filters, { print: "1" })}`} className="btn-secondary" id="print-list">🖨 {t("প্রিন্ট / PDF")}</Link>
                 {can(ctx, DEPOT_ACCESS.register) && <a href={exportHref} className="btn-secondary" id="export-xlsx">⬇ {t("Excel (XLSX)")}</a>}
-                {can(ctx, DEPOT_ACCESS.deliveryCreate) && <Link prefetch={false} href="/depot/deliveries/new" className="btn-primary">+ {t("ডেলিভারি চালান তৈরি")}</Link>}
+                {can(ctx, DEPOT_ACCESS.deliveryCreate) && (
+                  <Link prefetch={false} href="/depot/deliveries/new" className="btn-primary" id="new-delivery-challan">
+                    + {t("ডেলিভারি চালান তৈরি")}
+                  </Link>
+                )}
               </>
             )
           }

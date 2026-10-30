@@ -8,7 +8,12 @@ import { getT } from "@/server/i18n";
 import { ensureDailyChecks } from "@/server/services/notifications";
 import { isDepot } from "@/lib/depot";
 import { DepotPanel } from "./depot-panel";
-import { CashBookWidget, DashboardHeader } from "./dashboard-parts";
+import {
+  CashAndBalancesSection,
+  DashboardHeader,
+  DebtorsCreditorsSummary,
+  QuickAccountingActions,
+} from "./dashboard-parts";
 import { riceMillHome } from "@/lib/rice-mill";
 import { businessModules } from "@/lib/business-types";
 
@@ -36,7 +41,7 @@ function QuickActions({ quick, label }: { quick: ReturnType<typeof quickActions>
         <Link prefetch={false}
           key={q.href}
           href={q.href}
-          className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-semibold transition ${q.primary ? "border-brand-600 bg-brand-600 text-white hover:bg-brand-700" : "border-rule bg-white text-ink-800 hover:border-brand-500 hover:bg-brand-50"}`}
+          className={`flex items-center gap-2 rounded-lg border px-3.5 py-3 text-sm font-semibold transition min-h-[44px] ${q.primary ? "border-brand-600 bg-brand-600 text-white hover:bg-brand-700" : "border-rule bg-white text-ink-800 hover:border-brand-500 hover:bg-brand-50"}`}
         >
           <span aria-hidden className="text-lg">{q.icon}</span>
           {q.label}
@@ -82,20 +87,22 @@ export default async function DashboardPage() {
   }
   await ensureDailyChecks(ctx.business.id).catch(() => null); // daily alerts (header bell), if the scheduler has not run yet today
   const depot = isDepot(ctx.business.businessType);
-  const cashBook = can(ctx, "accounts:view") ? <CashBookWidget ctx={ctx} /> : undefined;
 
   return (
     <>
       <DashboardHeader ctx={ctx} />
 
-      {depot ? (
-        <DepotPanel ctx={ctx} side={cashBook} />
-      ) : (
-        <>
-          <QuickActions quick={quick} label={t("দ্রুত কাজ")} />
-          {cashBook && <div className="mb-4 max-w-md" id="general-cash-book">{cashBook}</div>}
-        </>
-      )}
+      {/* ১. ১ম সেকশন (একদম উপরে): "ক্যাশ বুক ও বর্তমান ক্যাশ ব্যালেন্স" */}
+      <CashAndBalancesSection ctx={ctx} />
+
+      {/* ২. ২য় সেকশন: "দেনাদার ও পাওনাদার সামারি" (Debtors & Creditors Summary - বড় ও আকর্ষণীয় কার্ড) */}
+      <DebtorsCreditorsSummary ctx={ctx} />
+
+      {/* ৩. ৩য় সেকশন: "দ্রুত এন্ট্রি ও ভাউচার" (Quick Entry & Vouchers) */}
+      <QuickAccountingActions ctx={ctx} />
+
+      {/* ৪র্থ সেকশন (একদম নিচে): "ডিপো ব্যবস্থাপনা" (Depot Management) */}
+      {depot && <DepotPanel ctx={ctx} />}
     </>
   );
 }

@@ -1014,6 +1014,7 @@ The page is `src/app/(app)/dashboard/page.tsx`, with parts in `dashboard-parts.t
 
    **General business:** its quick actions, then the cash book.
 3. **Cash book** (`CashBookWidget`, `#cash-book-widget`, with `accounts:view`): brought forward, today's cash received, today's cash paid and the cash in hand. The figures are the daily cash book's (`dailyCash()`, scope "cash"), and the widget links there.
+4. **Quick accounting actions** (`QuickAccountingActions`, `#quick-accounting-actions`): responsive 6-card button grid (Grid 2/3/6 col) with dedicated theme colors and icons for rapid transaction and voucher entry (ধান ক্রয় ও স্কেল, রিসিপ্ট / জমা, পেমেন্ট / খরচ, ক্রয়, বিক্রয়, মিলিং ও প্রসেসিং).
 **Other variants:**
 - A depot-only role sees the header and the depot panel without the cash book.
 - An assigned-only role sees the header, its quick actions and `AssignedDashboard` (6q).

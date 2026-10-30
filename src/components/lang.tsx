@@ -38,7 +38,7 @@ export function LangToggle() {
   const { lang, dict } = useContext(LangCtx);
   const [pending, start] = useTransition();
   return (
-    <div id="lang-switch" role="group" aria-label={translateWith(dict, "ভাষা নির্বাচন")} className="flex shrink-0 overflow-hidden rounded border border-rule text-xs font-semibold">
+    <div id="lang-switch" role="group" aria-label={translateWith(dict, "ভাষা নির্বাচন")} className="flex h-10 sm:h-9 shrink-0 overflow-hidden rounded-lg border border-rule text-xs font-semibold shadow-2xs">
       {(Object.keys(LANG_LABELS) as Lang[]).map((l) => (
         <button
           key={l}
@@ -47,7 +47,7 @@ export function LangToggle() {
           disabled={pending || l === lang}
           aria-pressed={l === lang}
           onClick={() => start(() => setLangAction(l))}
-          className={`px-2 py-1 ${l === lang ? "bg-brand-600 text-white" : "text-ink-700 hover:bg-ink-50"}`}
+          className={`flex min-h-[40px] sm:min-h-0 items-center justify-center px-2.5 sm:px-2 text-xs font-bold transition ${l === lang ? "bg-brand-600 text-white" : "text-ink-700 hover:bg-ink-50"}`}
         >
           {LANG_LABELS[l]}
         </button>

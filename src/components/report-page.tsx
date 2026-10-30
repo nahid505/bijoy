@@ -171,16 +171,29 @@ export async function ReportPage({
           <button type="submit" className="btn-primary">দেখুন</button>
           <Link prefetch={false} href={path} className="btn-ghost">রিসেট</Link>
         </form>
-        <div className="px-4 pt-3">
-          <PrintHeader business={ctx.business} title={report.title} subtitle={report.subtitle} />
-          <div className="no-print pb-2">
-            <h2 className="text-base font-semibold text-ink-900">{report.title}</h2>
-            {report.subtitle && <p className="text-xs text-slate-500">{report.subtitle}</p>}
-          </div>
-        </div>
-        <ReportSummary report={report} />
-        <ReportTable report={report} currency={ctx.business.currencySymbol} />
-        <ReportNotes report={report} />
+        {/* Ledger and statement views: omit redundant in-page header and summary strip; keep clean table */}
+        {slug === "ledger" || slug.endsWith("-ledger") || slug.endsWith("-statement") || slug.endsWith("-book") || Boolean(before) ? (
+          <>
+            <div className="print-only px-4 pt-3">
+              <PrintHeader business={ctx.business} title={report.title} subtitle={report.subtitle} />
+            </div>
+            <ReportTable report={report} currency={ctx.business.currencySymbol} />
+            <ReportNotes report={report} />
+          </>
+        ) : (
+          <>
+            <div className="px-4 pt-3">
+              <PrintHeader business={ctx.business} title={report.title} subtitle={report.subtitle} />
+              <div className="no-print pb-2">
+                <h2 className="text-base font-semibold text-ink-900">{report.title}</h2>
+                {report.subtitle && <p className="text-xs text-slate-500">{report.subtitle}</p>}
+              </div>
+            </div>
+            <ReportSummary report={report} />
+            <ReportTable report={report} currency={ctx.business.currencySymbol} />
+            <ReportNotes report={report} />
+          </>
+        )}
       </section>
     </>
   );

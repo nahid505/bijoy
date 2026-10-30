@@ -50,12 +50,13 @@ export interface AccountRow {
   isDirect: boolean;
   isSystem: boolean;
   isActive: boolean;
+  imageUrl?: string | null;
 }
 
 export async function listAccounts(businessId: string, where: Prisma.AccountWhereInput = {}): Promise<AccountRow[]> {
   const rows = await prisma.account.findMany({
     where: { businessId, ...where },
-    include: { group: true },
+    include: { group: true, customer: { select: { imageUrl: true } }, supplier: { select: { imageUrl: true } } },
     orderBy: [{ group: { sortOrder: "asc" } }, { code: "asc" }, { name: "asc" }],
   });
   return rows.map((a) => ({
@@ -71,6 +72,7 @@ export async function listAccounts(businessId: string, where: Prisma.AccountWher
     isDirect: a.group.isDirect,
     isSystem: a.isSystem,
     isActive: a.isActive,
+    imageUrl: a.imageUrl ?? a.customer?.imageUrl ?? a.supplier?.imageUrl ?? null,
   }));
 }
 

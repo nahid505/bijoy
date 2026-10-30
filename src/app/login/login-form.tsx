@@ -30,14 +30,14 @@ function Fields({ next, resetAvailable }: { next: string; resetAvailable: boolea
       <Field label="পাসওয়ার্ড" name="password">
         <input id="password" name="password" type="password" autoComplete="current-password" required className="input" />
       </Field>
+      <div className="-mt-2 mb-3 flex justify-end">
+        <Link prefetch={false} href="/forgot-password" className="text-xs font-semibold text-brand-700 hover:text-brand-800 hover:underline">
+          পাসওয়ার্ড ভুলে গেছেন?
+        </Link>
+      </div>
       <SubmitButton className="btn-primary w-full" pendingText="প্রবেশ করা হচ্ছে…">
         লগইন
       </SubmitButton>
-      {resetAvailable && (
-        <Link prefetch={false} href="/forgot-password" className="block text-center text-xs text-brand-700 hover:underline">
-          পাসওয়ার্ড ভুলে গেছেন?
-        </Link>
-      )}
     </>
   );
 }

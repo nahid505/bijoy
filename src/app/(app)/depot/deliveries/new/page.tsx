@@ -7,6 +7,7 @@ import { can, requirePermission } from "@/server/auth";
 import { canChangeEntryDate } from "@/server/entry-date";
 import { readParams, type SearchParams } from "@/server/params";
 import { saveDepotDeliveryAction } from "@/server/actions/depot";
+import { inventoryOptions } from "@/server/voucher-editor";
 import { DepotDeliveryForm } from "../../delivery-form";
 import { DepotOnlyNotice } from "../../depot-ui";
 
@@ -16,9 +17,10 @@ export default async function NewDepotDeliveryPage({ searchParams }: { searchPar
   const ctx = await requirePermission(DEPOT_ACCESS.deliveryCreate);
   if (!isDepot(ctx.business.businessType)) return <DepotOnlyNotice canManage={can(ctx, "business:manage")} />;
   const p = await readParams(searchParams);
-  const [warehouses, cash] = await Promise.all([
+  const [warehouses, cash, inv] = await Promise.all([
     prisma.warehouse.findMany({ where: { businessId: ctx.business.id }, orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true } }),
     prisma.account.findFirst({ where: { businessId: ctx.business.id, systemKey: "CASH" }, select: { id: true, name: true } }),
+    inventoryOptions(ctx.business.id, { book: "DEPOT" }),
   ]);
   return (
     <>
@@ -28,6 +30,8 @@ export default async function NewDepotDeliveryPage({ searchParams }: { searchPar
           action={saveDepotDeliveryAction.bind(null, null)}
           warehouses={warehouses}
           cashAccounts={cash ? [{ id: cash.id, name: cash.name, group: "" }] : []}
+          products={inv.products}
+          categories={inv.categories}
           multiWarehouse={ctx.features.includes("MULTI_WAREHOUSE")}
           currency={ctx.business.currencySymbol}
           dateLocked={!canChangeEntryDate(ctx)}
@@ -35,7 +39,7 @@ export default async function NewDepotDeliveryPage({ searchParams }: { searchPar
           defaults={{
             mode: p.mode === "DEPOT_COLLECTION" ? "DEPOT_COLLECTION" : "COMPANY_PAID",
             date: toDateInput(), doNumber: "", company: null, dealer: null, warehouseId: warehouses[0]?.id ?? null,
-            vehicleNo: "", driverName: "", notes: "", lines: [{ key: 1, product: null, quantity: "", freeQuantity: "", rate: "", challanRate: "" }], paidAmount: "", cashAccountId: cash?.id ?? "",
+            vehicleNo: "", driverName: "", notes: "", lines: [], paidAmount: "", cashAccountId: cash?.id ?? "",
           }}
         />
       </section>

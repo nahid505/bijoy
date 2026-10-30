@@ -10,7 +10,7 @@ export interface SidebarEntry {
   label: string;
   icon: string;
   href?: string;
-  children?: { href: string; label: string }[];
+  children?: { href: string; label: string; icon?: string }[];
   /** emphasised and open by default (e.g. the depot menu) */
   highlight?: boolean;
 }
@@ -81,9 +81,10 @@ function NavTree({ entries, onNavigate }: { entries: SidebarEntry[]; onNavigate?
                         <Link prefetch={false}
                           href={c.href}
                           onClick={onNavigate}
-                          className={`block rounded px-2.5 py-1.5 ${active ? "bg-white/12 font-semibold text-white" : "text-ink-200 hover:text-white"}`}
+                          className={`flex items-center gap-2 rounded px-2.5 py-1.5 ${active ? "bg-white/12 font-semibold text-white" : "text-ink-200 hover:text-white"}`}
                         >
-                          {c.label}
+                          {c.icon && <Icon d={c.icon} className="h-3.5 w-3.5 shrink-0 opacity-70" />}
+                          <span className="truncate">{c.label}</span>
                         </Link>
                       </li>
                     );
@@ -133,25 +134,37 @@ export function MobileNav({
   const t = useT();
   return (
     <>
-      <nav className="no-print fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-ink-800 bg-ink-900 text-[11px] lg:hidden">
-        {tabs.map((t) => {
-          const active = pathname === t.href || pathname.startsWith(`${t.href}/`);
+      <nav className="no-print sticky top-[64px] sm:top-14 z-20 mt-2 flex w-full items-center justify-around overflow-x-auto border-y border-ink-800 bg-ink-900 px-2 py-2 text-xs sm:text-sm lg:hidden shadow-sm">
+        {tabs.map((tab) => {
+          const active = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
           return (
-            <Link prefetch={false} key={t.href} href={t.href} className={`flex flex-col items-center gap-0.5 py-2 ${active ? "text-brand-200" : "text-ink-200"}`}>
-              <Icon d={t.icon} className="h-5 w-5" />
-              {t.label}
+            <Link
+              prefetch={false}
+              key={tab.href}
+              href={tab.href}
+              className={`flex flex-1 min-w-[64px] flex-col items-center justify-center gap-1 rounded-lg px-2.5 sm:px-3 py-2 text-center transition-all ${
+                active ? "bg-ink-800 text-brand-300 font-bold shadow-xs" : "text-ink-200 hover:bg-ink-800/60 hover:text-white"
+              }`}
+            >
+              <Icon d={tab.icon} className="h-6 w-6 shrink-0" />
+              <span className="text-xs sm:text-sm font-medium tracking-wide truncate max-w-[75px] sm:max-w-none">{tab.label}</span>
             </Link>
           );
         })}
-        <button type="button" onClick={() => setOpen(true)} className="flex flex-col items-center gap-0.5 py-2 text-ink-200" aria-label={t("মেনু")}>
-          <Icon d="M4 6h16M4 12h16M4 18h16" className="h-5 w-5" />
-          {t("মেনু")}
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="flex flex-1 min-w-[64px] flex-col items-center justify-center gap-1 rounded-lg px-2.5 sm:px-3 py-2 text-center text-ink-200 transition-all hover:bg-ink-800/60 hover:text-white"
+          aria-label={t("মেনু")}
+        >
+          <Icon d="M4 6h16M4 12h16M4 18h16" className="h-6 w-6 shrink-0" />
+          <span className="text-xs sm:text-sm font-medium tracking-wide truncate">{t("মেনু")}</span>
         </button>
       </nav>
       {open && (
         <div className="no-print fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-ink-950/60" onClick={() => setOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 flex w-72 flex-col bg-ink-900">
+          <aside className="absolute inset-y-0 left-0 flex w-72 flex-col bg-ink-900 shadow-xl">
             <Brand businessName={businessName} />
             <NavTree entries={entries} onNavigate={() => setOpen(false)} />
           </aside>

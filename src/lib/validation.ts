@@ -158,8 +158,14 @@ export const partySchema = z.object({
   groupName: optionalText(60),
   route: optionalText(80), // depot: dealer's route / area
   ownerName: optionalText(150), // depot dealer: proprietor / owner (name = the shop / business)
+  imageUrl: z.string().optional().nullable(),
 });
-export type PartyInput = Omit<z.infer<typeof partySchema>, "groupName" | "route" | "ownerName"> & { groupName?: string | null; route?: string | null; ownerName?: string | null };
+export type PartyInput = Omit<z.infer<typeof partySchema>, "groupName" | "route" | "ownerName"> & {
+  groupName?: string | null;
+  route?: string | null;
+  ownerName?: string | null;
+  imageUrl?: string | null;
+};
 
 export const accountSchema = z.object({
   name: requiredText("হিসাবের নাম", 150),
@@ -171,6 +177,7 @@ export const accountSchema = z.object({
   accountNumber: optionalText(60),
   openingBalance: money.default(0),
   openingSide: z.enum(["DR", "CR"]).default("DR"),
+  imageUrl: z.string().optional().nullable(),
 });
 
 /** A user account group; a sub-group (parentId) takes its parent's nature. */
