@@ -8,7 +8,7 @@ import { translate } from "@/lib/i18n-dict";
 
 const FILES = [
   "src/app/(app)/dashboard/page.tsx",
-  "src/app/(app)/dashboard/account-panels.tsx",
+  "src/app/(app)/dashboard/dashboard-parts.tsx",
   "src/app/(app)/dashboard/assigned-panel.tsx",
   "src/app/(app)/dashboard/depot-panel.tsx",
   "src/components/subscription-banner.tsx",

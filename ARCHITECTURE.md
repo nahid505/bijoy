@@ -12,7 +12,7 @@
 ```
 src/lib/                 pure, unit-tested: accounting rules, calc, validation (zod), permissions, formatting
 src/server/services/     AccountingService · VoucherService · InventoryService · PostingService · LedgerService · ReportService
-                         + aging · backup · bootstrap (new business, default roles) · master (parties/accounts/products) · dashboard
+                         + aging · backup · bootstrap (new business, default roles) · master (parties/accounts/products)
 src/server/actions/      "use server" mutations: authorise → validate → service → audit (before/after) → flash toast → redirect
 src/server/reports/      report registry (ReportDef → ReportResult) + CSV and XLSX (exceljs) export adapters
 src/app/                 App Router pages (server components) · /api/reports/[slug] · /api/backup · /api/health
@@ -240,7 +240,6 @@ Optional modules are declared once in `src/lib/features.ts`: key, Bengali/Englis
 3. Module-specific checks:
    - expiry write-off (`assertFeature`);
    - daily expiry alerts and expiry SMS (`featureIsOn`, in `services/feature-state.ts`, usable outside a request);
-   - the dashboard expiry panel;
    - warehouse management and new vouchers (main warehouse) for Multi Warehouse;
    - Multi User: without it only the Owner role keeps permissions, and only an Owner may switch it off.
 
@@ -505,7 +504,7 @@ Depot pages and the service refuse other businesses with an explanation.
 - Ledgers are created on first use: `DEPOT_COMMISSION_INCOME` (indirect income) and `DEPOT_COMMISSION_RECEIVABLE:<company account id>` (current assets).
 - Settlement (`settleCommission`) is either a receipt into cash/bank, or a journal against the company's ledger ("adjusted with the company"). It can never exceed what is outstanding.
 
-**Dashboard** (`depotDashboard`): quick actions are stock in (purchase), delivery challan, market collection (receipt) and company commission. The cards show today's deliveries, commission receivable, dealers' market due and stock value.
+**Dashboard** (`depotDashboard`, see 6z): quick actions are stock in (purchase), delivery challan, market collection (receipt), company commission and depot expense. The cards show today's deliveries, commission receivable, the depot cash balance and the depot stock (value and items). Dealers' market dues are in the route report.
 
 **Reports** (`src/server/reports/depot.ts`): `depot-deliveries` (register), `depot-market-dues` (dealer dues grouped by `Customer.route`), and `depot-commission` (earned, settled and outstanding per company). All support print, Excel and CSV.
 
@@ -848,7 +847,7 @@ A fund transfer is cash → cash. It is neither income nor expense, and the cash
 **Pickers and lists.**
 - `searchProducts(…, { book })` and `/api/lookup/products?book=depot`: depot forms see only depot products; every other picker, `inventoryOptions` (POS tiles), `/products`, the stock and stock-valuation reports never see them.
 - A depot picker's "+ নতুন পণ্য" creates a depot product (`quickCreateProductAction({ depot: true })`, `DEPOT_ACCESS.products`).
-- The depot dashboard's stock value counts depot products only. The general dashboard's low-stock list, the batch / expiry list and reports (`listBatches`, unless `depot: true`) count general products only.
+- The depot dashboard's stock value counts depot products only. The batch / expiry list and reports (`listBatches`, unless `depot: true`) count general products only.
 - Low-stock and expiry alerts for a depot product are marked "ডিপো —" (low stock) and open `/depot/products/[id]`.
 
 **Screens.**
@@ -1000,6 +999,35 @@ The page reads the account and `statement()` for the period (`?from=&to=`, defau
 - Permission keys are shown as data, so they are not translated.
 
 **Tests:** `tests/rice-mill-permissions.test.ts`.
+
+## 6z. Dashboard (`/dashboard`)
+The page is `src/app/(app)/dashboard/page.tsx`, with parts in `dashboard-parts.tsx` and `depot-panel.tsx`. A clean layout with only these blocks:
+
+1. **Header** (`DashboardHeader`, `#dashboard-header`): centred, on every variant.
+   - "ড্যাশবোর্ড", then the company name.
+   - Two date badges side by side: English "29 October 2026" (`#date-en`) and Bangla "২৯ অক্টোবর ২০২৬, বৃহস্পতিবার" (`#date-bn`, `dashboardDates`).
+   - Both badges are data (`data-keep-lang`), so the Bangla one stays Bangla in English. It is the English crawl's one expected leftover.
+2. **Depot business** (`DepotPanel`):
+   - The action buttons: নতুন স্টক ইন, ডেলিভারি চালান তৈরি, মার্কেট কালেকশন, কোম্পানি কমিশন হিসাব, ডিপো খরচ এন্ট্রি. Each shows only with its permission.
+   - Beside the cash book, the four cards in 2 × 2 (`CardGrid`, `#depot-cards`): আজকের ডেলিভারি; কোম্পানির কাছে মোট প্রাপ্য কমিশন; ডিপো ক্যাশ — বর্তমান ব্যালেন্স (only for whoever may see the depot cash); বর্তমান ডিপো স্টক (value and the number of items in stock).
+   - On wide screens the cards take two-thirds and the cash book a third; on phones they stack.
+
+   **General business:** its quick actions, then the cash book.
+3. **Cash book** (`CashBookWidget`, `#cash-book-widget`, with `accounts:view`): brought forward, today's cash received, today's cash paid and the cash in hand. The figures are the daily cash book's (`dailyCash()`, scope "cash"), and the widget links there.
+**Other variants:**
+- A depot-only role sees the header and the depot panel without the cash book.
+- An assigned-only role sees the header, its quick actions and `AssignedDashboard` (6q).
+
+**Removed** (their pages stay):
+- the subscription grid (the trial / plan banner in the layout stays);
+- the dealers' market dues line (see the route report);
+- the current stock chips and the active modules list;
+- today's figures and the 30-day / monthly charts;
+- the "সাম্প্রতিক" cash table, recent sales / purchases / payments, overdue dues, notifications (the header bell stays), low stock, cash & bank accounts, today's other figures and the expiry panel.
+
+Every figure falls back to 0, and a failing query leaves its box empty instead of breaking the page. The page runs only the depot card queries and the daily cash book's figures.
+
+**Tests:** `tests/dashboard-dates.test.ts`.
 
 ## 7b. UI runtime notes
 - **Language** (`bl_lang` cookie, 1 year; default `bn`):

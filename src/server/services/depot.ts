@@ -344,14 +344,11 @@ export async function depotDashboard(businessId: string, today: string) {
   const day = new Date(`${today}T00:00:00.000Z`);
   const next = new Date(day);
   next.setUTCDate(next.getUTCDate() + 1);
-  const [todays, commission, dealerAccounts, products] = await Promise.all([
+  const [todays, commission, products] = await Promise.all([
     prisma.depotDelivery.findMany({ where: { businessId, voucher: { date: { gte: day, lt: next } } }, select: { mode: true, commissionTotal: true, voucher: { select: { amount: true, items: { select: { quantity: true } } } } } }),
     commissionSummary(businessId),
-    prisma.customer.findMany({ where: { businessId, isDepotDealer: true }, select: { accountId: true } }),
     prisma.product.findMany({ where: { businessId, isDepotProduct: true }, select: { stock: true, avgCost: true } }), // the depot stock only
   ]);
-  const balances = await balancesBefore(businessId, undefined, dealerAccounts.map((d) => d.accountId), "DEPOT");
-  const dues = [...balances.values()].filter((v) => v > 0);
   return {
     today: {
       count: todays.length,
@@ -362,8 +359,8 @@ export async function depotDashboard(businessId: string, today: string) {
       commission: round2(todays.reduce((s, t) => s + num(t.commissionTotal), 0)),
     },
     commissionReceivable: commission.outstanding,
-    marketDue: round2(dues.reduce((s, v) => s + v, 0)),
-    dealersWithDue: dues.length,
     stockValue: round2(products.reduce((s, p) => s + num(p.stock) * num(p.avgCost), 0)),
+    /** depot products in stock */
+    stockItems: products.filter((p) => num(p.stock) > 0).length,
   };
 }

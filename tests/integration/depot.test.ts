@@ -122,12 +122,11 @@ run("depot management (ডিপো ব্যবসা)", () => {
     expect(s.outstanding).toBe(1_500);
   });
 
-  it("dashboard cards: today's deliveries, commission receivable, market due, stock value", async () => {
+  it("dashboard cards: today's deliveries, commission receivable, stock value and items (market dues: the route report)", async () => {
     const d = await depotDashboard(ctx.businessId, "2026-10-10");
     expect(d.today).toMatchObject({ count: 2, doCount: 1, marketCount: 1, quantity: 400, marketValue: 48_000, commission: 3_000 });
     expect(d.commissionReceivable).toBe(1_500);
-    expect(d.marketDue).toBe(28_000);
-    expect(d.dealersWithDue).toBe(1);
+    expect(d.stockItems).toBe(1);
     expect(d.stockValue).toBe(270_000); // 600 × 450
   });
 
