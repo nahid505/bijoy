@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { assertPermission } from "../auth";
+import { hasPermission } from "@/lib/permissions";
 import { audit } from "../audit";
 import { guard, UserError, type ActionState } from "../action-utils";
 import type { VerificationStatus } from "@prisma/client";
@@ -25,13 +26,31 @@ export async function verifyVoucherAction(input: {
   note?: string | null;
 }): Promise<VerifyActionResult> {
   const result = await guard(async () => {
-    const ctx = await assertPermission("vouchers:verify");
     const { voucherId, status, note } = input;
+    const required =
+      status === "VERIFIED"
+        ? ["can_verify_transactions", "depot_delivery_verify", "vouchers:verify"]
+        : status === "REJECTED"
+        ? ["can_reject_transactions", "vouchers:verify"]
+        : ["can_unverify_transactions", "vouchers:verify"];
+    const ctx = await assertPermission(required as any);
+
     const v = await prisma.voucher.findFirst({
       where: { id: voucherId, businessId: ctx.business.id },
-      select: { id: true, voucherNo: true, verificationStatus: true },
+      select: {
+        id: true,
+        voucherNo: true,
+        type: true,
+        verificationStatus: true,
+        depotDelivery: { select: { id: true } },
+      },
     });
     if (!v) throw new UserError("ভাউচার পাওয়া যায়নি");
+
+    const isDepot = v.type === "DEPOT_DELIVERY" || Boolean(v.depotDelivery);
+    if (status === "VERIFIED" && !isDepot && !hasPermission(ctx.permissions, ["can_verify_transactions", "vouchers:verify"])) {
+      throw new UserError("শুধু ডিপো ডেলিভারি চালান অনুমোদনের অনুমতি রয়েছে");
+    }
 
     const touchesStock = v.verificationStatus === "REJECTED" || status === "REJECTED";
 
@@ -108,8 +127,14 @@ export async function bulkVerifyVouchersAction(input: {
   note?: string | null;
 }): Promise<ActionState & { count?: number }> {
   const result = await guard(async () => {
-    const ctx = await assertPermission("vouchers:verify");
     const { voucherIds, status, note } = input;
+    const required =
+      status === "VERIFIED"
+        ? ["can_verify_transactions", "vouchers:verify"]
+        : status === "REJECTED"
+        ? ["can_reject_transactions", "vouchers:verify"]
+        : ["can_unverify_transactions", "vouchers:verify"];
+    const ctx = await assertPermission(required as any);
     if (!voucherIds || voucherIds.length === 0) {
       throw new UserError("কোনো লেনদেন নির্বাচন করা হয়নি");
     }

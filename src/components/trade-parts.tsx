@@ -12,11 +12,14 @@ export interface AccountOption {
   group: string;
   balance?: number;
 }
+export type PartyType = "CUSTOMER" | "SUPPLIER" | "BOTH";
+
 export interface PartyOption extends AccountOption {
   mobile?: string | null;
   creditLimit?: number;
   creditDays?: number;
   overdue?: number;
+  partyType?: PartyType;
 }
 export interface UnitOption {
   id: string;
@@ -73,10 +76,30 @@ export function PartyInfo({ party, currency, projectedDue }: { party?: PartyOpti
   const t = useT();
   if (!party) return null;
   const over = party.creditLimit && projectedDue !== undefined && projectedDue > party.creditLimit;
+  const partyType = party.partyType;
+  const badgeLabel = partyType === "BOTH" ? t("উভয়") : partyType === "SUPPLIER" ? t("সরবরাহকারী") : partyType === "CUSTOMER" ? t("কাস্টমার") : null;
+  const badgeClass =
+    partyType === "BOTH"
+      ? "bg-emerald-50 text-emerald-700 border border-emerald-200/80"
+      : partyType === "SUPPLIER"
+        ? "bg-purple-50 text-purple-700 border border-purple-200/80"
+        : "bg-sky-50 text-sky-700 border border-sky-200/80";
+
   return (
     <div className="mt-1 space-y-0.5 text-xs">
-      {party.mobile && <p className="text-slate-500">📞 {party.mobile}</p>}
-      {party.balance !== undefined && <p className={party.balance > 0 ? "font-semibold text-debit" : "text-slate-600"}>{t("বর্তমান ব্যালেন্স:")} {formatDrCr(party.balance, currency)}</p>}
+      <div className="flex items-center gap-2">
+        {party.mobile && <span className="text-slate-500">📞 {party.mobile}</span>}
+        {badgeLabel && (
+          <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium leading-none ${badgeClass}`}>
+            {badgeLabel}
+          </span>
+        )}
+      </div>
+      {party.balance !== undefined && (
+        <p className={party.balance > 0.005 ? "font-semibold text-debit" : party.balance < -0.005 ? "font-semibold text-credit" : "text-slate-600"}>
+          {t("বর্তমান ব্যালেন্স:")} {formatDrCr(party.balance, currency)}
+        </p>
+      )}
       {!!party.overdue && party.overdue > 0 && <p className="font-semibold text-credit">{t("মেয়াদোত্তীর্ণ বকেয়া:")} {formatMoney(party.overdue, currency)}</p>}
       {!!party.creditLimit && (
         <p className={over ? "font-semibold text-credit" : "text-slate-500"}>

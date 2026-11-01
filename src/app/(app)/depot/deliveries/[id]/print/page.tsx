@@ -26,7 +26,7 @@ export default async function DealerChallanPrintPage({
 }) {
   const { id } = await params;
   if (!id || id === "new") redirect("/depot/deliveries/new");
-  const ctx = await requirePermission(DEPOT_ACCESS.view);
+  const ctx = await requirePermission(["depot_delivery_view", ...DEPOT_ACCESS.view]);
   if (!isDepot(ctx.business.businessType)) {
     return <DepotOnlyNotice canManage={can(ctx, "business:manage")} />;
   }

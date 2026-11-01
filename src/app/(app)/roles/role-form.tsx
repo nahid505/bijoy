@@ -13,6 +13,7 @@ const isMillGroup = (g: Group) => "module" in g && g.module === "RICE_MILL";
 /** Card icon of each permission group. */
 const ICONS: Record<string, string> = {
   "ড্যাশবোর্ড ও রিপোর্ট": "📊",
+  "লেনদেন ভেরিফিকেশন ও অডিট": "🛡️",
   "বিক্রয় ও বিক্রয় ফেরত": "🧾",
   "ক্রয় ও ক্রয় ফেরত": "🛒",
   "রিসিপ্ট, পেমেন্ট ও জার্নাল": "💳",

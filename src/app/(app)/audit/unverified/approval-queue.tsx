@@ -25,12 +25,16 @@ interface ApprovalQueueProps {
   initialVouchers: UnverifiedVoucherItem[];
   currency?: string;
   currentUserName?: string | null;
+  canVerify?: boolean;
+  canReject?: boolean;
 }
 
 export function ApprovalQueue({
   initialVouchers,
   currency = "৳",
   currentUserName,
+  canVerify = true,
+  canReject = true,
 }: ApprovalQueueProps) {
   const t = useT();
   const router = useRouter();
@@ -234,24 +238,28 @@ export function ApprovalQueue({
             <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
               {toBnDigits(selectedIds.size)} {t("টি নির্বাচিত")}
             </span>
-            <button
-              type="button"
-              onClick={handleBulkVerify}
-              disabled={isPending}
-              className="btn-primary bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3.5 py-1.5 font-bold flex items-center gap-1.5 rounded-lg shadow-xs cursor-pointer disabled:opacity-50"
-            >
-              <span>✓</span>
-              <span>{t("সবগুলো একসাথে অনুমোদন")}</span>
-            </button>
-            <button
-              type="button"
-              onClick={openRejectBulk}
-              disabled={isPending}
-              className="btn-danger bg-rose-600 hover:bg-rose-700 text-white text-xs px-3 py-1.5 font-bold flex items-center gap-1 rounded-lg shadow-xs cursor-pointer disabled:opacity-50"
-            >
-              <span>✕</span>
-              <span>{t("রিজেক্ট")}</span>
-            </button>
+            {canVerify && (
+              <button
+                type="button"
+                onClick={handleBulkVerify}
+                disabled={isPending}
+                className="btn-primary bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3.5 py-1.5 font-bold flex items-center gap-1.5 rounded-lg shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                <span>✓</span>
+                <span>{t("সবগুলো একসাথে অনুমোদন")}</span>
+              </button>
+            )}
+            {canReject && (
+              <button
+                type="button"
+                onClick={openRejectBulk}
+                disabled={isPending}
+                className="btn-danger bg-rose-600 hover:bg-rose-700 text-white text-xs px-3 py-1.5 font-bold flex items-center gap-1 rounded-lg shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                <span>✕</span>
+                <span>{t("রিজেক্ট")}</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setSelectedIds(new Set())}
@@ -341,26 +349,33 @@ export function ApprovalQueue({
                   </td>
                   <td className="text-center whitespace-nowrap">
                     <div className="inline-flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={(e) => handleVerifySingle(item.id, e)}
-                        disabled={isPending}
-                        className="inline-flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-1 rounded-md text-xs font-bold transition shadow-2xs hover:shadow-xs disabled:opacity-50 cursor-pointer"
-                        title={t("এক ক্লিকে অনুমোদন (Verify)")}
-                      >
-                        <span>✓</span>
-                        <span>{t("অনুমোদন")}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => openRejectSingle(item.id, e)}
-                        disabled={isPending}
-                        className="inline-flex items-center gap-1 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 px-2 py-1 rounded-md text-xs font-semibold transition shadow-2xs hover:shadow-xs disabled:opacity-50 cursor-pointer"
-                        title={t("বাতিল / রিজেক্ট (Reject)")}
-                      >
-                        <span>✕</span>
-                        <span>{t("রিজেক্ট")}</span>
-                      </button>
+                      {canVerify && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleVerifySingle(item.id, e)}
+                          disabled={isPending}
+                          className="inline-flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-1 rounded-md text-xs font-bold transition shadow-2xs hover:shadow-xs disabled:opacity-50 cursor-pointer"
+                          title={t("এক ক্লিকে অনুমোদন (Verify)")}
+                        >
+                          <span>✓</span>
+                          <span>{t("অনুমোদন")}</span>
+                        </button>
+                      )}
+                      {canReject && (
+                        <button
+                          type="button"
+                          onClick={(e) => openRejectSingle(item.id, e)}
+                          disabled={isPending}
+                          className="inline-flex items-center gap-1 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 px-2 py-1 rounded-md text-xs font-semibold transition shadow-2xs hover:shadow-xs disabled:opacity-50 cursor-pointer"
+                          title={t("বাতিল / রিজেক্ট (Reject)")}
+                        >
+                          <span>✕</span>
+                          <span>{t("রিজেক্ট")}</span>
+                        </button>
+                      )}
+                      {!canVerify && !canReject && (
+                        <span className="text-xs text-slate-400">—</span>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -436,24 +451,31 @@ export function ApprovalQueue({
 
               {/* Row 4: Quick Action Buttons */}
               <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={(e) => handleVerifySingle(item.id, e)}
-                  disabled={isPending}
-                  className="btn-primary bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3.5 py-1.5 font-bold flex items-center gap-1 rounded-lg shadow-xs cursor-pointer disabled:opacity-50"
-                >
-                  <span>✓</span>
-                  <span>{t("অনুমোদন")}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => openRejectSingle(item.id, e)}
-                  disabled={isPending}
-                  className="btn-danger bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 text-xs px-3 py-1.5 font-semibold flex items-center gap-1 rounded-lg shadow-xs cursor-pointer disabled:opacity-50"
-                >
-                  <span>✕</span>
-                  <span>{t("রিজেক্ট")}</span>
-                </button>
+                {canVerify && (
+                  <button
+                    type="button"
+                    onClick={(e) => handleVerifySingle(item.id, e)}
+                    disabled={isPending}
+                    className="btn-primary bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3.5 py-1.5 font-bold flex items-center gap-1 rounded-lg shadow-xs cursor-pointer disabled:opacity-50"
+                  >
+                    <span>✓</span>
+                    <span>{t("অনুমোদন")}</span>
+                  </button>
+                )}
+                {canReject && (
+                  <button
+                    type="button"
+                    onClick={(e) => openRejectSingle(item.id, e)}
+                    disabled={isPending}
+                    className="btn-danger bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 text-xs px-3 py-1.5 font-semibold flex items-center gap-1 rounded-lg shadow-xs cursor-pointer disabled:opacity-50"
+                  >
+                    <span>✕</span>
+                    <span>{t("রিজেক্ট")}</span>
+                  </button>
+                )}
+                {!canVerify && !canReject && (
+                  <span className="text-xs text-slate-400">—</span>
+                )}
               </div>
             </div>
           );
@@ -475,25 +497,29 @@ export function ApprovalQueue({
           <div className="h-4 w-px bg-slate-700 hidden sm:block shrink-0" />
 
           <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={handleBulkVerify}
-              disabled={isPending}
-              className="btn-primary bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-3.5 py-1.5 font-bold flex items-center gap-1.5 rounded-lg shadow-xs cursor-pointer disabled:opacity-50"
-            >
-              <span>✓</span>
-              <span>{t("সবগুলো একসাথে অনুমোদন")}</span>
-            </button>
+            {canVerify && (
+              <button
+                type="button"
+                onClick={handleBulkVerify}
+                disabled={isPending}
+                className="btn-primary bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-3.5 py-1.5 font-bold flex items-center gap-1.5 rounded-lg shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                <span>✓</span>
+                <span>{t("সবগুলো একসাথে অনুমোদন")}</span>
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={openRejectBulk}
-              disabled={isPending}
-              className="btn-danger bg-rose-600 hover:bg-rose-500 text-white text-xs px-3 py-1.5 font-bold flex items-center gap-1.5 rounded-lg shadow-xs cursor-pointer disabled:opacity-50"
-            >
-              <span>✕</span>
-              <span>{t("রিজেক্ট")}</span>
-            </button>
+            {canReject && (
+              <button
+                type="button"
+                onClick={openRejectBulk}
+                disabled={isPending}
+                className="btn-danger bg-rose-600 hover:bg-rose-500 text-white text-xs px-3 py-1.5 font-bold flex items-center gap-1.5 rounded-lg shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                <span>✕</span>
+                <span>{t("রিজেক্ট")}</span>
+              </button>
+            )}
 
             <button
               type="button"

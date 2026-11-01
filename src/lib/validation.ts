@@ -31,24 +31,32 @@ const optionalEmail = z.union([email, z.literal("")]).optional().nullable().tran
 
 // ───────────────────────── auth ─────────────────────────
 
-/** Login with a mobile number or an e-mail address (field name kept as "email" for compatibility). */
-export const loginSchema = z.object({
-  email: z
-    .string({ required_error: "মোবাইল নম্বর বা ইমেইল দিন" })
-    .trim()
-    .min(1, "মোবাইল নম্বর বা ইমেইল দিন")
-    .max(200)
-    .transform((v, ctx) => {
-      if (looksLikeEmail(v)) return { kind: "email" as const, value: v.toLowerCase() };
-      const mobile = normalizeBdMobile(v);
-      if (!mobile) {
-        ctx.addIssue({ code: "custom", message: "সঠিক মোবাইল নম্বর বা ইমেইল দিন" });
-        return z.NEVER;
-      }
-      return { kind: "mobile" as const, value: mobile };
-    }),
-  password: z.string().min(1, "পাসওয়ার্ড আবশ্যক").max(200),
-});
+/** Login with a mobile number or an e-mail address (supports both "email" and "username" field names). */
+export const loginSchema = z.preprocess(
+  (val: unknown) => {
+    if (val && typeof val === "object" && !("email" in val) && "username" in val) {
+      return { ...(val as Record<string, unknown>), email: (val as Record<string, unknown>).username };
+    }
+    return val;
+  },
+  z.object({
+    email: z
+      .string({ required_error: "মোবাইল নম্বর বা ইমেইল দিন" })
+      .trim()
+      .min(1, "মোবাইল নম্বর বা ইমেইল দিন")
+      .max(200)
+      .transform((v, ctx) => {
+        if (looksLikeEmail(v)) return { kind: "email" as const, value: v.toLowerCase() };
+        const mobile = normalizeBdMobile(v);
+        if (!mobile) {
+          ctx.addIssue({ code: "custom", message: "সঠিক মোবাইল নম্বর বা ইমেইল দিন" });
+          return z.NEVER;
+        }
+        return { kind: "mobile" as const, value: mobile };
+      }),
+    password: z.string().min(1, "পাসওয়ার্ড আবশ্যক").max(200),
+  })
+);
 
 // Frequently used passwords that pass the length / character rules but must still be refused.
 const COMMON_PASSWORDS = new Set([

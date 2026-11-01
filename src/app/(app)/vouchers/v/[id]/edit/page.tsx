@@ -15,7 +15,7 @@ export default async function EditVoucherPage({ params }: { params: Promise<{ id
   const { id } = await params;
   if (!id || id === "new") redirect("/depot/deliveries/new");
   const base = await requireContext();
-  let v = await prisma.voucher.findFirst({
+  const v = await prisma.voucher.findFirst({
     where: { id, businessId: base.business.id },
     select: { id: true, type: true, voucherNo: true, sourceKey: true, verificationStatus: true, paddyPurchase: { select: { id: true } }, depotDelivery: { select: { id: true } } },
   });
@@ -28,7 +28,7 @@ export default async function EditVoucherPage({ params }: { params: Promise<{ id
   }
   if (v.type === "OPENING") redirect("/depot/deliveries");
   if (isPayrollVoucher(v.sourceKey)) redirect(`/vouchers/v/${v.id}`); // changed from the payroll module only
-  if (v.verificationStatus && v.verificationStatus !== "UNVERIFIED" && !can(base, "vouchers:verify")) {
+  if (v.verificationStatus && v.verificationStatus !== "UNVERIFIED" && !can(base, ["can_unverify_transactions", "vouchers:verify"])) {
     redirect(`/vouchers/v/${v.id}`);
   }
   if (v.type === "PRODUCTION") redirect(`/production/${v.id}/edit`);

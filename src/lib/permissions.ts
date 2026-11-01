@@ -14,12 +14,52 @@ export const PERMISSION_GROUPS = [
     ],
   },
   {
+    label: "লেনদেন ভেরিফিকেশন ও অডিট",
+    permissions: [
+      {
+        key: "can_verify_transactions",
+        label: "লেনদেন যাচাই ও অনুমোদন",
+        hint: "অপেক্ষমাণ সকল লেনদেন (বিক্রয়, ক্রয়, পেমেন্ট, রিসিপ্ট) অনুমোদন বা ভেরিফাই করার ক্ষমতা",
+      },
+      {
+        key: "can_reject_transactions",
+        label: "লেনদেন বাতিল / রিজেক্ট",
+        hint: "অপেক্ষমাণ লেনদেন বাতিল (Reject / Rollback) করার অনুমতি",
+      },
+      {
+        key: "can_unverify_transactions",
+        label: "অনুমোদিত লেনদেন পুনরায় খোলা / Unverify",
+        hint: "ভুল সংশোধনের জন্য ইতোমধ্যে ভেরিফাইড লেনদেন আনলক করার বিশেষ অনুমতি",
+      },
+      {
+        key: "view_approval_queue",
+        label: "অপেক্ষমাণ লেনদেন কিউ ও ড্যাশবোর্ড উইজেট দেখা",
+        hint: "ড্যাশবোর্ডে আনভেরিফাইড কাউন্টার এবং অনুমোদন কিউ পেজে প্রবেশের অধিকার",
+      },
+    ],
+  },
+  {
     label: "বিক্রয় ও বিক্রয় ফেরত",
     permissions: [
       { key: "sales:view", label: "বিক্রয় দেখা" },
       { key: "sales:create", label: "বিক্রয় তৈরি" },
       { key: "sales:edit", label: "বিক্রয় সম্পাদনা" },
       { key: "sales:delete", label: "বিক্রয় মুছা" },
+      {
+        key: "depot_delivery_view",
+        label: "ডিপো ডেলিভারি চালান দেখা",
+        hint: "ডিপো ডেলিভারি চালান তালিকা, বিস্তারিত ও প্রিন্ট দেখার অধিকার",
+      },
+      {
+        key: "depot_delivery_create",
+        label: "ডিপো ডেলিভারি চালান তৈরি",
+        hint: "নতুন ডিপো ডেলিভারি চালান (ডিও রিলিজ ও মার্কেট সেলস) তৈরি ও সম্পাদনা",
+      },
+      {
+        key: "depot_delivery_verify",
+        label: "ডিপো ডেলিভারি চালান অনুমোদন",
+        hint: "ডিপো ডেলিভারি চালানের ভেরিফিকেশন ও অনুমোদন",
+      },
     ],
   },
   {
@@ -38,11 +78,6 @@ export const PERMISSION_GROUPS = [
       { key: "vouchers:create", label: "ভাউচার তৈরি" },
       { key: "vouchers:edit", label: "ভাউচার সম্পাদনা" },
       { key: "vouchers:delete", label: "ভাউচার মুছা" },
-      {
-        key: "vouchers:verify",
-        label: "লেনদেন যাচাই ও অনুমোদন (ভেরিফিকেশন)",
-        hint: "লেনদেন ভেরিফাই ও রিজেক্ট করার ক্ষমতা, ভেরিফাইড লেনদেন আনলক ও পুনরায় যাচাই করার অনুমতি",
-      },
     ],
   },
   {
@@ -74,6 +109,11 @@ export const PERMISSION_GROUPS = [
       { key: "inventory:view", label: "পণ্য ও স্টক দেখা" },
       { key: "inventory:manage", label: "পণ্য, ক্যাটাগরি, ব্র্যান্ড, ইউনিট ব্যবস্থাপনা" },
       { key: "stock:adjust", label: "স্টক জার্নাল (সমন্বয়)" },
+      {
+        key: "view_stock_valuation",
+        label: "FIFO ও সর্বশেষ বিক্রয় দরে স্টক মূল্যায়ন দেখা",
+        hint: "কাঁচামালের FIFO গড় দর ও উৎপাদিত পণ্যের সর্বশেষ বিক্রয় দরে স্টক মূল্যায়ন",
+      },
     ],
   },
   {
@@ -182,9 +222,12 @@ export const PERMISSION_GROUPS = [
   },
 ] as const;
 
-export type Permission = (typeof PERMISSION_GROUPS)[number]["permissions"][number]["key"];
+export type Permission = (typeof PERMISSION_GROUPS)[number]["permissions"][number]["key"] | "vouchers:verify";
 
-export const ALL_PERMISSIONS: Permission[] = PERMISSION_GROUPS.flatMap((g) => g.permissions.map((p) => p.key));
+export const ALL_PERMISSIONS: Permission[] = [
+  ...PERMISSION_GROUPS.flatMap((g) => g.permissions.map((p) => p.key)),
+  "vouchers:verify",
+];
 
 export function isPermission(value: string): value is Permission {
   return (ALL_PERMISSIONS as string[]).includes(value);
@@ -198,7 +241,13 @@ export function hasPermission(granted: readonly string[], required: Permission |
   // a list means "any of these" (e.g. a depot page: the depot permission or the general one)
   if (typeof required !== "string") return required.some((r) => hasPermission(granted, r));
   if (granted.includes(`!${required}`)) return false;
-  return granted.includes("*") || granted.includes(required);
+  if (granted.includes("*") || granted.includes(required)) return true;
+  // Aliases / fallback logic for verification permissions
+  if (required === "vouchers:verify" && granted.includes("can_verify_transactions")) return true;
+  if (required === "can_verify_transactions" && granted.includes("vouchers:verify")) return true;
+  if (required === "view_approval_queue" && (granted.includes("can_verify_transactions") || granted.includes("vouchers:verify"))) return true;
+  if (required === "depot_delivery_verify" && (granted.includes("can_verify_transactions") || granted.includes("vouchers:verify"))) return true;
+  return false;
 }
 
 /** The single-report keys: each opens its report beside the general key. */
@@ -212,6 +261,8 @@ export const REPORT_ACCESS = {
   /** the statement's Excel / CSV and the ledger report */
   ledgerExport: ["reports.ledger:print", "reports:view"],
   ledgerReport: ["reports.ledger:view", "reports:view"],
+  /** stock valuation report and dashboard valuation card */
+  stockValuation: ["view_stock_valuation", "reports:view"],
 } as const satisfies Record<string, readonly Permission[]>;
 
 /** The auto rice mill group's keys (module RICE_MILL only). */

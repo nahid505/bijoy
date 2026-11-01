@@ -1,5 +1,19 @@
 // Shared frame of the login and registration pages: brand panel (desktop) + form column.
-export function AuthShell({ title, subtitle, children, footer, wide = false }: { title: string; subtitle: string; children: React.ReactNode; footer?: React.ReactNode; wide?: boolean }) {
+export function AuthShell({
+  title,
+  subtitle,
+  children,
+  footer,
+  downloadSection,
+  wide = false,
+}: {
+  title: string;
+  subtitle: string;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+  downloadSection?: React.ReactNode;
+  wide?: boolean;
+}) {
   return (
     <main className="flex min-h-screen bg-paper">
       <section className="relative hidden w-[44%] flex-col justify-between overflow-hidden bg-ink-900 p-10 text-white lg:flex">
@@ -19,7 +33,16 @@ export function AuthShell({ title, subtitle, children, footer, wide = false }: {
         {/* ledger-paper motif */}
         <div aria-hidden className="pointer-events-none absolute inset-y-0 right-10 w-px bg-brand-500/40" />
         <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.07]" style={{ backgroundImage: "repeating-linear-gradient(0deg, #fff 0 1px, transparent 1px 28px)" }} />
-        <p className="text-xs text-ink-200">© বিজয় লেনদেন</p>
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 p-3 text-xs text-ink-200">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-brand-500/20 text-base" aria-hidden>📲</span>
+            <div>
+              <p className="font-semibold text-white">সহজেই ব্যবহার করুন মোবাইল ও কম্পিউটারে</p>
+              <p className="text-[11px] text-ink-200">Android APK ও Windows Desktop App সুবিধা</p>
+            </div>
+          </div>
+          <p className="text-xs text-ink-200">© বিজয় লেনদেন</p>
+        </div>
       </section>
       <section className="flex flex-1 items-center justify-center px-4 py-10">
         <div className={`w-full ${wide ? "max-w-md" : "max-w-sm"}`}>
@@ -31,6 +54,7 @@ export function AuthShell({ title, subtitle, children, footer, wide = false }: {
           <p className="mb-6 mt-1 text-sm text-slate-500">{subtitle}</p>
           <div className="panel p-6">{children}</div>
           {footer && <div className="mt-5 text-center text-sm text-slate-600">{footer}</div>}
+          {downloadSection}
         </div>
       </section>
     </main>

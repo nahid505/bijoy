@@ -41,7 +41,7 @@ async function saveVoucher(type: EditableType, id: string | null, fd: FormData, 
     const existing = id
       ? await prisma.voucher.findFirst({ where: { id, businessId: base.business.id }, select: { book: true, verificationStatus: true } })
       : null;
-    if (existing && existing.verificationStatus !== "UNVERIFIED" && !can(base, "vouchers:verify")) {
+    if (existing && existing.verificationStatus !== "UNVERIFIED" && !can(base, ["can_unverify_transactions", "vouchers:verify"])) {
       throw new UserError(
         existing.verificationStatus === "VERIFIED"
           ? "লেনদেনটি অনুমোদিত (Verified) ও লক করা — সম্পাদনা করতে ভেরিফিকেশন প্রত্যাহার বা অনুমোদনের প্রয়োজন"
@@ -153,7 +153,7 @@ export async function deleteVoucherAction(id: string, _prev: ActionState, _fd: F
     if (!base) throw new ForbiddenError();
     const v = await prisma.voucher.findFirst({ where: { id, businessId: base.business.id }, select: { type: true, book: true, verificationStatus: true } });
     if (!v || v.type === "OPENING") throw new UserError("ভাউচার পাওয়া যায়নি");
-    if (v.verificationStatus !== "UNVERIFIED" && !can(base, "vouchers:verify")) {
+    if (v.verificationStatus !== "UNVERIFIED" && !can(base, ["can_unverify_transactions", "vouchers:verify"])) {
       throw new UserError(
         v.verificationStatus === "VERIFIED"
           ? "লেনদেনটি অনুমোদিত (Verified) ও লক করা — ডিলিট করতে ভেরিফিকেশন প্রত্যাহার বা অনুমোদনের প্রয়োজন"

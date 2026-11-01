@@ -57,10 +57,19 @@ export async function assertNotLocked(tx: Tx, businessId: string, ...dates: (Dat
 export async function assertAccounts(tx: Tx, businessId: string, ids: string[], opts: { kinds?: AccountKind[]; label?: string } = {}) {
   const unique = [...new Set(ids.filter(Boolean))];
   if (unique.length === 0) return new Map<string, { id: string; name: string; kind: AccountKind }>();
-  const rows = await tx.account.findMany({ where: { id: { in: unique }, businessId }, select: { id: true, name: true, kind: true, isActive: true } });
+  const rows = await tx.account.findMany({
+    where: { id: { in: unique }, businessId },
+    select: { id: true, name: true, kind: true, isActive: true, customer: { select: { id: true } }, supplier: { select: { id: true } } },
+  });
   if (rows.length !== unique.length) throw new UserError(`${opts.label ?? "হিসাব"} পাওয়া যায়নি`);
   for (const r of rows) {
-    if (opts.kinds && !opts.kinds.includes(r.kind)) throw new UserError(`"${r.name}" এই লেনদেনের জন্য উপযুক্ত হিসাব নয়`);
+    if (opts.kinds) {
+      const isPartyKind = opts.kinds.includes("CUSTOMER") || opts.kinds.includes("SUPPLIER");
+      const isLinkedParty = isPartyKind && (Boolean(r.customer) || Boolean(r.supplier));
+      if (!opts.kinds.includes(r.kind) && !isLinkedParty) {
+        throw new UserError(`"${r.name}" এই লেনদেনের জন্য উপযুক্ত হিসাব নয়`);
+      }
+    }
   }
   return new Map(rows.map((r) => [r.id, r]));
 }

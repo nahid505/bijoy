@@ -106,7 +106,7 @@ export async function CashAndBalancesSection({ ctx }: { ctx: AppContext }) {
     isDep ? depotCashSummary(ctx.business.id).catch(() => null) : Promise.resolve(null),
   ]);
 
-  let cashAccounts = cashRows
+  const cashAccounts = cashRows
     .filter((r) => heads === null || heads.includes(r.id))
     .map((r) => (depotBox && r.id === depotBox.accountId ? { ...r, balance: depotBox.balance } : r));
 
@@ -326,7 +326,7 @@ export async function CashAndBalancesSection({ ctx }: { ctx: AppContext }) {
  */
 export async function DebtorsCreditorsSummary({ ctx }: { ctx: AppContext }) {
   const canAccounts = can(ctx, "accounts:view");
-  const canVerify = can(ctx, "vouchers:verify");
+  const canVerify = can(ctx, ["view_approval_queue", "can_verify_transactions", "vouchers:verify"]);
   if (!canAccounts && !canVerify) return null;
   const t = await getT();
   const cur = ctx.business.currencySymbol;
@@ -381,7 +381,7 @@ export async function DebtorsCreditorsSummary({ ctx }: { ctx: AppContext }) {
   const totalStockValue = valuation.totalValue;
   const stockProductCount = valuation.totalProducts;
 
-  const stockHref = isDep && !can(ctx, "reports:view") ? "/depot/products" : can(ctx, "reports:view") ? "/reports/stock-valuation" : "/reports/daily-stock";
+  const stockHref = isDep && !can(ctx, "reports:view") ? "/depot/products" : can(ctx, ["view_stock_valuation", "reports:view"]) ? "/reports/stock-valuation" : "/reports/daily-stock";
 
   const cardCount = (canAccounts ? 3 : 0) + (canVerify ? 1 : 0);
   const gridColsClass =

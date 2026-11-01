@@ -283,7 +283,8 @@ export function TradeVoucherForm({
         <div className="sm:col-span-2">
           <label className="label" htmlFor="v-party">{t(isSale ? "কাস্টমার" : "সরবরাহকারী")}</label>
           <SearchSelect
-            kind={isSale ? "customers" : "suppliers"}
+            kind="parties"
+            partyKind={isSale ? "CUSTOMER" : "SUPPLIER"}
             book={book}
             id="v-party"
             value={party}
@@ -293,6 +294,7 @@ export function TradeVoucherForm({
             create={lockedToInvoice ? false : {}}
             currency={currency}
             ariaLabel={t(isSale ? "কাস্টমার" : "সরবরাহকারী")}
+            placeholder={t(isSale ? "কাস্টমার / পার্টি খুঁজুন — নাম, মোবাইল, কোড" : "সরবরাহকারী / পার্টি খুঁজুন — নাম, মোবাইল, কোড")}
           />
           <PartyInfo party={party ?? undefined} currency={currency} projectedDue={projectedDue} />
           <FieldError name="partyAccountId" />

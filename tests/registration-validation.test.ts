@@ -69,4 +69,9 @@ describe("login identifier", () => {
     expect(loginSchema.parse({ email: "Admin@Example.com", password: "x" }).email).toEqual({ kind: "email", value: "admin@example.com" });
     expect(loginSchema.safeParse({ email: "hello", password: "x" }).success).toBe(false);
   });
+
+  it("accepts username as an alias for email", () => {
+    expect(loginSchema.parse({ username: "01712345678", password: "x" }).email).toEqual({ kind: "mobile", value: "01712345678" });
+    expect(loginSchema.parse({ username: "user@example.com", password: "x" }).email).toEqual({ kind: "email", value: "user@example.com" });
+  });
 });

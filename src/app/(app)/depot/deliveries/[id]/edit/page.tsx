@@ -20,7 +20,7 @@ export const metadata: Metadata = { title: "ডেলিভারি চাল�
 export default async function EditDepotDeliveryPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!id || id === "new") redirect("/depot/deliveries/new");
-  const ctx = await requirePermission(DEPOT_ACCESS.deliveryEdit);
+  const ctx = await requirePermission(["depot_delivery_create", ...DEPOT_ACCESS.deliveryEdit]);
   if (!isDepot(ctx.business.businessType)) return <DepotOnlyNotice canManage={can(ctx, "business:manage")} />;
   const d = await loadDepotDelivery(ctx.business.id, id);
   if (!d) redirect("/depot/deliveries");

@@ -12,7 +12,7 @@ import { anchoredStyle, useAnchoredPosition, useDebounced } from "./popover-util
 import { useT } from "./lang";
 import type { PartyOption, ProductOption, UnitOption } from "./trade-parts";
 
-export type LookupKind = "customers" | "suppliers" | "products" | "employees";
+export type LookupKind = "customers" | "suppliers" | "products" | "employees" | "parties";
 /** an employee in the payroll pickers */
 export interface EmployeeOption {
   id: string;
@@ -26,7 +26,7 @@ export interface EmployeeOption {
 type Item = PartyOption | ProductOption | EmployeeOption;
 
 const DEBOUNCE_MS = 250;
-const NOUN: Record<LookupKind, string> = { customers: "কাস্টমার", suppliers: "সরবরাহকারী", products: "পণ্য", employees: "কর্মচারী" };
+const NOUN: Record<LookupKind, string> = { customers: "কাস্টমার", suppliers: "সরবরাহকারী", products: "পণ্য", employees: "কর্মচারী", parties: "পার্টি" };
 
 /** Secondary line and right-hand figure for an option. */
 function describe(kind: LookupKind, item: Item, ctx: { currency: string; unitName?: (id: string) => string; priceOf?: (p: ProductOption) => number; t: (s: string) => string }) {
@@ -38,6 +38,8 @@ function describe(kind: LookupKind, item: Item, ctx: { currency: string; unitNam
       right: e.mobile ?? "",
       right2: ["RESIGNED", "TERMINATED"].includes(e.status) ? t("অব্যাহতিপ্রাপ্ত") : "",
       warn: ["RESIGNED", "TERMINATED"].includes(e.status),
+      balDr: false,
+      balCr: false,
     };
   }
   if (kind === "products") {
@@ -47,14 +49,21 @@ function describe(kind: LookupKind, item: Item, ctx: { currency: string; unitNam
       right: `${t("মজুদ")} ${formatQty(p.stock)} ${ctx.unitName?.(p.unitId) ?? ""}`,
       right2: formatMoney(ctx.priceOf ? ctx.priceOf(p) : p.salePrice, ctx.currency),
       warn: p.stock <= 0,
+      balDr: false,
+      balCr: false,
     };
   }
   const a = item as PartyOption & { code?: string | null };
+  const hasBal = a.balance !== undefined;
+  const isDr = hasBal && a.balance! > 0.005;
+  const isCr = hasBal && a.balance! < -0.005;
   return {
     sub: [a.mobile && `📞 ${a.mobile}`, a.code && `${t("কোড")} ${a.code}`].filter(Boolean).join(" · "),
-    right: a.balance !== undefined ? formatDrCr(a.balance, ctx.currency) : "",
+    right: hasBal ? formatDrCr(a.balance, ctx.currency) : "",
     right2: a.overdue ? `${t("মেয়াদোত্তীর্ণ")} ${formatMoney(a.overdue, ctx.currency)}` : "",
     warn: !!a.overdue,
+    balDr: isDr,
+    balCr: isCr,
   };
 }
 
@@ -79,11 +88,12 @@ export interface SearchSelectProps<T extends Item> {
   className?: string;
   /** "depot": a depot form — customers are depot DEALERS ("ডিলার"), balances from the depot book */
   book?: "depot";
+  partyKind?: "CUSTOMER" | "SUPPLIER";
 }
 
 export function SearchSelect<T extends Item>({
   kind, value, onChange, id, name, placeholder, noneLabel, disabled = false, create = false, batchOnly = false,
-  currency = "৳", unitName, priceOf, ariaLabel, className = "", book,
+  currency = "৳", unitName, priceOf, ariaLabel, className = "", book, partyKind = "CUSTOMER",
 }: SearchSelectProps<T>) {
   const t = useT();
   const uid = useId();
@@ -266,14 +276,31 @@ export function SearchSelect<T extends Item>({
               );
             }
             const d = describe(kind, e.item, { currency, unitName, priceOf, t });
+            const party = e.item as PartyOption;
+            const partyType = party.partyType ?? (kind === "customers" ? "CUSTOMER" : kind === "suppliers" ? "SUPPLIER" : undefined);
+            const badgeLabel = partyType === "BOTH" ? t("উভয়") : partyType === "SUPPLIER" ? t("সরবরাহকারী") : partyType === "CUSTOMER" ? t("কাস্টমার") : null;
+            const badgeClass =
+              partyType === "BOTH"
+                ? "bg-emerald-50 text-emerald-700 border border-emerald-200/80"
+                : partyType === "SUPPLIER"
+                  ? "bg-purple-50 text-purple-700 border border-purple-200/80"
+                  : "bg-sky-50 text-sky-700 border border-sky-200/80";
+
             return (
               <li key={e.item.id} id={`${listId}-${i}`} role="option" aria-selected={value?.id === e.item.id} className={`${base} flex items-start justify-between gap-3`} onMouseEnter={() => setActive(i)} onClick={() => choose(i)}>
                 <span className="min-w-0">
-                  <span className="block truncate font-medium text-ink-900">{e.item.name}</span>
+                  <span className="flex items-center gap-1.5 font-medium text-ink-900">
+                    <span className="truncate">{e.item.name}</span>
+                    {badgeLabel && (
+                      <span className={`inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[10px] font-medium leading-none ${badgeClass}`}>
+                        {badgeLabel}
+                      </span>
+                    )}
+                  </span>
                   {d.sub && <span className="block truncate text-[11px] text-slate-500">{d.sub}</span>}
                 </span>
                 <span className="shrink-0 text-right text-[11px]">
-                  <span className={`block ${d.warn ? "text-credit" : "text-slate-600"}`}>{d.right}</span>
+                  <span className={`block tabular-nums ${d.balDr ? "font-medium text-sky-700" : d.balCr ? "font-medium text-amber-700" : d.warn ? "text-credit" : "text-slate-600"}`}>{d.right}</span>
                   {d.right2 && <span className={`block ${kind === "products" ? "font-semibold text-ink-800" : "text-credit"}`}>{d.right2}</span>}
                 </span>
               </li>
@@ -288,6 +315,7 @@ export function SearchSelect<T extends Item>({
           kind={kind}
           dealer={dealer}
           depot={book === "depot"}
+          partyKind={partyKind}
           initialName={creating}
           units={create ? create.units ?? [] : []}
           onCancel={() => {
@@ -306,7 +334,7 @@ export function SearchSelect<T extends Item>({
   );
 }
 
-function QuickCreateDialog({ kind, dealer = false, depot = false, initialName, units, onCancel, onCreated }: { kind: LookupKind; dealer?: boolean; depot?: boolean; initialName: string; units: UnitOption[]; onCancel: () => void; onCreated: (item: Item) => void }) {
+function QuickCreateDialog({ kind, dealer = false, depot = false, partyKind = "CUSTOMER", initialName, units, onCancel, onCreated }: { kind: LookupKind; dealer?: boolean; depot?: boolean; partyKind?: "CUSTOMER" | "SUPPLIER"; initialName: string; units: UnitOption[]; onCancel: () => void; onCreated: (item: Item) => void }) {
   const t = useT();
   const ref = useRef<HTMLDialogElement>(null);
   const [busy, setBusy] = useState(false);
@@ -327,7 +355,7 @@ function QuickCreateDialog({ kind, dealer = false, depot = false, initialName, u
       const r =
         kind === "products"
           ? await quickCreateProductAction({ name: get("qcName"), code: get("qcCode"), barcode: get("qcBarcode"), unitId: get("qcUnit"), purchasePrice: get("qcPurchase"), salePrice: get("qcSale"), depot })
-          : await quickCreatePartyAction(kind === "customers" ? "CUSTOMER" : "SUPPLIER", { name: get("qcName"), mobile: get("qcMobile"), ownerName: get("qcOwner"), dealer });
+          : await quickCreatePartyAction(kind === "parties" ? partyKind : kind === "customers" ? "CUSTOMER" : "SUPPLIER", { name: get("qcName"), mobile: get("qcMobile"), ownerName: get("qcOwner"), dealer });
       if (r.ok) onCreated(r.item);
       else {
         setMessage(r.message);
@@ -348,7 +376,7 @@ function QuickCreateDialog({ kind, dealer = false, depot = false, initialName, u
       className="m-auto w-[min(28rem,calc(100vw-2rem))] rounded-lg border border-rule p-0 shadow-2xl backdrop:bg-ink-950/50"
     >
       <form onSubmit={submit} className="space-y-3 p-5" noValidate>
-        <h2 className="text-base font-bold text-ink-900">{t("নতুন {noun} তৈরি করুন", { noun: t(dealer ? "ডিলার" : NOUN[kind]) })}</h2>
+        <h2 className="text-base font-bold text-ink-900">{t("নতুন {noun} তৈরি করুন", { noun: t(dealer ? "ডিলার" : kind === "parties" ? (partyKind === "SUPPLIER" ? "সরবরাহকারী" : "কাস্টমার") : NOUN[kind]) })}</h2>
         {message && <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{message}</p>}
         <div>
           <label className="label" htmlFor="qcName">{t(dealer ? "প্রতিষ্ঠানের নাম *" : "নাম *")}</label>

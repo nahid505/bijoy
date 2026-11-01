@@ -14,6 +14,7 @@ import { ci, rawRows, sql } from "@/lib/dialect";
 import { allowedParties, canSeeParty, voucherScopeWhere } from "../party-scope";
 import { digitVariants } from "@/lib/digits";
 import { calculateInventoryValuation } from "../services/valuation";
+import { REPORT_ACCESS } from "@/lib/permissions";
 
 const periodText = (from: string, to: string) => `${formatDate(from)} — ${formatDate(to)}`;
 const asOfOf = (p: ReportParams) => (p.asOf && /^\d{4}-\d{2}-\d{2}$/.test(p.asOf) ? p.asOf : toDateInput());
@@ -358,7 +359,7 @@ export const EXTRA_REPORTS: ReportDef[] = [
     title: "স্টক মূল্যায়ন",
     description: "ক্যাটাগরিভিত্তিক মজুদ পরিমাণ, কাঁচামাল FIFO লট ও উৎপাদিত পণ্যের সর্বশেষ ৩ বিক্রির গড় দরে মূল্যায়ন",
     filters: ["q"],
-    permission: "reports:view",
+    permission: REPORT_ACCESS.stockValuation,
     async run(ctx, p) {
       const cur = ctx.business.currencySymbol;
       const q = p.q?.trim().toLowerCase();

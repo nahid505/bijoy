@@ -27,7 +27,7 @@ export default async function VoucherDetailPage({ params }: { params: Promise<{ 
   if (!id || id === "new") redirect("/depot/deliveries/new");
   const ctx = await requireContext();
   const t = await getT();
-  let v = await loadVoucher(ctx.business.id, id);
+  const v = await loadVoucher(ctx.business.id, id);
   if (!v) {
     const d = await prisma.depotDelivery.findFirst({
       where: { businessId: ctx.business.id, id },
@@ -59,16 +59,18 @@ export default async function VoucherDetailPage({ params }: { params: Promise<{ 
   const st = paymentStatus(amount, paid);
   const payroll = isPayrollVoucher(v.sourceKey);
   const editable = v.type !== "OPENING" && !payroll;
-  const canVerify = can(ctx, "vouchers:verify");
+  const isDelivery = Boolean(v.depotDelivery || v.type === "DEPOT_DELIVERY");
+  const canVerify = can(ctx, isDelivery ? ["can_verify_transactions", "depot_delivery_verify", "vouchers:verify"] : ["can_verify_transactions", "vouchers:verify"]);
+  const canReject = can(ctx, ["can_reject_transactions", "vouchers:verify"]);
+  const canUnverify = can(ctx, ["can_unverify_transactions", "vouchers:verify"]);
   const isVerified = (v.verificationStatus ?? "UNVERIFIED") === "VERIFIED";
   const isRejected = (v.verificationStatus ?? "UNVERIFIED") === "REJECTED";
-  const isLocked = (isVerified || isRejected) && !canVerify;
+  const isLocked = (isVerified || isRejected) && !canUnverify && !canVerify;
   // payroll vouchers are changed from the payroll module only
   const payrollHref = !payroll ? null : v.sourceKey!.startsWith("payroll:run:") ? `/payroll/runs/${v.sourceKey!.slice("payroll:run:".length)}` : v.sourceKey!.startsWith("payroll:advance:") ? "/payroll/advances" : "/payroll/payments";
   const hasBatches = v.items.some((i) => i.batchNo || i.stockMovements.length > 0);
   const party = v.partyAccount?.customer ?? v.partyAccount?.supplier;
   const partyHref = depotOnly ? null : v.partyAccount?.customer ? `/customers/${v.partyAccount.customer.id}` : v.partyAccount?.supplier ? `/suppliers/${v.partyAccount.supplier.id}` : v.partyAccount ? `/accounts/${v.partyAccountId}` : null;
-  const isDelivery = Boolean(v.depotDelivery || v.type === "DEPOT_DELIVERY");
 
   const totalDeliveryQty = round3(v.items.reduce((s, i) => s + num(i.quantity), 0));
   const totalFreeQty = round3(v.items.reduce((s, i) => s + num(i.freeQuantity), 0));
@@ -133,6 +135,8 @@ export default async function VoucherDetailPage({ params }: { params: Promise<{ 
             verifiedAt={v.verifiedAt}
             verificationNote={v.verificationNote}
             canVerify={canVerify}
+            canReject={canReject}
+            canUnverify={canUnverify}
           />
         </DetailRow>
         <DetailRow label={t("তৈরি")}>{v.createdBy.name} · {formatDateTime(v.createdAt)}</DetailRow>
@@ -248,6 +252,8 @@ export default async function VoucherDetailPage({ params }: { params: Promise<{ 
             verifiedAt={v.verifiedAt}
             verificationNote={v.verificationNote}
             canVerify={canVerify}
+            canReject={canReject}
+            canUnverify={canUnverify}
           />
         </div>
       </div>

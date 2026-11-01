@@ -16,6 +16,7 @@ const eslintConfig = [
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
       ],
+      "@typescript-eslint/no-explicit-any": "warn",
     },
   },
   {

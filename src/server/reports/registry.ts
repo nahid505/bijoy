@@ -9,9 +9,10 @@ import { DAILY_SALES_REPORT } from "./daily-sales";
 import { DEPOT_REPORTS } from "./depot";
 import { DAILY_MILLING_REPORT, RICE_MILL_REPORT } from "./rice-mill";
 import { DAILY_STOCK_REPORT } from "./daily-stock";
+import { PRODUCTION_YIELD_SUMMARY_REPORT } from "./production-yield-summary";
 import type { PartyScope } from "../party-scope";
 
-export const REPORTS = [...BASE, ...EXTRA_REPORTS, ...EXPIRY_REPORTS, ...PAYROLL_REPORTS, DAILY_CASH_REPORT, DAILY_PURCHASE_REPORT, DAILY_SALES_REPORT, ...DEPOT_REPORTS, RICE_MILL_REPORT, DAILY_MILLING_REPORT, DAILY_STOCK_REPORT];
+export const REPORTS = [...BASE, ...EXTRA_REPORTS, ...EXPIRY_REPORTS, ...PAYROLL_REPORTS, DAILY_CASH_REPORT, DAILY_PURCHASE_REPORT, DAILY_SALES_REPORT, ...DEPOT_REPORTS, RICE_MILL_REPORT, DAILY_MILLING_REPORT, DAILY_STOCK_REPORT, PRODUCTION_YIELD_SUMMARY_REPORT];
 
 export function findReport(slug: string) {
   return REPORTS.find((r) => r.slug === slug) ?? null;
@@ -27,6 +28,7 @@ const PARTY_FILTERED = new Set([
 const NO_PARTY_DATA = new Set([
   "stock", "stock-valuation", "product-expiry", "expiry-value", "depot-free", "daily-milling", "daily-stock",
   "payroll-monthly", "payroll-employee-history", "payroll-payable", "payroll-payments", "payroll-department", "payroll-components",
+  "production-yield-summary",
 ]);
 /** batch reports that name the supplier */
 const SUPPLIER_NAMES = new Set(["expired-stock", "expiring-stock", "expiry"]);

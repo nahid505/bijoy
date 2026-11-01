@@ -13,6 +13,8 @@ export interface VerificationBadgeProps {
   verifiedAt?: string | Date | null;
   verificationNote?: string | null;
   canVerify?: boolean | null;
+  canReject?: boolean | null;
+  canUnverify?: boolean | null;
   onStatusChange?: (newStatus: VerificationStatus, note?: string | null) => void;
   compact?: boolean;
 }
@@ -69,6 +71,8 @@ function VerificationBadgeInner({
   verifiedAt: initialVerifiedAt,
   verificationNote: initialNote,
   canVerify = false,
+  canReject,
+  canUnverify,
   onStatusChange,
   compact = false,
 }: VerificationBadgeProps) {
@@ -87,6 +91,8 @@ function VerificationBadgeInner({
   const [showTooltip, setShowTooltip] = useState(false);
 
   const userCanVerify = Boolean(canVerify);
+  const userCanReject = canReject !== undefined ? Boolean(canReject) : userCanVerify;
+  const userCanUnverify = canUnverify !== undefined ? Boolean(canUnverify) : userCanVerify;
 
   const handleVerify = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -259,38 +265,42 @@ function VerificationBadgeInner({
       </div>
 
       {/* ── Micro-Interaction Action Buttons (Only for authorized users) ── */}
-      {userCanVerify && voucherId && (
+      {voucherId && (userCanVerify || userCanReject || userCanUnverify) && (
         <div className="inline-flex items-center gap-1 ml-1 print:hidden">
           {status === "UNVERIFIED" && (
             <>
-              <button
-                type="button"
-                onClick={handleVerify}
-                disabled={isPending}
-                className="inline-flex items-center justify-center h-6 w-6 rounded-md bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300 transition-colors shadow-2xs text-xs font-bold disabled:opacity-50"
-                title={t("এক ক্লিকে অনুমোদন (Verify)")}
-              >
-                ✓
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setShowRejectModal(true);
-                }}
-                disabled={isPending}
-                className="inline-flex items-center justify-center h-6 w-6 rounded-md bg-rose-100 hover:bg-rose-200 text-rose-800 border border-rose-300 transition-colors shadow-2xs text-xs font-bold disabled:opacity-50"
-                title={t("রিজেক্ট করুন (Reject with note)")}
-              >
-                ✕
-              </button>
+              {userCanVerify && (
+                <button
+                  type="button"
+                  onClick={handleVerify}
+                  disabled={isPending}
+                  className="inline-flex items-center justify-center h-6 w-6 rounded-md bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300 transition-colors shadow-2xs text-xs font-bold disabled:opacity-50"
+                  title={t("এক ক্লিকে অনুমোদন (Verify)")}
+                >
+                  ✓
+                </button>
+              )}
+              {userCanReject && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setShowRejectModal(true);
+                  }}
+                  disabled={isPending}
+                  className="inline-flex items-center justify-center h-6 w-6 rounded-md bg-rose-100 hover:bg-rose-200 text-rose-800 border border-rose-300 transition-colors shadow-2xs text-xs font-bold disabled:opacity-50"
+                  title={t("রিজেক্ট করুন (Reject with note)")}
+                >
+                  ✕
+                </button>
+              )}
             </>
           )}
 
-          {status === "VERIFIED" && (
+          {status === "VERIFIED" && userCanUnverify && (
             <button
-                type="button"
+              type="button"
               onClick={handleUnverify}
               disabled={isPending}
               className="text-[11px] text-slate-500 hover:text-amber-800 hover:underline px-1 py-0.5 rounded transition-colors"
@@ -301,15 +311,30 @@ function VerificationBadgeInner({
           )}
 
           {status === "REJECTED" && (
-            <button
-              type="button"
-              onClick={handleVerify}
-              disabled={isPending}
-              className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300 transition-colors"
-              title={t("পুনরায় অনুমোদন করুন (Re-approve)")}
-            >
-              {t("অনুমোদন")}
-            </button>
+            <>
+              {userCanVerify && (
+                <button
+                  type="button"
+                  onClick={handleVerify}
+                  disabled={isPending}
+                  className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300 transition-colors"
+                  title={t("পুনরায় অনুমোদন করুন (Re-approve)")}
+                >
+                  {t("অনুমোদন")}
+                </button>
+              )}
+              {userCanUnverify && (
+                <button
+                  type="button"
+                  onClick={handleUnverify}
+                  disabled={isPending}
+                  className="text-[11px] text-slate-500 hover:text-amber-800 hover:underline px-1 py-0.5 rounded transition-colors"
+                  title={t("পুনরায় চালু করুন (Re-open / Unverify)")}
+                >
+                  {t("পুনরায় চালু")}
+                </button>
+              )}
+            </>
           )}
         </div>
       )}

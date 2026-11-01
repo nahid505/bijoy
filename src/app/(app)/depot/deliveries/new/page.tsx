@@ -14,7 +14,7 @@ import { DepotOnlyNotice } from "../../depot-ui";
 export const metadata: Metadata = { title: "নতুন ডেলিভারি চালান" };
 
 export default async function NewDepotDeliveryPage({ searchParams }: { searchParams: SearchParams }) {
-  const ctx = await requirePermission(DEPOT_ACCESS.deliveryCreate);
+  const ctx = await requirePermission(["depot_delivery_create", ...DEPOT_ACCESS.deliveryCreate]);
   if (!isDepot(ctx.business.businessType)) return <DepotOnlyNotice canManage={can(ctx, "business:manage")} />;
   const p = await readParams(searchParams);
   const [warehouses, cash, inv] = await Promise.all([

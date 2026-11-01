@@ -205,7 +205,15 @@ export async function VoucherEditor({
     const isDepotStockIn = depot && type === "PURCHASE";
     // only the party and products already on the voucher are sent; the pickers search the rest
     const [parties, cashAccounts, inv] = await Promise.all([
-      defaults.partyAccountId ? searchParties(businessId, partyKind, "", { accountIds: [defaults.partyAccountId], allowed: partyKind === "CUSTOMER" ? ctx.partyScope.customers : ctx.partyScope.suppliers, dealer: depot && partyKind === "CUSTOMER", book }) : Promise.resolve([]),
+      defaults.partyAccountId
+        ? searchParties(businessId, "ALL", "", {
+            accountIds: [defaults.partyAccountId],
+            customerAllowed: ctx.partyScope.customers,
+            supplierAllowed: ctx.partyScope.suppliers,
+            dealer: depot && partyKind === "CUSTOMER",
+            book,
+          })
+        : Promise.resolve([]),
       accountOptions(businessId, { kind: { in: ["CASH", "BANK"] }, ...accountScopeWhere(ctx) }, true, false, book),
       inventoryOptions(businessId, isDepotStockIn ? { book, includeProductIds: defaults.items.map((i) => i.productId) } : { productIds: defaults.items.map((i) => i.productId) }),
     ]);

@@ -110,11 +110,14 @@ export async function tradeVoucherTx(tx: Tx, ctx: Ctx, type: TradeType, input: T
     // ── parties & ledgers (tenant + kind checks)
     let partyTerms: { creditLimit: number; creditDays: number } | null = null;
     if (input.partyAccountId) {
-      await assertAccounts(tx, ctx.businessId, [input.partyAccountId], { kinds: [rule.partyKind], label: rule.partyKind === "CUSTOMER" ? "কাস্টমার" : "সরবরাহকারী" });
-      const party = rule.partyKind === "CUSTOMER"
-        ? await tx.customer.findUnique({ where: { accountId: input.partyAccountId }, select: { creditLimit: true, creditDays: true } })
-        : await tx.supplier.findUnique({ where: { accountId: input.partyAccountId }, select: { creditDays: true } });
-      partyTerms = { creditLimit: Number((party as { creditLimit?: unknown })?.creditLimit ?? 0), creditDays: party?.creditDays ?? 0 };
+      await assertAccounts(tx, ctx.businessId, [input.partyAccountId], { kinds: ["CUSTOMER", "SUPPLIER"], label: "পার্টি" });
+      const [customerRecord, supplierRecord] = await Promise.all([
+        tx.customer.findUnique({ where: { accountId: input.partyAccountId }, select: { creditLimit: true, creditDays: true } }),
+        tx.supplier.findUnique({ where: { accountId: input.partyAccountId }, select: { creditDays: true } }),
+      ]);
+      const creditLimit = customerRecord?.creditLimit ? Number(customerRecord.creditLimit) : 0;
+      const creditDays = customerRecord?.creditDays || supplierRecord?.creditDays || 0;
+      partyTerms = { creditLimit, creditDays };
     }
     if (input.payments.length) await assertAccounts(tx, ctx.businessId, input.payments.map((p) => p.accountId), { kinds: ["CASH", "BANK"], label: "নগদ/ব্যাংক হিসাব" });
     const warehouseId = await assertWarehouse(tx, ctx.businessId, input.warehouseId);

@@ -6,6 +6,7 @@ import { registrationPolicy } from "@/server/services/registration";
 import { otpAvailable } from "@/server/sms/otp";
 import { AuthShell } from "./auth-shell";
 import { LoginForm } from "./login-form";
+import { AppDownloadLogin } from "@/components/app-download";
 
 export const metadata: Metadata = { title: "লগইন" };
 export const dynamic = "force-dynamic";
@@ -28,6 +29,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           </>
         )
       }
+      downloadSection={<AppDownloadLogin />}
     >
       <LoginForm next={next ?? "/dashboard"} resetAvailable={otpAvailable()} />
     </AuthShell>

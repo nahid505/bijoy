@@ -99,7 +99,7 @@ export const NAV: NavEntry[] = [
     label: "লেনদেন",
     icon: I.swap,
     children: [
-      { href: "/audit/unverified", label: "অনুমোদন কিউ (যাচাই)", permission: "vouchers:verify" },
+      { href: "/audit/unverified", label: "অনুমোদন কিউ (যাচাই)", permission: ["view_approval_queue", "can_verify_transactions", "vouchers:verify"] },
       { href: "/vouchers/receipt", label: "রিসিপ্ট", permission: "vouchers:view" },
       { href: "/vouchers/payment", label: "পেমেন্ট", permission: "vouchers:view" },
       { href: "/vouchers/journal", label: "জার্নাল", permission: "vouchers:view" },
@@ -175,6 +175,7 @@ export const NAV: NavEntry[] = [
       { href: "/reports/daily-milling", label: "ডেইলি ধান ভাঙানো হিসাব", permission: REPORT_ACCESS.dailyMilling, module: "RICE_MILL" },
       { href: "/reports/daily-stock", label: "দৈনিক স্টক রিপোর্ট", permission: REPORT_ACCESS.dailyStock },
       { href: "/reports/daily-summary", label: "দৈনিক সারসংক্ষেপ", permission: "reports:view" },
+      { href: "/reports/production-yield-summary", label: "উৎপাদন ও ফলন রিপোর্ট", permission: "reports:view" },
       { href: "/reports/day-book", label: "ডে বুক", permission: "reports:view" },
       { href: "/reports/ledger", label: "লেজার রিপোর্ট", permission: "reports:view" },
       { href: "/reports/trial-balance", label: "ট্রায়াল ব্যালেন্স", permission: "reports:view" },
@@ -182,7 +183,7 @@ export const NAV: NavEntry[] = [
       { href: "/reports/balance-sheet", label: "ব্যালান্স শীট", permission: "reports:view" },
       { href: "/reports/cash-flow", label: "নগদ প্রবাহ", permission: "reports:view" },
       { href: "/reports/stock", label: "স্টক রিপোর্ট", permission: "reports:view" },
-      { href: "/reports/stock-valuation", label: "স্টক মূল্যায়ন", permission: "reports:view" },
+      { href: "/reports/stock-valuation", label: "স্টক মূল্যায়ন", permission: REPORT_ACCESS.stockValuation },
       { href: "/reports/expiry-value", label: "মেয়াদ রিপোর্ট", permission: "reports:view" },
       { href: "/reports/customers", label: "কাস্টমার রিপোর্ট", permission: "reports:view" },
       { href: "/reports/suppliers", label: "সরবরাহকারী রিপোর্ট", permission: "reports:view" },
@@ -241,6 +242,7 @@ export const NAV_LABEL_EN: Record<string, string> = {
   ক্রয়: "Purchases",
   বেতন: "Payroll",
   সার্চ: "Search",
+  "উৎপাদন ও ফলন রিপোর্ট": "Production & Yield Report",
 };
 
 export const MOBILE_TABS = [

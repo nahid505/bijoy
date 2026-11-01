@@ -4,7 +4,7 @@ import { prisma, num } from "@/lib/db";
 import { VOUCHER_TYPES, type VoucherTypeKey } from "@/lib/accounting";
 import { formatMoney, toBnDigits, toDateInput, dayRange } from "@/lib/format";
 import { FilterField, PageHeader } from "@/components/ui";
-import { requirePermission } from "@/server/auth";
+import { can, requirePermission } from "@/server/auth";
 import { getT } from "@/server/i18n";
 import { readParams, type SearchParams } from "@/server/params";
 import { ci } from "@/lib/dialect";
@@ -20,7 +20,7 @@ export default async function UnverifiedVouchersPage({
 }: {
   searchParams: SearchParams;
 }) {
-  const ctx = await requirePermission("vouchers:verify");
+  const ctx = await requirePermission(["view_approval_queue", "can_verify_transactions", "vouchers:verify"]);
   const t = await getT();
   const p = await readParams(searchParams);
   const cur = ctx.business.currencySymbol;
@@ -241,6 +241,8 @@ export default async function UnverifiedVouchersPage({
             initialVouchers={initialVouchers}
             currency={cur}
             currentUserName={ctx.user.name}
+            canVerify={can(ctx, ["can_verify_transactions", "vouchers:verify"])}
+            canReject={can(ctx, ["can_reject_transactions", "vouchers:verify"])}
           />
         </div>
       </section>

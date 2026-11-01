@@ -8,6 +8,7 @@ import { PricingSection } from "@/components/pricing-section";
 import { PublicFooter, PublicHeader } from "@/components/public-site";
 import { DashboardPreviewGallery } from "@/components/dashboard-preview-gallery";
 import { toBnDigits } from "@/lib/format";
+import { AppDownloadHero } from "@/components/app-download";
 
 export const metadata: Metadata = {
   title: "বিজয় লেনদেন — বাংলায় ব্যবসার হিসাব ও ইআরপি",
@@ -72,6 +73,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                 )}
               </div>
               <p className="mt-3 text-sm text-ink-200">কার্ড লাগবে না · যেকোনো সময় বাতিল · ডেটা কখনো মুছে না</p>
+              <div className="mt-7 border-t border-white/10 pt-5">
+                <AppDownloadHero />
+              </div>
             </div>
             <div className="w-full mt-6 md:mt-0">
               <DashboardPreviewGallery />

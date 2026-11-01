@@ -161,7 +161,9 @@ export default async function VoucherListPage({ params, searchParams }: { params
                           verifiedBy={v.verifiedBy?.name}
                           verifiedAt={v.verifiedAt}
                           verificationNote={v.verificationNote}
-                          canVerify={can(ctx, "vouchers:verify")}
+                          canVerify={can(ctx, ["can_verify_transactions", "vouchers:verify"])}
+                          canReject={can(ctx, ["can_reject_transactions", "vouchers:verify"])}
+                          canUnverify={can(ctx, ["can_unverify_transactions", "vouchers:verify"])}
                           compact
                         />
                       </td>

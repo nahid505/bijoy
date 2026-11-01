@@ -28,6 +28,7 @@ import { accountGroupsForCreateAction, quickCreateAccountAction, quickCreatePart
 import { BUSINESS_COOKIE, getContext } from "@/server/auth";
 import { searchAccounts, searchParties, searchProducts } from "@/server/lookup";
 import { saveAccount, saveParty, saveProduct } from "@/server/services/master";
+import { saveTradeVoucher } from "@/server/services/voucher";
 import { createSession } from "@/server/services/sessions";
 import { GET as lookupGet } from "@/app/api/lookup/[kind]/route";
 
@@ -302,5 +303,87 @@ run("searchable pickers (lookup)", () => {
     expect((await accountGroupsForCreateAction("all")).ok).toBe(false);
     req.cookies = await staff(biz, ["dashboard:view"]);
     expect((await get("accounts", "q=cash")).status).toBe(403);
+  });
+
+  it("integrated parties lookup: returns customers, suppliers and both with proper partyType badge", async () => {
+    const biz = A.ctx.business.id;
+    const all = await searchParties(biz, "ALL", "");
+    const idsFound = all.map((p) => p.id);
+    expect(idsFound).toContain(ids.rahim);
+    expect(idsFound).toContain(ids.meghna);
+
+    const rahimHit = all.find((p) => p.id === ids.rahim);
+    expect(rahimHit?.partyType).toBe("CUSTOMER");
+
+    const meghnaHit = all.find((p) => p.id === ids.meghna);
+    expect(meghnaHit?.partyType).toBe("SUPPLIER");
+
+    // Route GET /api/lookup/parties
+    const res = await get("parties", "");
+    expect(res.status).toBe(200);
+    expect(res.body.items!.some((p) => p.id === ids.rahim)).toBe(true);
+    expect(res.body.items!.some((p) => p.id === ids.meghna)).toBe(true);
+
+    // Search by name / mobile in parties route finds both
+    const searchCust = await get("parties", "q=রহিম");
+    expect(searchCust.body.items!.map((p) => p.id)).toContain(ids.rahim);
+    const searchSupp = await get("parties", "q=মেঘনা");
+    expect(searchSupp.body.items!.map((p) => p.id)).toContain(ids.meghna);
+  });
+
+  it("cross-party trade voucher posting: supplier in sales voucher debits ledger, customer in purchase voucher credits ledger", async () => {
+    const biz = A.ctx.business.id;
+    const warehouse = (await prisma.warehouse.findFirstOrThrow({ where: { businessId: biz } })).id;
+    const today = new Date();
+
+    // 1. Save Purchase voucher selecting Customer (ids.rahim) as party
+    const purchaseVoucher = await saveTradeVoucher(A.ctx.svc, "PURCHASE", {
+      date: today,
+      partyAccountId: ids.rahim,
+      warehouseId: warehouse,
+      items: [{ productId: ids.sugar, quantity: 5, rate: 100, discount: 0, batchNo: "BATCH-P1", expiryDate: null, unitId: null, mfgDate: null }],
+      payments: [],
+      discount: 0,
+      vatPercent: 0,
+      dueDate: null,
+      reference: "PURCHASE-CUSTOMER-TEST",
+      narration: "কাস্টমার থেকে ক্রয়",
+      returnOfId: null,
+    });
+    expect(purchaseVoucher.id).toBeTruthy();
+
+    // Verify journal entries: customer account is CREDITED for 500
+    const purchaseEntries = await prisma.journalEntry.findMany({ where: { voucherId: purchaseVoucher.id } });
+    const rahimCredit = purchaseEntries.find((e) => e.accountId === ids.rahim);
+    expect(Number(rahimCredit?.credit)).toBe(500);
+
+    // 2. Save Sales voucher selecting Supplier (ids.meghna) as party
+    const saleVoucher = await saveTradeVoucher(A.ctx.svc, "SALES", {
+      date: today,
+      partyAccountId: ids.meghna,
+      warehouseId: warehouse,
+      items: [{ productId: ids.sugar, quantity: 2, rate: 130, discount: 0, batchNo: null, expiryDate: null, unitId: null, mfgDate: null }],
+      payments: [],
+      discount: 0,
+      vatPercent: 0,
+      dueDate: null,
+      reference: "SALE-SUPPLIER-TEST",
+      narration: "সাপ্লায়ারকে বিক্রয়",
+      returnOfId: null,
+    });
+    expect(saleVoucher.id).toBeTruthy();
+
+    // Verify journal entries: supplier account is DEBITED for 260
+    const saleEntries = await prisma.journalEntry.findMany({ where: { voucherId: saleVoucher.id } });
+    const meghnaDebit = saleEntries.find((e) => e.accountId === ids.meghna);
+    expect(Number(meghnaDebit?.debit)).toBe(260);
+
+    // Now, ids.meghna has a SALES voucher and ids.rahim has a PURCHASE voucher!
+    // They are now dual-transaction parties (BOTH)!
+    const updatedParties = await searchParties(biz, "ALL", "");
+    const updatedMeghna = updatedParties.find((p) => p.id === ids.meghna);
+    const updatedRahim = updatedParties.find((p) => p.id === ids.rahim);
+    expect(updatedMeghna?.partyType).toBe("BOTH");
+    expect(updatedRahim?.partyType).toBe("BOTH");
   });
 });

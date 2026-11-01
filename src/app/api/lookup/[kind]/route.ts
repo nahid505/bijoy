@@ -12,12 +12,32 @@ export const dynamic = "force-dynamic";
 const ACCESS: Record<string, Permission[]> = {
   customers: ["customers:view", "sales:view", "sales:create", "vouchers:create", "reports:view", "users:manage", "depot:delivery_manage", "depot:collection_create", "depot:reports_view", "auto_rice_mill.sales:create", "auto_rice_mill.sales:view"],
   suppliers: ["suppliers:view", "purchases:view", "purchases:create", "vouchers:create", "reports:view", "users:manage", "depot:delivery_manage", "depot:stock_in", "depot:collection_create", "depot:reports_view", "auto_rice_mill.procurement:create", "auto_rice_mill.procurement:view"],
+  parties: [
+    "customers:view",
+    "suppliers:view",
+    "sales:view",
+    "purchases:view",
+    "sales:create",
+    "purchases:create",
+    "vouchers:create",
+    "vouchers:view",
+    "reports:view",
+    "users:manage",
+    "depot:delivery_manage",
+    "depot:stock_in",
+    "depot:collection_create",
+    "depot:reports_view",
+    "auto_rice_mill.sales:create",
+    "auto_rice_mill.sales:view",
+    "auto_rice_mill.procurement:create",
+    "auto_rice_mill.procurement:view",
+  ],
   products: ["inventory:view", "sales:create", "purchases:create", "stock:adjust", "production:manage", "depot:delivery_manage", "depot:stock_in", "depot:scheme_manage", "depot:stock_adjust", "depot:products_manage", "auto_rice_mill.sales:create", "auto_rice_mill.milling:create", "auto_rice_mill.procurement:create"],
   employees: ["payroll:view", "payroll:attendance"],
   accounts: ["accounts:view", "users:manage", "vouchers:create", "vouchers:view", "reports:view", "sales:create", "purchases:create", "production:manage", "depot:delivery_manage", "depot:stock_in", "depot:collection_create", "depot:expense_manage", "auto_rice_mill.sales:create", "auto_rice_mill.milling:create", "auto_rice_mill.procurement:create", "reports.ledger:view"],
 };
 // Who may use the picker's "create new" (the same permission the create action checks).
-const CREATE: Record<string, Permission> = { customers: "customers:manage", suppliers: "suppliers:manage", products: "inventory:manage", accounts: "accounts:manage", employees: "payroll:manage" };
+const CREATE: Record<string, Permission> = { customers: "customers:manage", suppliers: "suppliers:manage", parties: "customers:manage", products: "inventory:manage", accounts: "accounts:manage", employees: "payroll:manage" };
 
 /**
  * GET /api/lookup/customers|suppliers|products|employees|accounts?q=…  (or ?ids=a,b for known items)
@@ -35,7 +55,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ kind: st
   const q = (url.searchParams.get("q") ?? "").slice(0, 100);
   const ids = url.searchParams.get("ids")?.split(",").filter(Boolean).slice(0, 50);
   // a depot picker creates depot products (depot:products_manage or inventory:manage)
-  const canCreate = kind === "products" && url.searchParams.get("book") === "depot" ? hasPermission(ctx.permissions, DEPOT_ACCESS.products) : hasPermission(ctx.permissions, CREATE[kind]);
+  const canCreate =
+    kind === "products" && url.searchParams.get("book") === "depot"
+      ? hasPermission(ctx.permissions, DEPOT_ACCESS.products)
+      : kind === "parties"
+        ? hasPermission(ctx.permissions, "customers:manage") || hasPermission(ctx.permissions, "suppliers:manage")
+        : hasPermission(ctx.permissions, CREATE[kind]);
   // ?book=depot: the depot forms — dealers (not general customers), depot ledgers and depot-book balances
   const depot = url.searchParams.get("book") === "depot";
   if (kind === "accounts") {
@@ -53,6 +78,19 @@ export async function GET(req: Request, { params }: { params: Promise<{ kind: st
   const items =
     kind === "products"
       ? await searchProducts(ctx.business.id, q, { ids, batchOnly: url.searchParams.get("batchOnly") === "1", book: depot ? "DEPOT" : "GENERAL" })
-      : await searchParties(ctx.business.id, kind === "customers" ? "CUSTOMER" : "SUPPLIER", q, { accountIds: ids, allowed: kind === "customers" ? ctx.partyScope.customers : ctx.partyScope.suppliers, dealer: kind === "customers" && depot, book: depot ? "DEPOT" : "GENERAL" });
+      : kind === "parties"
+        ? await searchParties(ctx.business.id, "ALL", q, {
+            accountIds: ids,
+            customerAllowed: ctx.partyScope.customers,
+            supplierAllowed: ctx.partyScope.suppliers,
+            dealer: depot,
+            book: depot ? "DEPOT" : "GENERAL",
+          })
+        : await searchParties(ctx.business.id, kind === "customers" ? "CUSTOMER" : "SUPPLIER", q, {
+            accountIds: ids,
+            allowed: kind === "customers" ? ctx.partyScope.customers : ctx.partyScope.suppliers,
+            dealer: kind === "customers" && depot,
+            book: depot ? "DEPOT" : "GENERAL",
+          });
   return NextResponse.json({ items, canCreate }, { headers: { "cache-control": "no-store" } });
 }

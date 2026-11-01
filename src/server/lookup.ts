@@ -5,7 +5,7 @@ import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma, num } from "@/lib/db";
 import { toDateInput } from "@/lib/format";
-import type { PartyOption, ProductOption } from "@/components/trade-parts";
+import type { PartyOption, PartyType, ProductOption } from "@/components/trade-parts";
 import { balancesBefore } from "./services/ledger";
 import { partyAging } from "./services/aging";
 import { bookAccountWhere } from "./services/accounting";
@@ -40,10 +40,10 @@ function rank<T>(rows: T[], q: string, fields: (r: T) => { name: string; exact: 
   return [...rows].sort((a, b) => score(a) - score(b) || fields(a).name.localeCompare(fields(b).name, "bn"));
 }
 
-export type PartyKind = "CUSTOMER" | "SUPPLIER";
+export type PartyKind = "CUSTOMER" | "SUPPLIER" | "ALL";
 
 /** ids of parties whose mobile, reduced to digits, contains `digits` */
-async function mobileMatches(businessId: string, kind: PartyKind, digits: string, take: number): Promise<string[]> {
+async function mobileMatches(businessId: string, kind: "CUSTOMER" | "SUPPLIER", digits: string, take: number): Promise<string[]> {
   const like = `%${digits}%`;
   const rows =
     kind === "CUSTOMER"
@@ -59,63 +59,253 @@ export type PartyHit = PartyOption & { partyId: string; code: string | null };
  * opts.dealer: customers = depot dealers only (depot forms); otherwise general customers only. Balances are
  * read from the matching book (dealers: DEPOT; opts.book overrides, e.g. a company in a depot form).
  */
-export async function searchParties(businessId: string, kind: PartyKind, q: string, opts: { accountIds?: string[]; take?: number; allowed?: string[] | null; dealer?: boolean; book?: BookKey } = {}): Promise<PartyHit[]> {
+export async function searchParties(
+  businessId: string,
+  kind: PartyKind,
+  q: string,
+  opts: {
+    accountIds?: string[];
+    take?: number;
+    allowed?: string[] | null;
+    customerAllowed?: string[] | null;
+    supplierAllowed?: string[] | null;
+    dealer?: boolean;
+    book?: BookKey;
+  } = {}
+): Promise<PartyHit[]> {
   const book: BookKey = opts.book ?? (opts.dealer ? "DEPOT" : "GENERAL");
   const query = q.trim().slice(0, 100);
   const digits = mobileDigits(query);
   const take = opts.take ?? LOOKUP_LIMIT;
-  // mobiles may be stored formatted ("01711-000001", "+880 1711…"): compare digits only
-  const byMobile = digits && !opts.accountIds ? await mobileMatches(businessId, kind, digits.replace(/^0/, ""), take * 3) : [];
-  const scoped = {
-    ...(opts.allowed ? { AND: [{ accountId: { in: opts.allowed } }] } : {}),
-    ...(kind === "CUSTOMER" ? { isDepotDealer: !!opts.dealer } : {}),
+
+  const searchCust = kind === "CUSTOMER" || kind === "ALL";
+  const searchSupp = kind === "SUPPLIER" || kind === "ALL";
+
+  const [custByMobile, suppByMobile] =
+    digits && !opts.accountIds
+      ? await Promise.all([
+          searchCust ? mobileMatches(businessId, "CUSTOMER", digits.replace(/^0/, ""), take * 3) : Promise.resolve([]),
+          searchSupp ? mobileMatches(businessId, "SUPPLIER", digits.replace(/^0/, ""), take * 3) : Promise.resolve([]),
+        ])
+      : [[], []];
+
+  const custAllowed = opts.customerAllowed !== undefined ? opts.customerAllowed : opts.allowed;
+  const suppAllowed = opts.supplierAllowed !== undefined ? opts.supplierAllowed : opts.allowed;
+
+  const custScoped = {
+    ...(custAllowed ? { AND: [{ accountId: { in: custAllowed } }] } : {}),
+    ...(opts.dealer ? { isDepotDealer: true } : { isDepotDealer: false }),
   };
-  const where: Prisma.CustomerWhereInput & Prisma.SupplierWhereInput = opts.accountIds
-    ? { businessId, accountId: { in: opts.accountIds }, ...scoped }
+  const suppScoped = {
+    ...(suppAllowed ? { AND: [{ accountId: { in: suppAllowed } }] } : {}),
+  };
+
+  const custWhere: Prisma.CustomerWhereInput = opts.accountIds
+    ? { businessId, accountId: { in: opts.accountIds }, ...custScoped }
     : {
-        ...scoped,
+        ...custScoped,
         businessId,
         isActive: true,
         ...(query
           ? {
               OR: [
-                ...digitVariants(query).map((v) => ({ name: ci(v) })), // "চাল 50" also finds "চাল ৫০"
-                ...(kind === "CUSTOMER" && opts.dealer ? digitVariants(query).map((v) => ({ ownerName: ci(v) })) : []), // a dealer by its proprietor
+                ...digitVariants(query).map((v) => ({ name: ci(v) })),
+                ...(opts.dealer ? digitVariants(query).map((v) => ({ ownerName: ci(v) })) : []),
                 { id: query },
                 { accountId: query },
                 { account: { code: ci(asciiDigits(query)) } },
-                ...(byMobile.length ? [{ id: { in: byMobile } }] : []),
+                ...(custByMobile.length ? [{ id: { in: custByMobile } }] : []),
               ],
             }
           : {}),
       };
-  const select = { id: true, name: true, mobile: true, accountId: true, creditDays: true, account: { select: { code: true, group: { select: { name: true } } } } } as const;
-  const rows = (kind === "CUSTOMER"
-    ? await prisma.customer.findMany({ where, select: { ...select, creditLimit: true, ownerName: true }, orderBy: { name: "asc" }, take: opts.accountIds ? undefined : take * 3 })
-    : await prisma.supplier.findMany({ where, select, orderBy: { name: "asc" }, take: opts.accountIds ? undefined : take * 3 })) as {
-    id: string; name: string; ownerName?: string | null; mobile: string | null; accountId: string; creditDays: number; creditLimit?: unknown; account: { code: string | null; group: { name: string } };
-  }[];
-  const top = (query ? rank(rows, query, (r) => ({ name: r.name, exact: [r.account.code, r.mobile?.replace(/\D/g, ""), r.id, r.accountId], partial: [r.mobile?.replace(/\D/g, ""), r.account.code, r.ownerName] })) : rows).slice(0, opts.accountIds ? undefined : take);
+
+  const suppWhere: Prisma.SupplierWhereInput = opts.accountIds
+    ? { businessId, accountId: { in: opts.accountIds }, ...suppScoped }
+    : {
+        ...suppScoped,
+        businessId,
+        isActive: true,
+        ...(query
+          ? {
+              OR: [
+                ...digitVariants(query).map((v) => ({ name: ci(v) })),
+                { id: query },
+                { accountId: query },
+                { account: { code: ci(asciiDigits(query)) } },
+                ...(suppByMobile.length ? [{ id: { in: suppByMobile } }] : []),
+              ],
+            }
+          : {}),
+      };
+
+  const [custRows, suppRows] = await Promise.all([
+    searchCust
+      ? prisma.customer.findMany({
+          where: custWhere,
+          select: {
+            id: true,
+            name: true,
+            mobile: true,
+            accountId: true,
+            creditDays: true,
+            creditLimit: true,
+            ownerName: true,
+            account: {
+              select: {
+                code: true,
+                group: { select: { name: true } },
+                supplier: { select: { id: true, name: true, mobile: true, creditDays: true } },
+              },
+            },
+          },
+          orderBy: { name: "asc" },
+          take: opts.accountIds ? undefined : take * 3,
+        })
+      : Promise.resolve([]),
+    searchSupp
+      ? prisma.supplier.findMany({
+          where: suppWhere,
+          select: {
+            id: true,
+            name: true,
+            mobile: true,
+            accountId: true,
+            creditDays: true,
+            account: {
+              select: {
+                code: true,
+                group: { select: { name: true } },
+                customer: { select: { id: true, name: true, mobile: true, creditDays: true, creditLimit: true, ownerName: true } },
+              },
+            },
+          },
+          orderBy: { name: "asc" },
+          take: opts.accountIds ? undefined : take * 3,
+        })
+      : Promise.resolve([]),
+  ]);
+
+  type MergedItem = {
+    id: string; // party id
+    name: string;
+    ownerName?: string | null;
+    mobile: string | null;
+    accountId: string;
+    creditDays: number;
+    creditLimit: number;
+    account: { code: string | null; group: { name: string } };
+    hasCustomer: boolean;
+    hasSupplier: boolean;
+  };
+
+  const merged = new Map<string, MergedItem>();
+
+  for (const c of custRows) {
+    merged.set(c.accountId, {
+      id: c.id,
+      name: c.name,
+      ownerName: c.ownerName,
+      mobile: c.mobile,
+      accountId: c.accountId,
+      creditDays: c.creditDays,
+      creditLimit: num(c.creditLimit),
+      account: c.account,
+      hasCustomer: true,
+      hasSupplier: Boolean(c.account.supplier),
+    });
+  }
+
+  for (const s of suppRows) {
+    const existing = merged.get(s.accountId);
+    if (existing) {
+      existing.hasSupplier = true;
+      if (!existing.mobile && s.mobile) existing.mobile = s.mobile;
+    } else {
+      merged.set(s.accountId, {
+        id: s.id,
+        name: s.name,
+        ownerName: s.account.customer?.ownerName ?? null,
+        mobile: s.mobile,
+        accountId: s.accountId,
+        creditDays: s.creditDays,
+        creditLimit: s.account.customer?.creditLimit ? num(s.account.customer.creditLimit) : 0,
+        account: s.account,
+        hasCustomer: Boolean(s.account.customer),
+        hasSupplier: true,
+      });
+    }
+  }
+
+  const allRows = Array.from(merged.values());
+  const top = (
+    query
+      ? rank(allRows, query, (r) => ({
+          name: r.name,
+          exact: [r.account.code, r.mobile?.replace(/\D/g, ""), r.id, r.accountId],
+          partial: [r.mobile?.replace(/\D/g, ""), r.account.code, r.ownerName],
+        }))
+      : allRows
+  ).slice(0, opts.accountIds ? undefined : take);
+
   if (top.length === 0) return [];
   const ids = top.map((r) => r.accountId);
-  const [bal, aging] = await Promise.all([
-    balancesBefore(businessId, undefined, ids, book),
-    partyAging(businessId, kind, new Date(`${toDateInput()}T00:00:00.000Z`), ids, book),
-  ]);
-  const overdue = new Map(aging.map((a) => [a.accountId, a.overdue]));
-  return top.map((r) => ({
-    id: r.accountId,
-    partyId: r.id,
-    name: dealerLabel(r.name, r.ownerName), // a dealer: "shop (owner)"
 
-    code: r.account.code,
-    group: r.account.group.name,
-    balance: bal.get(r.accountId) ?? 0,
-    mobile: r.mobile,
-    creditLimit: r.creditLimit !== undefined ? num(r.creditLimit as never) : 0,
-    creditDays: r.creditDays,
-    overdue: overdue.get(r.accountId) ?? 0,
-  }));
+  const today = new Date(`${toDateInput()}T00:00:00.000Z`);
+  const [bal, custAging, suppAging, voucherTypes] = await Promise.all([
+    balancesBefore(businessId, undefined, ids, book),
+    searchCust ? partyAging(businessId, "CUSTOMER", today, ids, book) : Promise.resolve([]),
+    searchSupp ? partyAging(businessId, "SUPPLIER", today, ids, book) : Promise.resolve([]),
+    prisma.voucher.findMany({
+      where: {
+        businessId,
+        partyAccountId: { in: ids },
+        type: { in: ["SALES", "SALES_RETURN", "PURCHASE", "PURCHASE_RETURN"] },
+      },
+      select: { partyAccountId: true, type: true },
+      distinct: ["partyAccountId", "type"],
+    }),
+  ]);
+
+  const overdue = new Map<string, number>();
+  for (const a of [...custAging, ...suppAging]) {
+    if (a.overdue > 0) overdue.set(a.accountId, Math.max(overdue.get(a.accountId) ?? 0, a.overdue));
+  }
+
+  const salesAccounts = new Set(voucherTypes.filter((v) => v.partyAccountId && (v.type === "SALES" || v.type === "SALES_RETURN")).map((v) => v.partyAccountId!));
+  const purchaseAccounts = new Set(voucherTypes.filter((v) => v.partyAccountId && (v.type === "PURCHASE" || v.type === "PURCHASE_RETURN")).map((v) => v.partyAccountId!));
+
+  return top.map((r) => {
+    const hasSales = salesAccounts.has(r.accountId);
+    const hasPurchases = purchaseAccounts.has(r.accountId);
+    const isBoth =
+      (r.hasCustomer && r.hasSupplier) ||
+      (hasSales && hasPurchases) ||
+      (r.hasCustomer && hasPurchases) ||
+      (r.hasSupplier && hasSales);
+
+    const partyType: PartyType = isBoth
+      ? "BOTH"
+      : r.hasCustomer
+        ? "CUSTOMER"
+        : r.hasSupplier
+          ? "SUPPLIER"
+          : "BOTH";
+
+    return {
+      id: r.accountId,
+      partyId: r.id,
+      name: dealerLabel(r.name, r.ownerName),
+      code: r.account.code,
+      group: r.account.group.name,
+      balance: bal.get(r.accountId) ?? 0,
+      mobile: r.mobile,
+      creditLimit: r.creditLimit,
+      creditDays: r.creditDays,
+      overdue: overdue.get(r.accountId) ?? 0,
+      partyType,
+    };
+  });
 }
 
 export function toProductOption(p: { id: string; name: string; code: string | null; barcode: string | null; unitId: string; trackBatch: boolean; salePrice: unknown; wholesalePrice: unknown; purchasePrice: unknown; avgCost: unknown; stock: unknown; depotCommissionRate?: unknown; depotCommissionType?: string | null; packSize?: unknown }): ProductOption {
