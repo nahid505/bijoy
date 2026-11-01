@@ -50,7 +50,7 @@ run("depot integration audit", () => {
     ctx = { businessId: business.id, userId: user.id };
     warehouseId = (await prisma.warehouse.findFirstOrThrow({ where: { businessId: ctx.businessId } })).id;
     const pcs = await prisma.unit.findFirstOrThrow({ where: { businessId: ctx.businessId, name: "পিস" } });
-    cement = (await prisma.product.create({ data: { businessId: ctx.businessId, isDepotProduct: true, name: "সিমেন্ট", unitId: pcs.id, salePrice: 480, depotCommissionRate: 10 } })).id;
+    cement = (await prisma.product.create({ data: { businessId: ctx.businessId, isDepotProduct: true, name: "সিমেন্ট", unitId: pcs.id, salePrice: 480, depotCommissionRate: 10, packSize: 1 } })).id;
     company = await saveParty(ctx, "SUPPLIER", party("এসিআই"));
     dealer = await saveParty(ctx, "CUSTOMER", party("রহিম ডিলার"), undefined, { dealer: true });
   });

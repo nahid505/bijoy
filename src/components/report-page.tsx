@@ -15,6 +15,7 @@ import { SearchSelectField } from "./search-select";
 import { ReportNotes, ReportSummary, ReportTable } from "./report-view";
 import { buildQuery, FilterField, PageHeader, PrintHeader } from "./ui";
 import { accountScopeWhere } from "@/server/party-scope";
+import { CompactReportFilter } from "./compact-report-filter";
 
 /** Renders any registered report: filters (GET), summary, ruled table, print & CSV export. */
 export async function ReportPage({
@@ -27,16 +28,18 @@ export async function ReportPage({
   extraActions,
   omitFilters = [],
   before,
+  stickyHeader = false,
 }: {
   slug: string;
   params: ReportParams;
   basePath?: string;
   crumbs?: { label: string; href?: string }[];
-  title?: string;
-  description?: string;
+  title?: string | React.ReactNode;
+  description?: string | React.ReactNode;
   extraActions?: React.ReactNode;
   omitFilters?: string[];
   before?: React.ReactNode;
+  stickyHeader?: boolean;
 }) {
   const def = findReport(slug);
   if (!def) notFound();
@@ -68,28 +71,48 @@ export async function ReportPage({
   return (
     <>
       {/* the printed sheet has its own heading (PrintHeader below) */}
-      <div className="no-print">
-      <PageHeader
-        title={title ?? def.title}
-        description={description ?? def.description}
-        crumbs={crumbs ?? [{ label: "রিপোর্ট", href: can(ctx, "reports:view") ? "/reports" : undefined }, { label: def.title }]}
-        actions={
-          <>
-            {extraActions}
-            {report.rows.length > 0 && (
-              <>
-                <PrintButton label="প্রিন্ট / PDF" />
-                <a href={`${exportHref}${exportHref.includes("?") ? "&" : "?"}format=xlsx`} className="btn-secondary">⬇ Excel (XLSX)</a>
-                <a href={exportHref} className="btn-secondary">⬇ CSV</a>
-              </>
-            )}
-          </>
-        }
-      />
+      <div className={stickyHeader ? "no-print sticky top-0 z-30 bg-white shadow-sm border-b pb-1 pt-1.5 mb-2 -mx-3 px-3 sm:-mx-6 sm:px-6" : "no-print"}>
+        <PageHeader
+          className={stickyHeader ? "mb-1 sm:mb-1.5" : "mb-5"}
+          title={title ?? def.title}
+          description={description ?? def.description}
+          crumbs={crumbs ?? [{ label: "রিপোর্ট", href: can(ctx, "reports:view") ? "/reports" : undefined }, { label: def.title }]}
+          actions={
+            <>
+              {extraActions}
+              {report.rows.length > 0 && (
+                <>
+                  <PrintButton label="প্রিন্ট / PDF" className="btn-secondary shrink-0 text-xs sm:text-sm px-2.5 sm:px-3 py-1.5 flex items-center gap-1 font-medium" />
+                  <a href={`${exportHref}${exportHref.includes("?") ? "&" : "?"}format=xlsx`} className="btn-secondary shrink-0 text-xs sm:text-sm px-2.5 sm:px-3 py-1.5 flex items-center gap-1 font-medium text-slate-700 hover:text-emerald-700"><span>📊</span><span>Excel (XLSX)</span></a>
+                  <a href={exportHref} className="btn-secondary shrink-0 text-xs sm:text-sm px-2.5 sm:px-3 py-1.5 flex items-center gap-1 font-medium text-slate-700 hover:text-brand-700"><span>📥</span><span>CSV</span></a>
+                </>
+              )}
+            </>
+          }
+        />
+        {stickyHeader ? before : null}
+        {stickyHeader && (f.has("range") || f.has("q") || f.has("verification")) && (
+          <div className="border-t border-slate-100/80 -mx-3 px-0 sm:-mx-6">
+            <CompactReportFilter
+              basePath={path}
+              from={from}
+              to={to}
+              q={params.q ?? ""}
+              verification={params.verification ?? ""}
+              keepParams={Object.fromEntries(
+                Object.entries(params).filter(([k, v]) => v && !["from", "to", "q", "verification"].includes(k))
+              )}
+              showRange={f.has("range")}
+              showQ={f.has("q")}
+              showVerification={f.has("verification")}
+            />
+          </div>
+        )}
       </div>
-      {before}
+      {!stickyHeader ? before : null}
       <section className="panel print-area">
-        <form method="get" action={path} className="no-print flex flex-wrap items-end gap-2 border-b border-rule p-3">
+        {!stickyHeader && (
+          <form method="get" action={path} className="no-print flex flex-wrap items-end gap-2 border-b border-rule p-3">
           {keep}
           {f.has("account") && (
             <FilterField label="হিসাব (লেজার)">
@@ -163,6 +186,16 @@ export async function ReportPage({
               </select>
             </FilterField>
           )}
+          {f.has("verification") && (
+            <FilterField label="যাচাই অবস্থা">
+              <select name="verification" defaultValue={params.verification ?? ""} className="input w-44">
+                <option value="">সকল লেনদেন</option>
+                <option value="VERIFIED">শুধু অনুমোদিত</option>
+                <option value="UNVERIFIED">অপেক্ষমাণ (Pending)</option>
+                <option value="REJECTED">রিজেক্টেড</option>
+              </select>
+            </FilterField>
+          )}
           {f.has("q") && (
             <FilterField label="খুঁজুন">
               <input name="q" defaultValue={params.q} placeholder="নাম, নম্বর, বিবরণ…" className="input w-52" />
@@ -171,13 +204,14 @@ export async function ReportPage({
           <button type="submit" className="btn-primary">দেখুন</button>
           <Link prefetch={false} href={path} className="btn-ghost">রিসেট</Link>
         </form>
+        )}
         {/* Ledger and statement views: omit redundant in-page header and summary strip; keep clean table */}
         {slug === "ledger" || slug.endsWith("-ledger") || slug.endsWith("-statement") || slug.endsWith("-book") || Boolean(before) ? (
           <>
             <div className="print-only px-4 pt-3">
               <PrintHeader business={ctx.business} title={report.title} subtitle={report.subtitle} />
             </div>
-            <ReportTable report={report} currency={ctx.business.currencySymbol} />
+            <ReportTable report={report} currency={ctx.business.currencySymbol} canVerify={can(ctx, "vouchers:verify")} currentUserName={ctx.user.name} />
             <ReportNotes report={report} />
           </>
         ) : (
@@ -190,7 +224,7 @@ export async function ReportPage({
               </div>
             </div>
             <ReportSummary report={report} />
-            <ReportTable report={report} currency={ctx.business.currencySymbol} />
+            <ReportTable report={report} currency={ctx.business.currencySymbol} canVerify={can(ctx, "vouchers:verify")} currentUserName={ctx.user.name} />
             <ReportNotes report={report} />
           </>
         )}

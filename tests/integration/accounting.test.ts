@@ -9,6 +9,7 @@ import { createBusiness } from "@/server/services/bootstrap";
 import { setAccountOpening, systemAccounts, type Ctx, assertVouchersBalanced } from "@/server/services/accounting";
 import { saveParty, saveProduct } from "@/server/services/master";
 import { deleteVoucher, saveCashVoucher, saveJournalVoucher, saveStockJournal, saveTradeVoucher } from "@/server/services/voucher";
+import { revalueProducts } from "@/server/services/posting";
 import { balancesBefore, statement } from "@/server/services/ledger";
 import { balanceSheet, profitAndLoss, trialBalance } from "@/server/services/report";
 import { partyAging } from "@/server/services/aging";
@@ -255,6 +256,17 @@ run("double-entry accounting engine", () => {
     expect(s.closing).toBe(await balance(customer.accountId));
     const sup = await statement(ctx.businessId, [supplier.accountId], {});
     expect(sup.closing).toBe(await balance(supplier.accountId));
+
+    // Empty accountIds or empty parts should safely return without throwing PrismaClientValidationError
+    const empty = await statement(ctx.businessId, [], {});
+    expect(empty.lines).toEqual([]);
+    expect(empty.entries).toEqual([]);
+    expect(empty.closing).toBe(0);
+
+    const emptyParts = await statement(ctx.businessId, [], {}, { parts: [] });
+    expect(emptyParts.lines).toEqual([]);
+    expect(emptyParts.entries).toEqual([]);
+    expect(emptyParts.closing).toBe(0);
   });
 
   it("trial balance balances; P&L and balance sheet tie out", async () => {
@@ -297,5 +309,57 @@ run("double-entry accounting engine", () => {
     for (const v of perVoucher) expect(Number(v._sum.debit)).toBe(Number(v._sum.credit));
     const all = await prisma.journalEntry.aggregate({ where: { businessId: ctx.businessId }, _sum: { debit: true, credit: true } });
     expect(Number(all._sum.debit)).toBe(Number(all._sum.credit));
+  });
+
+  it("verification architecture: UNVERIFIED posts immediately, REJECTED rolls back completely", async () => {
+    const custBalBefore = await balance(customer.accountId);
+    const stockBefore = await stockOf();
+
+    // 1. Create a sale
+    const v = await trade("SALES", {
+      date: "2026-08-14",
+      party: customer.accountId,
+      items: [{ productId, quantity: 5, rate: 100 }],
+    });
+    expect(v.verificationStatus).toBe("UNVERIFIED");
+
+    // UNVERIFIED posts immediately to ledger and stock
+    expect(await balance(customer.accountId)).toBe(custBalBefore + 500);
+    expect(await stockOf()).toBe(stockBefore - 5);
+
+    const stUnverified = await statement(ctx.businessId, [customer.accountId], {});
+    expect(stUnverified.lines.some((l) => l.voucherId === v.id)).toBe(true);
+
+    // 2. Reject the voucher
+    await prisma.voucher.update({
+      where: { id: v.id },
+      data: { verificationStatus: "REJECTED" },
+    });
+    await prisma.$transaction(async (tx) => {
+      await revalueProducts(tx, ctx.businessId, [productId]);
+    });
+
+    // REJECTED rolls back from ledger, statement, and stock immediately
+    expect(await balance(customer.accountId)).toBe(custBalBefore);
+    expect(await stockOf()).toBe(stockBefore);
+
+    const stRejected = await statement(ctx.businessId, [customer.accountId], {});
+    expect(stRejected.lines.some((l) => l.voucherId === v.id)).toBe(false);
+
+    // 3. Restore to VERIFIED
+    await prisma.voucher.update({
+      where: { id: v.id },
+      data: { verificationStatus: "VERIFIED" },
+    });
+    await prisma.$transaction(async (tx) => {
+      await revalueProducts(tx, ctx.businessId, [productId]);
+    });
+
+    // VERIFIED re-engages ledger, statement, and stock
+    expect(await balance(customer.accountId)).toBe(custBalBefore + 500);
+    expect(await stockOf()).toBe(stockBefore - 5);
+
+    const stVerified = await statement(ctx.businessId, [customer.accountId], {});
+    expect(stVerified.lines.some((l) => l.voucherId === v.id)).toBe(true);
   });
 });

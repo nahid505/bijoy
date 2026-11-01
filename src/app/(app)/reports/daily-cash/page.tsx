@@ -3,7 +3,6 @@ import { Fragment } from "react";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { addDays, formatDate, formatMoney, toBnDigits } from "@/lib/format";
-import { AmountInWords } from "@/components/amount-words";
 import { PrintButton } from "@/components/forms";
 import { FilterField, PageHeader, PrintHeader } from "@/components/ui";
 import { requirePermission } from "@/server/auth";
@@ -117,12 +116,6 @@ export default async function DailyCashPage({ searchParams }: { searchParams: Se
                 ["", null, ""],
               ]}
             />
-          </div>
-
-          <div className="mt-4 grid gap-2 rounded-lg border border-rule bg-ink-50 p-3 text-sm sm:grid-cols-2 print:grid-cols-2 print:bg-white">
-            <p>পূর্বের জমা: <b className="tabular-nums">{money(d.opening)}</b> + আজকের রিসিট: <b className="tabular-nums">{money(d.todayReceipts)}</b> = মোট রিসিট: <b className="tabular-nums">{money(d.totalReceipts)}</b></p>
-            <p>মোট রিসিট − মোট পেমেন্ট (<span className="tabular-nums">{money(d.totalPayments)}</span>) = <b>অবশিষ্ট ক্যাশ: <span id="closing" className="tabular-nums">{money(d.closing)}</span></b></p>
-            <p className="sm:col-span-2 print:col-span-2"><b>অবশিষ্ট ক্যাশ কথায়:</b> {d.closing < 0 ? "ঋণাত্মক " : ""}<AmountInWords amount={Math.abs(d.closing)} /></p>
           </div>
 
           <div className="print-only mt-14">

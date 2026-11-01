@@ -86,6 +86,7 @@ export async function inventoryOptions(businessId: string, opts: { productIds?: 
       purchasePrice: num(p.purchasePrice),
       avgCost: num(p.avgCost),
       stock: num(p.stock),
+      packSize: num(p.packSize) || 24,
       ...(p.depotCommissionRate !== null && p.depotCommissionRate !== undefined
         ? {
             depotCommissionRate: commissionPerUnit({

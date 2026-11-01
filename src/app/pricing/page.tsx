@@ -8,13 +8,14 @@ export const metadata: Metadata = { title: "মূল্য ও প্ল্য�
 export const dynamic = "force-dynamic";
 
 export default async function PricingPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const cycle = (await searchParams).cycle === "YEARLY" ? "YEARLY" : "MONTHLY";
+  const sp = await searchParams;
+  const cycle = sp?.cycle === "YEARLY" ? "YEARLY" : "MONTHLY";
   const [user, { plans, features, settings }] = await Promise.all([getCurrentUser(), loadPlans({ publicOnly: true, activeOnly: true })]);
   return (
     <div className="min-h-screen bg-paper">
       <PublicHeader loggedIn={!!user} />
       <main className="mx-auto max-w-6xl px-4 py-10">
-        <PricingSection plans={plans} features={features} cycle={cycle} trialDays={settings.trialDays} currency={settings.currency === "BDT" ? "৳" : settings.currency} loggedIn={!!user} basePath="/pricing" />
+        <PricingSection plans={plans} features={features} cycle={cycle} trialDays={settings?.trialDays ?? 0} currency={settings?.currency === "BDT" ? "৳" : (settings?.currency ?? "৳")} loggedIn={!!user} basePath="/pricing" />
       </main>
       <PublicFooter />
     </div>

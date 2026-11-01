@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useT } from "./lang";
+import { SpotlightSearchModal } from "./spotlight-search";
 
 export interface SidebarEntry {
   key: string;
@@ -126,16 +127,40 @@ export function MobileNav({
   businessName,
 }: {
   entries: SidebarEntry[];
-  tabs: { href: string; label: string; icon: string }[];
+  tabs: { href: string; label: string; icon: string; isSearch?: boolean }[];
   businessName: string;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const t = useT();
+
+  useEffect(() => {
+    const handleOpen = () => setSearchOpen(true);
+    window.addEventListener("open-spotlight", handleOpen);
+    return () => window.removeEventListener("open-spotlight", handleOpen);
+  }, []);
+
   return (
     <>
       <nav className="no-print sticky top-[64px] sm:top-14 z-20 mt-2 flex w-full items-center justify-around overflow-x-auto border-y border-ink-800 bg-ink-900 px-2 py-2 text-xs sm:text-sm lg:hidden shadow-sm">
         {tabs.map((tab) => {
+          if (tab.isSearch || tab.href === "#search") {
+            return (
+              <button
+                key="tab-search"
+                type="button"
+                onClick={() => setSearchOpen(true)}
+                className="flex flex-1 min-w-[64px] flex-col items-center justify-center gap-1 rounded-lg px-2.5 sm:px-3 py-2 text-center text-ink-200 transition-all hover:bg-ink-800/60 hover:text-white group"
+                aria-label={tab.label}
+              >
+                <Icon d={tab.icon} className="h-6 w-6 shrink-0 text-brand-300 transition-transform group-hover:scale-110" />
+                <span className="text-xs sm:text-sm font-medium tracking-wide truncate max-w-[75px] sm:max-w-none text-brand-200 group-hover:text-white">
+                  {tab.label}
+                </span>
+              </button>
+            );
+          }
           const active = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
           return (
             <Link
@@ -170,6 +195,7 @@ export function MobileNav({
           </aside>
         </div>
       )}
+      <SpotlightSearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
     </>
   );
 }

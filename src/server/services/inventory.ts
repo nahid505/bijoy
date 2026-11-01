@@ -35,7 +35,12 @@ export async function lockProducts(tx: Tx, productIds: string[]) {
 /** Quantity on hand (base unit) of a product in one warehouse (optionally one batch). */
 export async function warehouseStock(tx: Tx, productId: string, warehouseId: string, batchNo?: string | null): Promise<number> {
   const agg = await tx.stockMovement.aggregate({
-    where: { productId, warehouseId, ...(batchNo !== undefined ? { batchNo } : {}) },
+    where: {
+      productId,
+      warehouseId,
+      ...(batchNo !== undefined ? { batchNo } : {}),
+      OR: [{ voucherId: null }, { voucher: { verificationStatus: { not: "REJECTED" } } }],
+    },
     _sum: { quantityIn: true, quantityOut: true },
   });
   return round3(Number(agg._sum.quantityIn ?? 0) - Number(agg._sum.quantityOut ?? 0));
@@ -45,7 +50,12 @@ export async function warehouseStock(tx: Tx, productId: string, warehouseId: str
 export async function availableBatches(tx: Tx, businessId: string, productIds?: string[]) {
   const rows = await tx.stockMovement.groupBy({
     by: ["productId", "warehouseId", "batchId"],
-    where: { businessId, batchId: { not: null }, ...(productIds ? { productId: { in: productIds } } : {}) },
+    where: {
+      businessId,
+      batchId: { not: null },
+      ...(productIds ? { productId: { in: productIds } } : {}),
+      OR: [{ voucherId: null }, { voucher: { verificationStatus: { not: "REJECTED" } } }],
+    },
     _sum: { quantityIn: true, quantityOut: true },
   });
   const batches = new Map(

@@ -7,6 +7,7 @@ import { dayRange, formatDate, formatDrCr, formatMoney, toDateInput } from "@/li
 import { reportPeriod } from "../period";
 import { listAccounts, partySummaries, statement } from "../services/ledger";
 import { balanceSheet, profitAndLoss, trialBalance } from "../services/report";
+import { calculateInventoryValuation } from "../services/valuation";
 import type { ReportDef, ReportParams, ReportResult, ReportRow } from "./types";
 import type { AppContext } from "../auth";
 import { ci } from "@/lib/dialect";
@@ -15,9 +16,9 @@ import { allowedAccounts, canOpenLedger, partyListWhere, voucherScopeWhere } fro
 import { digitVariants, toAsciiDigits } from "@/lib/digits";
 import { REPORT_ACCESS } from "@/lib/permissions";
 
-const typeLabel = (t: VoucherType) => VOUCHER_TYPES[t as VoucherTypeKey].label;
+const typeLabel = (t?: VoucherType | string | null) => (t && VOUCHER_TYPES[t as VoucherTypeKey]?.label) ?? String(t ?? "");
 const periodText = (from: string, to: string) => `${formatDate(from)} — ${formatDate(to)}`;
-const voucherHref = (id: string) => `/vouchers/v/${id}`;
+const voucherHref = (id?: string | null) => (id ? `/vouchers/v/${id}` : undefined);
 
 function asOfRange(p: ReportParams) {
   const asOf = p.asOf && /^\d{4}-\d{2}-\d{2}$/.test(p.asOf) ? p.asOf : toDateInput();
@@ -30,37 +31,49 @@ function asOfRange(p: ReportParams) {
 export async function ledgerReport(ctx: AppContext, p: ReportParams, accountIds: string[], title: string, book: BookFilter = "GENERAL", parts?: { accountIds: string[]; book: BookFilter }[]): Promise<ReportResult> {
   const { from, to, range } = reportPeriod(p, ctx.business.fiscalYearStartMonth);
   const cur = ctx.business.currencySymbol;
-  const st = await statement(ctx.business.id, accountIds, range, { book, parts });
-  const multi = accountIds.length > 1;
+  const verificationStatus = p.verification && ["UNVERIFIED", "VERIFIED", "REJECTED"].includes(p.verification)
+    ? (p.verification as "UNVERIFIED" | "VERIFIED" | "REJECTED")
+    : undefined;
+  const st = await statement(ctx.business.id, accountIds, range, { book, parts, verificationStatus });
   const q = p.q?.trim().toLowerCase();
-  const lines = q ? st.lines.filter((l) => `${l.voucherNo} ${l.narration ?? ""} ${l.against}`.toLowerCase().includes(q)) : st.lines;
+  const lines = q ? st.lines.filter((l) => `${l.voucherNo} ${l.narration ?? ""} ${l.against} ${l.enteredBy ?? ""}`.toLowerCase().includes(q)) : st.lines;
   const rows: ReportRow[] = [
-    { kind: "group", cells: { date: null, voucher: "", type: "", particulars: "প্রারম্ভিক ব্যালেন্স", debit: null, credit: null, balance: st.opening } },
+    { kind: "group", cells: { date: null, voucher: "প্রারম্ভিক ব্যালেন্স", type: "প্রারম্ভিক", rawType: "OPENING", against: "", narration: "", createdBy: "সিস্টেম", debit: null, credit: null, balance: st.opening, verificationStatus: "UNVERIFIED", verifiedBy: null, verifiedAt: null, verificationNote: null } },
     ...lines.map((l) => ({
       href: voucherHref(l.voucherId),
       cells: {
         date: l.date,
         voucher: l.voucherNo,
+        voucherId: l.voucherId,
         type: typeLabel(l.voucherType),
-        particulars: [multi ? `[${l.accountName}]` : null, l.against, l.narration].filter(Boolean).join(" — "),
+        rawType: l.voucherType,
+        against: l.against,
+        narration: l.narration,
+        createdBy: l.voucherType === "OPENING" ? (l.enteredBy || "সিস্টেম") : (l.enteredBy || "অ্যাডমিন"),
         debit: l.debit || null,
         credit: l.credit || null,
         balance: l.balance,
+        verificationStatus: l.verificationStatus || "UNVERIFIED",
+        verifiedBy: l.verifiedBy ?? null,
+        verifiedAt: l.verifiedAt ? (l.verifiedAt instanceof Date ? l.verifiedAt.toISOString() : String(l.verifiedAt)) : null,
+        verificationNote: l.verificationNote ?? null,
       },
     })),
-    { kind: "total", cells: { date: null, voucher: "", type: "", particulars: "মোট / সমাপনী ব্যালেন্স", debit: st.totalDebit, credit: st.totalCredit, balance: st.closing } },
+    { kind: "total", cells: { date: null, voucher: "মোট / সমাপনী ব্যালেন্স", type: "", rawType: "", against: "", narration: "", createdBy: "", debit: st.totalDebit, credit: st.totalCredit, balance: st.closing, verificationStatus: null, verifiedBy: null, verifiedAt: null, verificationNote: null } },
   ];
   return {
     title,
     subtitle: periodText(from, to),
+    isLedger: true,
     columns: [
       { key: "date", label: "তারিখ", format: "date" },
       { key: "voucher", label: "ভাউচার" },
       { key: "type", label: "ধরন" },
-      { key: "particulars", label: "বিবরণ (বিপরীত হিসাব)" },
+      { key: "createdBy", label: "এন্ট্রি করেছেন" },
       { key: "debit", label: "ডেবিট", format: "money" },
       { key: "credit", label: "ক্রেডিট", format: "money" },
       { key: "balance", label: "ব্যালেন্স", format: "drcr" },
+      { key: "verification", label: "যাচাই অবস্থা" },
     ],
     rows,
     summary: [],
@@ -80,7 +93,10 @@ export async function kindAccounts(businessId: string, kind: "CASH" | "BANK", se
 export async function plReport(ctx: AppContext, p: ReportParams, book: BookKey = "GENERAL", title = "লাভ-ক্ষতি হিসাব"): Promise<ReportResult> {
   const { from, to, range } = reportPeriod(p, ctx.business.fiscalYearStartMonth);
   const cur = ctx.business.currencySymbol;
-  const pl = await profitAndLoss(ctx.business.id, range, book);
+  const [pl, stockVal] = await Promise.all([
+    profitAndLoss(ctx.business.id, range, book),
+    calculateInventoryValuation(ctx.business.id),
+  ]);
   const rows: ReportRow[] = [];
   const section = (title: string, lines: { accountId: string; name: string; amount: number }[], subtotalLabel: string, subtotal: number) => {
     rows.push({ kind: "group", cells: { particulars: title, amount: null } });
@@ -102,6 +118,10 @@ export async function plReport(ctx: AppContext, p: ReportParams, book: BookKey =
       { label: "নিট বিক্রয়", value: formatMoney(pl.netSales, cur), tone: "blue" },
       { label: "গ্রস প্রফিট", value: formatMoney(pl.grossProfit, cur), tone: pl.grossProfit >= 0 ? "green" : "red" },
       { label: pl.netProfit >= 0 ? "নিট লাভ" : "নিট ক্ষতি", value: formatMoney(pl.netProfit, cur), tone: pl.netProfit >= 0 ? "green" : "red" },
+      { label: "সমাপনী মজুদ মূল্যায়ন", value: formatMoney(stockVal.totalValue, cur), tone: "blue" },
+    ],
+    notes: [
+      "সমাপনী মজুদ মূল্যায়ন: কাঁচামাল/ক্রয়কৃত পণ্য FIFO অবশিষ্ট লটের গড় ও উৎপাদিত সমাপ্ত পণ্য সর্বশেষ ৩টি বিক্রির গড় দরে হিসাবকৃত।",
     ],
   };
 }
@@ -162,6 +182,7 @@ async function tradeRegister(ctx: AppContext, p: ReportParams, types: ["SALES", 
     ...voucherScopeWhere(ctx),
     type: { in: types },
     date: range,
+    verificationStatus: { not: "REJECTED" },
     ...(q ? { OR: [{ voucherNo: ci(q) }, { partyAccount: { name: ci(q) } }, { reference: ci(q) }] } : {}),
   };
   const vouchers = await prisma.voucher.findMany({ where, orderBy: [{ date: "asc" }, { createdAt: "asc" }], take: 5000, include: { partyAccount: { select: { name: true } } } });
@@ -231,6 +252,7 @@ export const REPORTS: ReportDef[] = [
           book: "GENERAL", // the depot keeps its own day book
           ...voucherScopeWhere(ctx), // account-head restriction: vouchers of my heads
           date: range,
+          verificationStatus: { not: "REJECTED" },
           ...(type ? { type } : {}),
           ...(q ? { OR: [{ voucherNo: ci(q) }, { narration: ci(q) }, { reference: ci(q) }, { partyAccount: { name: ci(q) } }] } : {}),
         },
@@ -268,7 +290,7 @@ export const REPORTS: ReportDef[] = [
     slug: "ledger",
     title: "লেজার রিপোর্ট",
     description: "যেকোনো হিসাবের বিস্তারিত খতিয়ান ও চলমান ব্যালেন্স",
-    filters: ["account", "range", "q"],
+    filters: ["account", "range", "q", "verification"],
     permission: REPORT_ACCESS.ledgerReport,
     async run(ctx, p) {
       const account = p.accountId ? await prisma.account.findFirst({ where: { id: p.accountId, businessId: ctx.business.id } }) : null;
@@ -457,7 +479,7 @@ export const REPORTS: ReportDef[] = [
       const { from, to, range } = reportPeriod(p, ctx.business.fiscalYearStartMonth);
       const cur = ctx.business.currencySymbol;
       const accounts = await listAccounts(ctx.business.id, { nature: { in: ["INCOME", "EXPENSE"] }, group: { isDirect: false } });
-      const moves = await prisma.journalEntry.groupBy({ by: ["accountId"], where: { businessId: ctx.business.id, book: "GENERAL", date: range, accountId: { in: accounts.map((a) => a.id) } }, _sum: { debit: true, credit: true } });
+      const moves = await prisma.journalEntry.groupBy({ by: ["accountId"], where: { businessId: ctx.business.id, book: "GENERAL", date: range, accountId: { in: accounts.map((a) => a.id) }, voucher: { verificationStatus: { not: "REJECTED" } } }, _sum: { debit: true, credit: true } });
       const m = new Map(moves.map((x) => [x.accountId, num(x._sum.debit) - num(x._sum.credit)]));
       const rows: ReportRow[] = [];
       const totals = { INCOME: 0, EXPENSE: 0 };

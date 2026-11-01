@@ -300,6 +300,7 @@ export async function saveProduct(ctx: Ctx, input: ProductInput, id?: string) {
       purchasePrice: input.purchasePrice,
       salePrice: input.salePrice,
       wholesalePrice: input.wholesalePrice,
+      packSize: input.packSize ?? 24,
       ...(input.depotCommissionRate !== undefined ? { depotCommissionRate: input.depotCommissionRate } : {}),
       ...(input.depotCommissionType !== undefined ? { depotCommissionType: input.depotCommissionType } : {}),
       isDepotProduct: depotProduct,

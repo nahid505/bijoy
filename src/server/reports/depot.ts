@@ -131,6 +131,76 @@ async function commissionReport(ctx: AppContext, p: Record<string, string | unde
   };
 }
 
+/** Format total pieces into dual-unit "Carton & Piece" format (e.g. "5 Pcs", "23 Carton", "23 Carton 5 Pcs"). */
+export function formatCartonPieces(totalPieces: number, packSize: number): string | number {
+  if (packSize <= 1) return totalPieces;
+  const isNeg = totalPieces < 0;
+  const abs = Math.abs(totalPieces);
+  const size = packSize > 0 ? packSize : 24;
+  const cartons = Math.floor(abs / size);
+  const pieces = Math.round(abs % size);
+  const prefix = isNeg ? "-" : "";
+
+  if (cartons > 0 && pieces > 0) {
+    return `${prefix}${cartons} Carton ${pieces} Pcs`;
+  }
+  if (cartons > 0) {
+    return `${prefix}${cartons} Carton`;
+  }
+  return `${prefix}${pieces} Pcs`;
+}
+
+/** Sum cartons and pieces across multiple products for total summary and total rows. */
+export function sumCartonPieces(items: { pieces: number; packSize: number; unit: string }[]): string {
+  if (items.length === 0) return "0 Pcs";
+  const allPackSizeOne = items.every((i) => i.packSize <= 1);
+  if (allPackSizeOne) {
+    const total = round3(items.reduce((s, i) => s + i.pieces, 0));
+    const units = [...new Set(items.map((i) => i.unit))];
+    if (units.length === 1 && units[0]) {
+      return `${formatQtyText(total)} ${units[0]}`;
+    }
+    return `${formatQtyText(total)}`;
+  }
+
+  let totalCartons = 0;
+  let totalPieces = 0;
+  const packSizes = new Set(items.map((i) => (i.packSize > 1 ? i.packSize : 24)));
+
+  for (const item of items) {
+    const isNeg = item.pieces < 0;
+    const abs = Math.abs(item.pieces);
+    const size = item.packSize > 1 ? item.packSize : 24;
+    const ctn = Math.floor(abs / size);
+    const pcs = Math.round(abs % size);
+    totalCartons += isNeg ? -ctn : ctn;
+    totalPieces += isNeg ? -pcs : pcs;
+  }
+
+  if (packSizes.size === 1) {
+    const size = [...packSizes][0] || 24;
+    if (size > 1 && Math.abs(totalPieces) >= size) {
+      const extraCtn = Math.floor(Math.abs(totalPieces) / size);
+      const sign = totalPieces < 0 ? -1 : 1;
+      totalCartons += sign * extraCtn;
+      totalPieces = sign * (Math.abs(totalPieces) % size);
+    }
+  }
+
+  const isNeg = totalCartons < 0 || (totalCartons === 0 && totalPieces < 0);
+  const absCtn = Math.abs(totalCartons);
+  const absPcs = Math.abs(totalPieces);
+  const prefix = isNeg ? "-" : "";
+
+  if (absCtn > 0 && absPcs > 0) {
+    return `${prefix}${absCtn} Carton ${absPcs} Pcs`;
+  }
+  if (absCtn > 0) {
+    return `${prefix}${absCtn} Carton`;
+  }
+  return `${prefix}${absPcs} Pcs`;
+}
+
 /** Free / scheme goods: received from the company (purchases), given to dealers (DO releases and market
  *  sales), and the free stock still at the depot (all received − all given, up to the end date). */
 async function freeSchemeReport(ctx: AppContext, p: Record<string, string | undefined>): Promise<ReportResult> {
@@ -139,12 +209,25 @@ async function freeSchemeReport(ctx: AppContext, p: Record<string, string | unde
   const { from, to, range } = reportPeriod(p, ctx.business.fiscalYearStartMonth);
   const items = await prisma.voucherItem.findMany({
     where: { freeQuantity: { gt: 0 }, voucher: { businessId: ctx.business.id, book: "DEPOT", type: { in: ["PURCHASE", "SALES", "DEPOT_DELIVERY"] }, date: { lt: range.lt } } },
-    select: { productId: true, freeQuantity: true, unitFactor: true, voucher: { select: { type: true, date: true } }, product: { select: { name: true, unit: { select: { name: true } } } } },
+    select: {
+      productId: true,
+      freeQuantity: true,
+      unitFactor: true,
+      voucher: { select: { type: true, date: true } },
+      product: { select: { name: true, packSize: true, unit: { select: { name: true } } } },
+    },
   });
-  const byProduct = new Map<string, { name: string; unit: string; received: number; given: number; balance: number }>();
+  const byProduct = new Map<string, { name: string; unit: string; packSize: number; received: number; given: number; balance: number }>();
   for (const i of items) {
     const base = round3(num(i.freeQuantity) * num(i.unitFactor));
-    const row = byProduct.get(i.productId) ?? { name: i.product.name, unit: i.product.unit.name, received: 0, given: 0, balance: 0 };
+    const row = byProduct.get(i.productId) ?? {
+      name: i.product.name,
+      unit: i.product.unit.name,
+      packSize: num(i.product.packSize) || 24,
+      received: 0,
+      given: 0,
+      balance: 0,
+    };
     const inPeriod = range.gte ? i.voucher.date >= range.gte : true;
     const received = i.voucher.type === "PURCHASE";
     if (inPeriod && received) row.received = round3(row.received + base);
@@ -153,13 +236,30 @@ async function freeSchemeReport(ctx: AppContext, p: Record<string, string | unde
     byProduct.set(i.productId, row);
   }
   const list = [...byProduct.values()].sort((a, b) => a.name.localeCompare(b.name, "bn"));
-  const rows: ReportRow[] = list.map((r) => ({ cells: { product: r.name, unit: r.unit, received: r.received, given: r.given, balance: r.balance } }));
-  // totals only when every product has the same unit (bags and kg are never added together)
+  const rows: ReportRow[] = list.map((r) => ({
+    cells: {
+      product: r.name,
+      unit: r.unit,
+      received: formatCartonPieces(r.received, r.packSize),
+      given: formatCartonPieces(r.given, r.packSize),
+      balance: formatCartonPieces(r.balance, r.packSize),
+    },
+  }));
+
   const units = [...new Set(list.map((r) => r.unit))];
-  const sum = (k: "received" | "given" | "balance") => round3(list.reduce((s, r) => s + r[k], 0));
-  if (list.length && units.length === 1) rows.push({ kind: "total", cells: { product: "মোট", unit: units[0], received: sum("received"), given: sum("given"), balance: sum("balance") } });
-  const perUnit = (k: "received" | "given" | "balance") =>
-    units.map((u) => `${formatQtyText(round3(list.filter((r) => r.unit === u).reduce((s, r) => s + r[k], 0)))} ${u}`).join(" · ") || "০";
+  if (list.length) {
+    rows.push({
+      kind: "total",
+      cells: {
+        product: "মোট",
+        unit: units.length === 1 ? units[0] : "",
+        received: sumCartonPieces(list.map((r) => ({ pieces: r.received, packSize: r.packSize, unit: r.unit }))),
+        given: sumCartonPieces(list.map((r) => ({ pieces: r.given, packSize: r.packSize, unit: r.unit }))),
+        balance: sumCartonPieces(list.map((r) => ({ pieces: r.balance, packSize: r.packSize, unit: r.unit }))),
+      },
+    });
+  }
+
   return {
     title,
     subtitle: periodText(from, to),
@@ -172,9 +272,9 @@ async function freeSchemeReport(ctx: AppContext, p: Record<string, string | unde
     ],
     rows,
     summary: [
-      { label: "কোম্পানি থেকে ফ্রি প্রাপ্ত", value: perUnit("received"), tone: "green" },
-      { label: "ডিলারদের স্কিম বাবদ ফ্রি প্রদান", value: perUnit("given"), tone: "blue" },
-      { label: "ডিপোতে অবশিষ্ট ফ্রি স্টক", value: perUnit("balance"), tone: "red" },
+      { label: "কোম্পানি থেকে ফ্রি প্রাপ্ত", value: sumCartonPieces(list.map((r) => ({ pieces: r.received, packSize: r.packSize, unit: r.unit }))), tone: "green" },
+      { label: "ডিলারদের স্কিম বাবদ ফ্রি প্রদান", value: sumCartonPieces(list.map((r) => ({ pieces: r.given, packSize: r.packSize, unit: r.unit }))), tone: "blue" },
+      { label: "ডিপোতে অবশিষ্ট ফ্রি স্টক", value: sumCartonPieces(list.map((r) => ({ pieces: r.balance, packSize: r.packSize, unit: r.unit }))), tone: "red" },
     ],
     notes: [
       "প্রাপ্ত ও প্রদান = এই সময়ের হিসাব; অবশিষ্ট = শুরু থেকে শেষ তারিখ পর্যন্ত মোট প্রাপ্ত − মোট প্রদান।",
@@ -233,6 +333,6 @@ export const DEPOT_REPORTS: ReportDef[] = [
   { slug: "depot-profit-loss", title: "ডিপো লাভ-ক্ষতি", description: "শুধু ডিপো হিসাব — কোম্পানি কমিশন, মার্কেট সেলসের লাভ ও ডিপোর খরচ; সাধারণ ব্যবসার লাভ-ক্ষতিতে যুক্ত হয় না", filters: ["range"], permission: DEPOT_ACCESS.profitLoss, run: depotProfitLoss },
   { slug: "depot-cash-book", title: "ডিপো ক্যাশ বুক", description: "ডিপো ক্যাশের বর্তমান ব্যালেন্স — মার্কেট কালেকশন, কোম্পানি পেমেন্ট, ফান্ড স্থানান্তর ও ডিপো খরচ; অন্য নগদ হিসাব বাছলে তার ডিপো লেনদেন", filters: ["cashAccount", "range", "q"], permission: DEPOT_ACCESS.cashbook, run: depotCashBook },
   { slug: "depot-company-ledger", title: "কোম্পানি লেজার (ডিপো হিসাব)", description: "কোম্পানির সাথে ডিপোর লেনদেন — স্টক ইন, ডিও রিলিজ, পেমেন্ট ও কমিশন সমন্বয়; চলমান দেনা", filters: ["supplier", "range"], permission: DEPOT_ACCESS.companyLedger, run: companyLedger },
-  { slug: "depot-dealer-ledger", title: "ডিলার লেজার (ডিপো হিসাব)", description: "একজন ডিলারের ডিপো হিসাবের খতিয়ান ও চলমান বাকি", filters: ["account", "range", "q"], permission: DEPOT_ACCESS.dealersView, run: dealerLedger },
+  { slug: "depot-dealer-ledger", title: "ডিলার লেজার (ডিপো হিসাব)", description: "একজন ডিলারের ডিপো হিসাবের খতিয়ান ও চলমান বাকি", filters: ["account", "range", "q", "verification"], permission: DEPOT_ACCESS.dealersView, run: dealerLedger },
   { slug: "depot-commission", title: "কোম্পানি কমিশন রিপোর্ট", description: "কোম্পানিভিত্তিক অর্জিত কমিশন, আদায়/সমন্বয় ও বর্তমান প্রাপ্য", filters: ["range"], permission: DEPOT_ACCESS.reports, run: commissionReport },
 ];

@@ -1,6 +1,7 @@
 // Header and footer of the public pages (landing, pricing).
 import Link from "next/link";
 import { CONTACT } from "@/lib/contact";
+import { LangToggle } from "@/components/lang";
 
 export function PublicHeader({ loggedIn }: { loggedIn: boolean }) {
   return (
@@ -13,11 +14,11 @@ export function PublicHeader({ loggedIn }: { loggedIn: boolean }) {
         </Link>
         <nav aria-label="প্রধান" className="hidden items-center gap-5 text-sm text-slate-700 md:flex">
           <Link prefetch={false} href="/#features" className="hover:text-brand-700">ফিচার</Link>
-          <Link prefetch={false} href="/pricing" className="hover:text-brand-700">মূল্য</Link>
           <Link prefetch={false} href="/#faq" className="hover:text-brand-700">প্রশ্নোত্তর</Link>
           <Link prefetch={false} href="/#contact" className="hover:text-brand-700">যোগাযোগ</Link>
         </nav>
-        <div className="flex shrink-0 items-center gap-1 sm:gap-2 [&>a]:whitespace-nowrap">
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3 [&>a]:whitespace-nowrap">
+          <LangToggle />
           {/* the main nav is hidden on phones — keep "যোগাযোগ" reachable there */}
           <Link prefetch={false} href="/#contact" className="btn-ghost px-2 md:hidden" aria-label="যোগাযোগ" title="যোগাযোগ"><span aria-hidden>📞</span></Link>
           {loggedIn ? (
@@ -41,8 +42,10 @@ export function PublicFooter() {
         <div className="space-y-1">
           <p>© বিজয় লেনদেন — বাংলায় ব্যবসার হিসাব</p>
           <address className="not-italic text-slate-600" aria-label="যোগাযোগ">
-            {CONTACT.address} · মোবাইল:{" "}
-            <a href={CONTACT.phoneHref} className="font-semibold text-brand-700 hover:underline">{CONTACT.phoneDisplay}</a>
+            {CONTACT.address} · Mobile:{" "}
+            <a href={CONTACT.phoneHref} className="font-semibold text-brand-700 hover:underline">{CONTACT.phoneRaw}</a>
+            {" | "}Email:{" "}
+            <a href={CONTACT.emailHref} className="font-semibold text-brand-700 hover:underline">{CONTACT.email}</a>
           </address>
         </div>
         <nav aria-label="ফুটার" className="flex flex-wrap gap-4">

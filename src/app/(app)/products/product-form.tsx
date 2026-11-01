@@ -24,6 +24,7 @@ export interface ProductDefaults {
   openingStock?: number;
   openingRate?: number;
   trackBatch?: boolean;
+  packSize?: number;
 }
 
 /**
@@ -110,6 +111,9 @@ export function ProductForm({
             {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
           {hasTransactions && <input type="hidden" name="unitId" value={defaults.unitId} />}
+        </Field>
+        <Field label="কার্টুন সাইজ (পিস / কার্টুন)" name="packSize" hint={t("১ কার্টুনে কত পিস — চালানের ফ্রি কার্টুন ও পিস রূপান্তরে ব্যবহৃত হবে")}>
+          <input id="packSize" name="packSize" type="text" inputMode="numeric" data-numeric step="1" min="1" defaultValue={defaults.packSize ?? 24} className="input-num" />
         </Field>
       </fieldset>
 

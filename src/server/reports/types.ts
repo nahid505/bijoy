@@ -25,9 +25,10 @@ export interface ReportResult {
   summary?: { label: string; value: string; tone?: "green" | "red" | "blue" | "slate" }[];
   notes?: string[];
   emptyMessage?: string;
+  isLedger?: boolean;
 }
 
-export type FilterKey = "range" | "asOf" | "q" | "account" | "cashAccount" | "bankAccount" | "warehouse" | "voucherType" | "customer" | "supplier" | "dueStatus" | "period" | "department" | "employee";
+export type FilterKey = "range" | "asOf" | "q" | "account" | "cashAccount" | "bankAccount" | "warehouse" | "voucherType" | "customer" | "supplier" | "dueStatus" | "period" | "department" | "employee" | "verification";
 
 export type ReportParams = Record<string, string | undefined>;
 

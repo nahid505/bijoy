@@ -248,36 +248,70 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
   const mobile = party.mobile?.replace(/\D/g, "");
   const waHref = `https://wa.me/${mobile ? (mobile.startsWith("880") ? mobile : `88${mobile}`) : ""}?text=${shareText}`;
 
+  const isCustomer = pageKind === "CUSTOMER";
+  const isSupplier = pageKind === "SUPPLIER";
+  const isDealer = pageKind === "DEALER";
+  const dueFormatted = due >= 0 ? formatMoney(due, cur) : `${formatMoney(-due, cur)} ${t("অগ্রিম")}`;
+  const dueLabel = `${t(isCustomer ? "বর্তমান বাকি" : isSupplier ? "বর্তমান দেনা" : cfg.balanceLabel)}:`;
+
+  const subItems: React.ReactNode[] = [];
+  if (party.mobile) subItems.push(<span key="m">📞 {party.mobile}</span>);
+  if (party.address) subItems.push(<span key="a">📍 {party.address}</span>);
+  subItems.push(
+    <span key="due">
+      {dueLabel}{" "}
+      <span className={`font-semibold tabular-nums ${due > 0 ? "text-rose-700" : due < 0 ? "text-emerald-700" : "text-slate-700"}`}>
+        {dueFormatted}
+      </span>
+    </span>
+  );
+  if (!party.isActive) {
+    subItems.push(<Badge key="status" tone="red">{t("নিষ্ক্রিয়")}</Badge>);
+  }
+
+  const partySubtitle = (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs sm:text-sm text-slate-600 mt-0.5">
+      {subItems.map((item, idx) => (
+        <span key={idx} className="flex items-center gap-2">
+          {idx > 0 && <span className="text-slate-300 select-none">·</span>}
+          {item}
+        </span>
+      ))}
+    </div>
+  );
+
   const profile = (
     <>
-      <section className="panel mb-4">
-        <div className="grid gap-0 lg:grid-cols-4">
-          <dl className="space-y-2 border-b border-rule p-4 text-sm lg:border-b-0 lg:border-r">
-            <div className="flex items-start gap-3">
-              <LedgerAvatar name={party.name} imageUrl={party.imageUrl} size="lg" />
-              <div className="min-w-0 flex-1">
-                <p className="text-base font-bold text-ink-900 leading-snug">{partyName(party)} {!party.isActive && <Badge>{t("নিষ্ক্রিয়")}</Badge>}</p>
-                {party.mobile && <p className="text-xs text-slate-600 mt-0.5">📞 {party.mobile}</p>}
-                {party.email && <p className="text-xs text-slate-600">✉ {party.email}</p>}
-                {party.address && <p className="text-xs text-slate-600">{party.address}</p>}
+      {isDealer && (
+        <section className="panel mb-2 sm:mb-3">
+          <div className="grid gap-0 lg:grid-cols-4">
+            <dl className="space-y-1.5 border-b border-rule p-3 sm:p-4 text-xs sm:text-sm lg:border-b-0 lg:border-r">
+              <div className="flex items-start gap-2.5 sm:gap-3">
+                <LedgerAvatar name={party.name} imageUrl={party.imageUrl} size="md" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm sm:text-base font-bold text-ink-900 leading-snug">{partyName(party)} {!party.isActive && <Badge>{t("নিষ্ক্রিয়")}</Badge>}</p>
+                  {party.mobile && <p className="text-xs text-slate-600 mt-0.5">📞 {party.mobile}</p>}
+                  {party.email && <p className="text-xs text-slate-600">✉ {party.email}</p>}
+                  {party.address && <p className="text-xs text-slate-600 truncate">{party.address}</p>}
+                </div>
               </div>
+              <p className="pt-0.5 text-[11px] sm:text-xs text-slate-500">
+                {kind === "CUSTOMER" && <>{t("ক্রেডিট সীমা:")} <b>{creditLimit ? formatMoney(creditLimit, cur) : t("নেই")}</b> · </>}
+                {t("পরিশোধের মেয়াদ:")} <b>{party.creditDays ? `${party.creditDays} ${t("দিন")}` : t("তাৎক্ষণিক")}</b>
+              </p>
+            </dl>
+            <div className="grid grid-cols-2 divide-x divide-y divide-rule sm:grid-cols-4 sm:divide-y-0 lg:col-span-3">
+              <Fig label={t("প্রারম্ভিক ব্যালেন্স")} value={formatMoney(opening, cur)} />
+              <Fig label={t(kind === "CUSTOMER" ? "মোট ইনভয়েস" : "মোট ক্রয় ইনভয়েস")} value={formatMoney(trade, cur)} />
+              <Fig label={t(cfg.settledLabel)} value={formatMoney(settled, cur)} tone="text-brand-700" />
+              <Fig label={t(cfg.balanceLabel)} value={due >= 0 ? formatMoney(due, cur) : `${formatMoney(-due, cur)} ${t("অগ্রিম")}`} tone={due > 0 ? "cr" : "text-brand-700"} big />
             </div>
-            <p className="pt-1 text-xs text-slate-500">
-              {kind === "CUSTOMER" && <>{t("ক্রেডিট সীমা:")} <b>{creditLimit ? formatMoney(creditLimit, cur) : t("নেই")}</b> · </>}
-              {t("পরিশোধের মেয়াদ:")} <b>{party.creditDays ? `${party.creditDays} ${t("দিন")}` : t("তাৎক্ষণিক")}</b>
-            </p>
-          </dl>
-          <div className="grid grid-cols-2 divide-x divide-y divide-rule sm:grid-cols-4 sm:divide-y-0 lg:col-span-3">
-            <Fig label={t("প্রারম্ভিক ব্যালেন্স")} value={formatMoney(opening, cur)} />
-            <Fig label={t(kind === "CUSTOMER" ? "মোট ইনভয়েস" : "মোট ক্রয় ইনভয়েস")} value={formatMoney(trade, cur)} />
-            <Fig label={t(cfg.settledLabel)} value={formatMoney(settled, cur)} tone="text-brand-700" />
-            <Fig label={t(cfg.balanceLabel)} value={due >= 0 ? formatMoney(due, cur) : `${formatMoney(-due, cur)} ${t("অগ্রিম")}`} tone={due > 0 ? "cr" : "text-brand-700"} big />
           </div>
-        </div>
-      </section>
-      <nav className="no-print mb-3 flex flex-wrap gap-1 border-b border-rule">
+        </section>
+      )}
+      <nav className="no-print mb-1 flex flex-wrap gap-1 border-b border-rule/60">
         {TABS.map((x) => (
-          <Link prefetch={false} key={x.key} href={tabHref(x.key)} className={`-mb-px border-b-2 px-3 py-2 text-sm ${tab === x.key ? "border-brand-600 font-semibold text-brand-800" : "border-transparent text-slate-600 hover:text-ink-900"}`}>
+          <Link prefetch={false} key={x.key} href={tabHref(x.key)} className={`-mb-px border-b-2 px-2 py-1 sm:px-2.5 sm:py-1.5 text-xs sm:text-sm ${tab === x.key ? "border-brand-600 font-semibold text-brand-800" : "border-transparent text-slate-600 hover:text-ink-900"}`}>
             {t(x.label)}
           </Link>
         ))}
@@ -285,15 +319,32 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
     </>
   );
 
+  const actionBtnClass = "btn-secondary shrink-0 text-xs sm:text-sm px-2.5 sm:px-3 py-1.5 flex items-center gap-1 font-medium";
+  const actionBtnPrimary = "btn-primary shrink-0 text-xs sm:text-sm px-2.5 sm:px-3 py-1.5 flex items-center gap-1 font-medium";
+  const actionBtnDanger = "btn-danger shrink-0 text-xs sm:text-sm px-2.5 sm:px-3 py-1.5 flex items-center gap-1 font-medium";
+
   const actions = (
     <>
-      {party.isActive && can(ctx, cfg.newTrade.perm) && <Link prefetch={false} href={pageKind === "CUSTOMER" ? "/pos" : dealer ? cfg.newTrade.href : `${cfg.newTrade.href}?party=${party.accountId}`} className="btn-primary">{t(cfg.newTrade.label)}</Link>}
-      {can(ctx, dealer ? DEPOT_ACCESS.collection : "vouchers:create") && <Link prefetch={false} href={`${cfg.settle.href}?party=${party.accountId}`} className="btn-secondary">{t(cfg.settle.label)}</Link>}
-      <Link prefetch={false} href={`${cfg.base}/${party.id}/statement`} className="btn-secondary">{t("🖨 স্টেটমেন্ট")}</Link>
-      <a href={waHref} target="_blank" rel="noopener noreferrer" className="btn-secondary">WhatsApp</a>
-      {manage && <Link prefetch={false} href={`${cfg.base}/${party.id}/edit`} className="btn-secondary">{t("সম্পাদনা")}</Link>}
-      {manage && <ActionButton action={togglePartyAction.bind(null, pageKind, party.id, !party.isActive)} label={party.isActive ? t("নিষ্ক্রিয়") : t("সক্রিয়")} className="btn-secondary" />}
-      {manage && <ActionButton action={deletePartyAction.bind(null, pageKind, party.id)} label={t("মুছুন")} className="btn-danger" confirmText={t("{0} মুছে ফেলতে চান?", { 0: t(cfg.title) })} />}
+      {isDealer && party.isActive && can(ctx, cfg.newTrade.perm) && (
+        <Link prefetch={false} href={cfg.newTrade.href} className={actionBtnPrimary}>
+          {t(cfg.newTrade.label)}
+        </Link>
+      )}
+      {isDealer && can(ctx, DEPOT_ACCESS.collection) && (
+        <Link prefetch={false} href={`${cfg.settle.href}?party=${party.accountId}`} className={actionBtnClass}>
+          {t(cfg.settle.label)}
+        </Link>
+      )}
+      <Link prefetch={false} href={`${cfg.base}/${party.id}/statement`} className={actionBtnClass}>
+        {t("🖨 স্টেটমেন্ট")}
+      </Link>
+      <a href={waHref} target="_blank" rel="noopener noreferrer" className={`${actionBtnClass} text-emerald-700 hover:text-emerald-800`}>
+        <span>💬</span>
+        <span>WhatsApp</span>
+      </a>
+      {manage && <Link prefetch={false} href={`${cfg.base}/${party.id}/edit`} className={actionBtnClass}>{t("সম্পাদনা")}</Link>}
+      {manage && <ActionButton action={togglePartyAction.bind(null, pageKind, party.id, !party.isActive)} label={party.isActive ? t("নিষ্ক্রিয়") : t("সক্রিয়")} className={actionBtnClass} />}
+      {manage && <ActionButton action={deletePartyAction.bind(null, pageKind, party.id)} label={t("মুছুন")} className={actionBtnDanger} confirmText={t("{0} মুছে ফেলতে চান?", { 0: t(cfg.title) })} />}
     </>
   );
 
@@ -305,10 +356,11 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
         basePath={`${cfg.base}/${party.id}`}
         omitFilters={["account"]}
         title={partyName(party)}
-        description={`${t(cfg.title)} ${t("প্রোফাইল ও হিসাব বিবরণী (স্টেটমেন্ট)")}`}
+        description={isDealer ? `${t(cfg.title)} ${t("প্রোফাইল ও হিসাব বিবরণী (স্টেটমেন্ট)")}` : partySubtitle}
         crumbs={[...(dealer ? [{ label: "ডিপো ব্যবস্থাপনা" }] : []), { label: cfg.title, href: cfg.base }, { label: partyName(party) }]}
         before={profile}
         extraActions={actions}
+        stickyHeader={true}
       />
     );
   }
@@ -333,7 +385,7 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
                 <tr key={v.id}>
                   <td className="whitespace-nowrap">{formatDate(v.date)}</td>
                   <td><Link prefetch={false} href={`/vouchers/v/${v.id}`} className="font-semibold text-brand-700 hover:underline">{v.voucherNo}</Link></td>
-                  <td>{t(VOUCHER_TYPES[v.type].label)}</td>
+                  <td>{t(VOUCHER_TYPES[v.type]?.label ?? v.type)}</td>
                   <td className="num">{formatMoney(num(v.amount) * (isReturn ? -1 : 1), cur)}</td>
                   <td className="num">{formatMoney(num(v.paidAmount), cur)}</td>
                   <td className="num font-semibold">{open ? formatMoney(open.open, cur) : "—"}</td>
@@ -365,7 +417,7 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
               <tr key={e.id}>
                 <td className="whitespace-nowrap">{formatDate(e.date)}</td>
                 <td><Link prefetch={false} href={`/vouchers/v/${e.voucher.id}`} className="text-brand-700 hover:underline">{e.voucher.voucherNo}</Link></td>
-                <td>{e.voucher.type === "SALES" || e.voucher.type === "PURCHASE" ? t("ইনভয়েসের সময় পরিশোধ") : t(VOUCHER_TYPES[e.voucher.type].label)}</td>
+                <td>{e.voucher.type === "SALES" || e.voucher.type === "PURCHASE" ? t("ইনভয়েসের সময় পরিশোধ") : t(VOUCHER_TYPES[e.voucher.type]?.label ?? e.voucher.type)}</td>
                 <td className="text-xs">{e.voucher.payments.length ? e.voucher.payments.map((p) => p.account.name).join(", ") : e.voucher.cashAccount?.name ?? "—"}</td>
                 <td className="text-xs">{e.voucher.payments.map((p) => p.reference).filter(Boolean).join(", ") || e.voucher.reference || "—"}</td>
                 <td className="num font-semibold text-brand-700">{formatMoney(num(e.debit) + num(e.credit), cur)}</td>
@@ -400,8 +452,10 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
 
   return (
     <>
-      <PageHeader title={partyName(party)} description={`${cfg.title} প্রোফাইল`} crumbs={[...(dealer ? [{ label: "ডিপো ব্যবস্থাপনা" }] : []), { label: cfg.title, href: cfg.base }, { label: partyName(party) }]} actions={actions} />
-      {profile}
+      <div className="no-print sticky top-0 z-30 bg-white shadow-sm border-b pb-1 pt-1.5 mb-2 -mx-3 px-3 sm:-mx-6 sm:px-6">
+        <PageHeader className="mb-1 sm:mb-1.5" title={partyName(party)} description={isDealer ? `${cfg.title} প্রোফাইল` : partySubtitle} crumbs={[...(dealer ? [{ label: "ডিপো ব্যবস্থাপনা" }] : []), { label: cfg.title, href: cfg.base }, { label: partyName(party) }]} actions={actions} />
+        {profile}
+      </div>
       <section className="panel">{body}</section>
     </>
   );
@@ -409,9 +463,9 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
 
 function Fig({ label, value, tone = "", big }: { label: string; value: string; tone?: string; big?: boolean }) {
   return (
-    <div className={`px-4 py-3 ${big ? "bg-ink-50" : ""}`}>
-      <p className="text-[11px] text-slate-500">{label}</p>
-      <p className={`${big ? "text-lg" : "text-sm"} font-bold tabular-nums ${tone}`}>{value}</p>
+    <div className={`px-2.5 py-1.5 sm:px-4 sm:py-3 ${big ? "bg-ink-50" : ""}`}>
+      <p className="text-[10px] sm:text-[11px] text-slate-500 leading-tight">{label}</p>
+      <p className={`${big ? "text-sm sm:text-base lg:text-lg" : "text-xs sm:text-sm"} font-bold tabular-nums ${tone} leading-tight`}>{value}</p>
     </div>
   );
 }
@@ -511,24 +565,41 @@ export async function PartyStatementPrint({ kind: pageKind, id, searchParams }: 
         <div className="overflow-x-auto print:overflow-visible"><table className="w-full border-collapse text-xs">
           <thead>
             <tr className="border-y-2 border-ink-800 bg-ink-50 text-left">
-              <th className="px-2 py-1.5">তারিখ</th><th className="px-2 py-1.5">ভাউচার</th><th className="px-2 py-1.5">বিবরণ</th>
-              <th className="px-2 py-1.5 text-right">ডেবিট</th><th className="px-2 py-1.5 text-right">ক্রেডিট</th><th className="px-2 py-1.5 text-right">ব্যালেন্স</th>
+              <th className="px-2 py-1.5">তারিখ</th>
+              <th className="px-2 py-1.5">ভাউচার</th>
+              <th className="px-2 py-1.5">ধরন</th>
+              <th className="px-2 py-1.5">এন্ট্রি করেছেন</th>
+              <th className="px-2 py-1.5 text-right">ডেবিট</th>
+              <th className="px-2 py-1.5 text-right">ক্রেডিট</th>
+              <th className="px-2 py-1.5 text-right">ব্যালেন্স</th>
             </tr>
           </thead>
           <tbody>
-            <tr className="border-b border-rule font-semibold"><td className="px-2 py-1.5" colSpan={5}>প্রারম্ভিক ব্যালেন্স</td><td className="px-2 py-1.5 text-right tabular-nums">{formatDrCr(st.opening, cur)}</td></tr>
+            <tr className="border-b border-rule font-semibold">
+              <td className="px-2 py-1.5"></td>
+              <td className="px-2 py-1.5">প্রারম্ভিক ব্যালেন্স</td>
+              <td className="px-2 py-1.5"></td>
+              <td className="px-2 py-1.5 text-slate-500">সিস্টেম</td>
+              <td className="px-2 py-1.5 text-right tabular-nums"></td>
+              <td className="px-2 py-1.5 text-right tabular-nums"></td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{formatDrCr(st.opening, cur)}</td>
+            </tr>
             {st.lines.map((l) => (
               <tr key={l.entryId} className="border-b border-rule">
                 <td className="px-2 py-1.5 whitespace-nowrap">{formatDate(l.date)}</td>
                 <td className="px-2 py-1.5">{l.voucherNo}</td>
-                <td className="px-2 py-1.5">{[VOUCHER_TYPES[l.voucherType].label, l.narration].filter(Boolean).join(" — ")}</td>
+                <td className="px-2 py-1.5">{VOUCHER_TYPES[l.voucherType]?.label ?? l.voucherType}</td>
+                <td className="px-2 py-1.5">{l.voucherType === "OPENING" ? (l.enteredBy || "সিস্টেম") : (l.enteredBy || "অ্যাডমিন")}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{l.debit ? formatMoney(l.debit, cur) : ""}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{l.credit ? formatMoney(l.credit, cur) : ""}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{formatDrCr(l.balance, cur)}</td>
               </tr>
             ))}
             <tr className="border-t-2 border-double border-ink-800 font-bold">
-              <td className="px-2 py-1.5" colSpan={3}>মোট / সমাপনী</td>
+              <td className="px-2 py-1.5"></td>
+              <td className="px-2 py-1.5">মোট / সমাপনী</td>
+              <td className="px-2 py-1.5"></td>
+              <td className="px-2 py-1.5"></td>
               <td className="px-2 py-1.5 text-right tabular-nums">{formatMoney(st.totalDebit, cur)}</td>
               <td className="px-2 py-1.5 text-right tabular-nums">{formatMoney(st.totalCredit, cur)}</td>
               <td className="px-2 py-1.5 text-right tabular-nums">{formatDrCr(st.closing, cur)}</td>

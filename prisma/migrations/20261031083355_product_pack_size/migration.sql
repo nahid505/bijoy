@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Product" ADD COLUMN     "packSize" DECIMAL(14,3) NOT NULL DEFAULT 24;

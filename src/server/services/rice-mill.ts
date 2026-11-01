@@ -5,9 +5,11 @@
 // Which products belong to the mill: paddy = bought on a slip or used as a production / recipe input; rice and
 // by-products (চাল, খুদ, কুঁড়া, তুষ …) = production / recipe outputs. Nothing here writes to the database.
 import { prisma, num } from "@/lib/db";
-import { round2, round3 } from "@/lib/calc";
+import { round2, round3, round4 } from "@/lib/calc";
+import { allocateCost } from "@/lib/production";
 import { KG_PER_MON } from "@/lib/paddy";
 import type { DateRange } from "./ledger";
+import { calculateInventoryValuation } from "./valuation";
 
 export interface MillProducts {
   paddy: string[];
@@ -41,17 +43,33 @@ export interface MillStockRow {
 
 const isKg = (unit: string) => /কেজি|kg/i.test(unit);
 
-/** Current stock of paddy and of rice / by-products, with value at average cost. */
+/** Current stock of paddy and of rice / by-products, valued via FIFO (paddy) and last 3 sales avg (outputs). */
 export async function millStock(businessId: string) {
   const ids = await millProducts(businessId);
-  const rows = await prisma.product.findMany({
-    where: { businessId, id: { in: [...ids.paddy, ...ids.outputs] } },
-    orderBy: { name: "asc" },
-    select: { id: true, name: true, code: true, stock: true, avgCost: true, unit: { select: { name: true } } },
-  });
+  const [rows, valuation] = await Promise.all([
+    prisma.product.findMany({
+      where: { businessId, id: { in: [...ids.paddy, ...ids.outputs] } },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, code: true, stock: true, avgCost: true, unit: { select: { name: true } } },
+    }),
+    calculateInventoryValuation(businessId, { productIds: [...ids.paddy, ...ids.outputs] }),
+  ]);
+  const valMap = new Map(valuation.items.map((it) => [it.productId, it]));
   const toRow = (p: (typeof rows)[number]): MillStockRow => {
     const stock = round3(num(p.stock));
-    return { id: p.id, name: p.name, code: p.code, unit: p.unit.name, stock, mon: isKg(p.unit.name) ? round2(stock / KG_PER_MON) : null, avgCost: num(p.avgCost), value: round2(stock * num(p.avgCost)) };
+    const val = valMap.get(p.id);
+    const rate = val ? val.rate : num(p.avgCost);
+    const value = val ? val.value : round2(stock * rate);
+    return {
+      id: p.id,
+      name: p.name,
+      code: p.code,
+      unit: p.unit.name,
+      stock,
+      mon: isKg(p.unit.name) ? round2(stock / KG_PER_MON) : null,
+      avgCost: rate,
+      value,
+    };
   };
   const paddy = rows.filter((r) => ids.paddy.includes(r.id)).map(toRow);
   const outputs = rows.filter((r) => ids.outputs.includes(r.id)).map(toRow);
@@ -322,5 +340,332 @@ export async function dailyMilling(businessId: string, range: DateRange) {
       rice: pctOf(totals.rice.kg, paddyKg), bran: pctOf(totals.bran.kg, paddyKg), broken: pctOf(totals.broken.kg, paddyKg), husk: pctOf(totals.husk.kg, paddyKg),
       loss: pctOf(Math.max(0, paddyKg - producedKg), paddyKg),
     },
+  };
+}
+
+export interface MillingProfitItem {
+  id: string;
+  productId: string;
+  name: string;
+  code: string | null;
+  kind: MillOutputKind;
+  quantityKg: number;
+  avgSellingRate: number; // Tk / kg from last 3 challans
+  challansUsed: number;
+  potentialRevenue: number; // quantityKg * avgSellingRate
+  rawMaterialCost: number; // FIFO allocated cost
+  netProfit: number; // potentialRevenue - rawMaterialCost
+  marginPct: number; // (netProfit / potentialRevenue) * 100
+}
+
+export interface FifoLotConsumption {
+  voucherNo: string;
+  date: Date;
+  quantityKg: number;
+  ratePerKg: number;
+  cost: number;
+}
+
+export interface RawMaterialInputCost {
+  id: string;
+  productId: string;
+  name: string;
+  code: string | null;
+  quantityKg: number;
+  fifoCost: number;
+  ratePerKg: number;
+  ratePerMon: number;
+  consumedLots: FifoLotConsumption[];
+}
+
+export interface MillingProfitAnalysis {
+  rawInputs: RawMaterialInputCost[];
+  items: MillingProfitItem[];
+  consumedLots: FifoLotConsumption[];
+  totalRawFifoCost: number;
+  avgRawRatePerKg: number;
+  totalPotentialRevenue: number;
+  totalNetProfit: number;
+  overallMarginPct: number;
+}
+
+/**
+ * Profit & Loss analysis of a milling batch based on:
+ * 1. Pure FIFO cost of the raw material (paddy) consumed from actual purchase lots in inventory.
+ * 2. Average selling rate per kg from the last 3 delivery challans / sales vouchers for each produced item.
+ * 3. Proportional allocation of the actual FIFO cost by produced output weight.
+ */
+export async function millingProfitAnalysis(
+  businessId: string,
+  voucherId: string,
+): Promise<MillingProfitAnalysis | null> {
+  const v = await prisma.voucher.findFirst({
+    where: { id: voucherId, businessId, type: "PRODUCTION" },
+    include: {
+      items: {
+        orderBy: { lineNo: "asc" },
+        include: {
+          product: {
+            select: {
+              id: true,
+              name: true,
+              code: true,
+              salePrice: true,
+              purchasePrice: true,
+              avgCost: true,
+              unit: { select: { id: true, name: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+  if (!v) return null;
+
+  const inputItems = v.items.filter((i) => i.direction < 0);
+  const outputItems = v.items.filter((i) => i.direction > 0);
+  if (outputItems.length === 0) return null;
+
+  let totalRawFifoCost = 0;
+  let totalInputKg = 0;
+  const allConsumedLots: FifoLotConsumption[] = [];
+  const rawInputs: RawMaterialInputCost[] = [];
+
+  for (const input of inputItems) {
+    const neededKg = round3(toKg(num(input.baseQuantity), input.product.unit.name));
+    totalInputKg = round3(totalInputKg + neededKg);
+
+    const moves = await prisma.stockMovement.findMany({
+      where: { businessId, productId: input.productId },
+      orderBy: [{ date: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+      include: {
+        voucher: {
+          select: {
+            id: true,
+            voucherNo: true,
+            date: true,
+            type: true,
+          },
+        },
+      },
+    });
+
+    const inwardQueue: {
+      voucherNo: string;
+      date: Date;
+      remainingQty: number;
+      unitCost: number;
+    }[] = [];
+
+    let itemFifoCost = 0;
+    const itemConsumedLots: FifoLotConsumption[] = [];
+    let foundCurrent = false;
+
+    for (const m of moves) {
+      const qin = num(m.quantityIn);
+      const qout = num(m.quantityOut);
+
+      if (qin > 0) {
+        const cost = num(m.unitCost) > 0 ? num(m.unitCost) : num(input.product.purchasePrice) || num(input.product.avgCost) || 0;
+        inwardQueue.push({
+          voucherNo: m.voucher?.voucherNo ?? m.id,
+          date: m.voucher?.date ?? m.date,
+          remainingQty: qin,
+          unitCost: cost,
+        });
+      } else if (qout > 0) {
+        if (m.voucherId === v.id && m.voucherItemId === input.id) {
+          foundCurrent = true;
+          let needed = qout;
+          for (const lot of inwardQueue) {
+            if (needed <= 0) break;
+            if (lot.remainingQty <= 0) continue;
+            const take = Math.min(lot.remainingQty, needed);
+            lot.remainingQty = round3(lot.remainingQty - take);
+            const lotCost = round2(take * lot.unitCost);
+            const lotEntry = {
+              voucherNo: lot.voucherNo,
+              date: lot.date,
+              quantityKg: take,
+              ratePerKg: lot.unitCost,
+              cost: lotCost,
+            };
+            allConsumedLots.push(lotEntry);
+            itemConsumedLots.push(lotEntry);
+            itemFifoCost = round2(itemFifoCost + lotCost);
+            needed = round3(needed - take);
+          }
+          if (needed > 0) {
+            const fallback = num(input.costRate) || num(input.product.purchasePrice) || num(input.product.avgCost) || 0;
+            const lotCost = round2(needed * fallback);
+            const lotEntry = {
+              voucherNo: "পূর্বের স্টক",
+              date: v.date,
+              quantityKg: needed,
+              ratePerKg: fallback,
+              cost: lotCost,
+            };
+            allConsumedLots.push(lotEntry);
+            itemConsumedLots.push(lotEntry);
+            itemFifoCost = round2(itemFifoCost + lotCost);
+          }
+          break;
+        } else {
+          let toDeduct = qout;
+          for (const lot of inwardQueue) {
+            if (toDeduct <= 0) break;
+            const take = Math.min(lot.remainingQty, toDeduct);
+            lot.remainingQty = round3(lot.remainingQty - take);
+            toDeduct = round3(toDeduct - take);
+          }
+        }
+      }
+    }
+
+    if (!foundCurrent) {
+      let needed = neededKg;
+      for (const lot of inwardQueue) {
+        if (needed <= 0) break;
+        if (lot.remainingQty <= 0) continue;
+        const take = Math.min(lot.remainingQty, needed);
+        lot.remainingQty = round3(lot.remainingQty - take);
+        const lotCost = round2(take * lot.unitCost);
+        const lotEntry = {
+          voucherNo: lot.voucherNo,
+          date: lot.date,
+          quantityKg: take,
+          ratePerKg: lot.unitCost,
+          cost: lotCost,
+        };
+        allConsumedLots.push(lotEntry);
+        itemConsumedLots.push(lotEntry);
+        itemFifoCost = round2(itemFifoCost + lotCost);
+        needed = round3(needed - take);
+      }
+      if (needed > 0) {
+        const fallback = num(input.costRate) || num(input.product.purchasePrice) || num(input.product.avgCost) || 0;
+        const lotCost = round2(needed * fallback);
+        const lotEntry = {
+          voucherNo: "পূর্বের স্টক",
+          date: v.date,
+          quantityKg: needed,
+          ratePerKg: fallback,
+          cost: lotCost,
+        };
+        allConsumedLots.push(lotEntry);
+        itemConsumedLots.push(lotEntry);
+        itemFifoCost = round2(itemFifoCost + lotCost);
+      }
+    }
+
+    const ratePerKg = neededKg > 0 ? round4(itemFifoCost / neededKg) : 0;
+    const ratePerMon = neededKg > 0 ? round2((itemFifoCost / neededKg) * KG_PER_MON) : 0;
+
+    rawInputs.push({
+      id: input.id,
+      productId: input.productId,
+      name: input.product.name,
+      code: input.product.code,
+      quantityKg: neededKg,
+      fifoCost: itemFifoCost,
+      ratePerKg,
+      ratePerMon,
+      consumedLots: itemConsumedLots,
+    });
+
+    totalRawFifoCost = round2(totalRawFifoCost + itemFifoCost);
+  }
+
+  const avgRawRatePerKg = totalInputKg > 0 ? round4(totalRawFifoCost / totalInputKg) : 0;
+
+  // Proportional allocation of the actual total FIFO cost by produced output weight (kg)
+  const totalOutputKg = round3(
+    outputItems.reduce((s, o) => s + toKg(num(o.baseQuantity), o.product.unit.name), 0)
+  );
+
+  let allocatedCostRunning = 0;
+  const rawCostAllocations = outputItems.map((o, idx) => {
+    const outKg = round3(toKg(num(o.baseQuantity), o.product.unit.name));
+    if (idx === outputItems.length - 1) {
+      // Last item absorbs any fraction of a paisa to keep sum 100% exact
+      const amount = round2(totalRawFifoCost - allocatedCostRunning);
+      return { amount, unitCost: outKg > 0 ? round4(amount / outKg) : 0 };
+    }
+    const weightRatio = totalOutputKg > 0 ? outKg / totalOutputKg : 1 / outputItems.length;
+    const amount = round2(totalRawFifoCost * weightRatio);
+    allocatedCostRunning = round2(allocatedCostRunning + amount);
+    return { amount, unitCost: outKg > 0 ? round4(amount / outKg) : 0 };
+  });
+
+  const items: MillingProfitItem[] = [];
+  let totalPotentialRevenue = 0;
+
+  for (let idx = 0; idx < outputItems.length; idx++) {
+    const o = outputItems[idx];
+    const outKg = round3(toKg(num(o.baseQuantity), o.product.unit.name));
+    const kind = millOutputKind(o.product.name);
+
+    const recentSales = await prisma.voucherItem.findMany({
+      where: {
+        productId: o.productId,
+        baseQuantity: { gt: 0 },
+        voucher: {
+          businessId,
+          type: { in: ["SALES", "DEPOT_DELIVERY"] },
+        },
+      },
+      orderBy: [{ voucher: { date: "desc" } }, { voucher: { createdAt: "desc" } }],
+      take: 3,
+      select: {
+        amount: true,
+        baseQuantity: true,
+      },
+    });
+
+    let avgSellingRate = 0;
+    const challansUsed = recentSales.length;
+
+    if (recentSales.length > 0) {
+      const sumRates = recentSales.reduce((s, it) => s + num(it.amount) / num(it.baseQuantity), 0);
+      avgSellingRate = round2(sumRates / recentSales.length);
+    } else {
+      avgSellingRate = num(o.product.salePrice) > 0 ? num(o.product.salePrice) : num(o.product.avgCost);
+    }
+
+    const potentialRevenue = round2(outKg * avgSellingRate);
+    totalPotentialRevenue = round2(totalPotentialRevenue + potentialRevenue);
+
+    const rawMaterialCost = rawCostAllocations[idx]?.amount ?? 0;
+    const netProfit = round2(potentialRevenue - rawMaterialCost);
+    const marginPct = potentialRevenue > 0 ? round2((netProfit / potentialRevenue) * 100) : 0;
+
+    items.push({
+      id: o.id,
+      productId: o.productId,
+      name: o.product.name,
+      code: o.product.code,
+      kind,
+      quantityKg: outKg,
+      avgSellingRate,
+      challansUsed,
+      potentialRevenue,
+      rawMaterialCost,
+      netProfit,
+      marginPct,
+    });
+  }
+
+  const totalNetProfit = round2(totalPotentialRevenue - totalRawFifoCost);
+  const overallMarginPct = totalPotentialRevenue > 0 ? round2((totalNetProfit / totalPotentialRevenue) * 100) : 0;
+
+  return {
+    rawInputs,
+    items,
+    consumedLots: allConsumedLots,
+    totalRawFifoCost,
+    avgRawRatePerKg: round2(avgRawRatePerKg),
+    totalPotentialRevenue,
+    totalNetProfit,
+    overallMarginPct,
   };
 }

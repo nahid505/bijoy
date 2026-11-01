@@ -115,6 +115,12 @@ enum NotificationSeverity {
   INFO
 }
 
+enum VerificationStatus {
+  UNVERIFIED
+  VERIFIED
+  REJECTED
+}
+
 // ───────────────────────────── tenancy & access ─────────────────────────────
 
 model Business {
@@ -196,6 +202,8 @@ model User {
   loginAlertEnabled Boolean   @default(true) // SMS when a new session starts
   isActive          Boolean   @default(true)
   lastLoginAt       DateTime?
+  otpCode           String?   @db.Text
+  otpExpires        DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -210,6 +218,7 @@ model User {
   smsCreated        SmsMessage[]       @relation("SmsCreatedBy")
   vouchersCreated   Voucher[]          @relation("VoucherCreatedBy")
   vouchersUpdated   Voucher[]          @relation("VoucherUpdatedBy")
+  vouchersVerified  Voucher[]          @relation("VoucherVerifiedBy")
 }
 
 // Permissions are string keys (see src/lib/permissions.ts); "*" = everything.
@@ -330,6 +339,7 @@ model Account {
   description   String?       @db.Text
   bankName      String?       @db.Text
   accountNumber String?       @db.Text
+  imageUrl      String?       @db.Text
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -361,40 +371,45 @@ model Account {
 
 /// A journal: the header of a balanced set of journal entries.
 model Voucher {
-  id                  String      @id @default(cuid())
+  id                  String             @id @default(cuid())
   businessId          String
-  business            Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business            Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
   type                VoucherType
-  book                Book        @default(GENERAL)
+  book                Book               @default(GENERAL)
   voucherNo           String
   date                DateTime
-  reference           String?     @db.Text
-  narration           String?     @db.Text
+  reference           String?            @db.Text
+  narration           String?            @db.Text
   partyAccountId      String? // customer / supplier ledger
-  partyAccount        Account?    @relation("VoucherParty", fields: [partyAccountId], references: [id])
+  partyAccount        Account?           @relation("VoucherParty", fields: [partyAccountId], references: [id])
   cashAccountId       String? // cash / bank ledger used for payment
-  cashAccount         Account?    @relation("VoucherCash", fields: [cashAccountId], references: [id])
+  cashAccount         Account?           @relation("VoucherCash", fields: [cashAccountId], references: [id])
   warehouseId         String?
-  warehouse           Warehouse?  @relation(fields: [warehouseId], references: [id])
-  subtotal            Decimal     @default(0) @db.Decimal(14, 2)
-  discount            Decimal     @default(0) @db.Decimal(14, 2)
-  vatPercent          Decimal     @default(0) @db.Decimal(5, 2)
-  vatAmount           Decimal     @default(0) @db.Decimal(14, 2)
-  amount              Decimal     @db.Decimal(14, 2) // voucher total (= Σ debit)
-  paidAmount          Decimal     @default(0) @db.Decimal(14, 2) // paid / received at voucher time
+  warehouse           Warehouse?         @relation(fields: [warehouseId], references: [id])
+  subtotal            Decimal            @default(0) @db.Decimal(14, 2)
+  discount            Decimal            @default(0) @db.Decimal(14, 2)
+  vatPercent          Decimal            @default(0) @db.Decimal(5, 2)
+  vatAmount           Decimal            @default(0) @db.Decimal(14, 2)
+  amount              Decimal            @db.Decimal(14, 2) // voucher total (= Σ debit)
+  paidAmount          Decimal            @default(0) @db.Decimal(14, 2) // paid / received at voucher time
   sourceKey           String? // unique link for system vouchers, e.g. "opening:account:<id>"
   dueDate             DateTime? // credit sales / purchases: payment due on
   returnOfId          String? // sales / purchase return: the original invoice
-  returnOf            Voucher?    @relation("VoucherReturn", fields: [returnOfId], references: [id])
-  returns             Voucher[]   @relation("VoucherReturn")
+  returnOf            Voucher?           @relation("VoucherReturn", fields: [returnOfId], references: [id])
+  returns             Voucher[]          @relation("VoucherReturn")
   adjustmentAccountId String? // stock journal: ledger for the value difference (default: STOCK_ADJUSTMENT; expiry write-off: EXPIRY_LOSS)
-  adjustmentAccount   Account?    @relation("VoucherAdjustment", fields: [adjustmentAccountId], references: [id])
+  adjustmentAccount   Account?           @relation("VoucherAdjustment", fields: [adjustmentAccountId], references: [id])
   createdById         String
-  createdBy           User        @relation("VoucherCreatedBy", fields: [createdById], references: [id])
+  createdBy           User               @relation("VoucherCreatedBy", fields: [createdById], references: [id])
   updatedById         String?
-  updatedBy           User?       @relation("VoucherUpdatedBy", fields: [updatedById], references: [id])
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
+  updatedBy           User?              @relation("VoucherUpdatedBy", fields: [updatedById], references: [id])
+  verificationStatus  VerificationStatus @default(UNVERIFIED)
+  verifiedById        String?
+  verifiedBy          User?              @relation("VoucherVerifiedBy", fields: [verifiedById], references: [id])
+  verifiedAt          DateTime?
+  verificationNote    String?            @db.Text
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
 
   entries        JournalEntry[]
   items          VoucherItem[]
@@ -412,6 +427,7 @@ model Voucher {
   @@unique([businessId, sourceKey])
   @@index([businessId, type, date])
   @@index([businessId, date])
+  @@index([businessId, verificationStatus])
   @@index([partyAccountId])
   @@index([returnOfId])
 }
@@ -503,6 +519,7 @@ model Customer {
   mobile        String?
   email         String?        @db.VarChar(255)
   address       String?        @db.Text
+  imageUrl      String?        @db.Text
   notes         String?        @db.Text
   creditLimit   Decimal        @default(0) @db.Decimal(14, 2) // 0 = no limit
   creditDays    Int            @default(0) // payment terms: invoice due = date + creditDays
@@ -532,6 +549,7 @@ model Supplier {
   mobile      String?
   email       String?        @db.VarChar(255)
   address     String?        @db.Text
+  imageUrl    String?        @db.Text
   notes       String?        @db.Text
   creditDays  Int            @default(0)
   isActive    Boolean        @default(true)
@@ -610,6 +628,7 @@ model Product {
   brand               Brand?              @relation(fields: [brandId], references: [id])
   unitId              String
   unit                Unit                @relation(fields: [unitId], references: [id])
+  packSize            Decimal             @default(24) @db.Decimal(14, 3)
   purchasePrice       Decimal             @default(0) @db.Decimal(14, 2) // last purchase rate (base unit)
   salePrice           Decimal             @default(0) @db.Decimal(14, 2)
   /// depot: commission the company pays per base unit delivered against its DO (FIXED: taka per unit;

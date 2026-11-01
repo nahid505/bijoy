@@ -36,6 +36,8 @@ export interface ProductOption {
   avgCost: number;
   stock: number;
   trackBatch: boolean;
+  /** carton pack size: pieces per carton (default 24) */
+  packSize?: number;
   /** depot: commission per base unit for a DO release */
   depotCommissionRate?: number;
   categoryId?: string | null;

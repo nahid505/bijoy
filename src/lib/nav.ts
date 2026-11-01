@@ -48,6 +48,7 @@ const I = {
   factory: "M3 21V10l5 3V10l5 3V7l5 3V3h3v18H3zm4-4h2m4 0h2m4 0h0",
   db: "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zm0 0v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3",
   fileText: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
+  search: "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z",
 };
 
 export const NAV: NavEntry[] = [
@@ -98,6 +99,7 @@ export const NAV: NavEntry[] = [
     label: "লেনদেন",
     icon: I.swap,
     children: [
+      { href: "/audit/unverified", label: "অনুমোদন কিউ (যাচাই)", permission: "vouchers:verify" },
       { href: "/vouchers/receipt", label: "রিসিপ্ট", permission: "vouchers:view" },
       { href: "/vouchers/payment", label: "পেমেন্ট", permission: "vouchers:view" },
       { href: "/vouchers/journal", label: "জার্নাল", permission: "vouchers:view" },
@@ -238,11 +240,12 @@ export const NAV_LABEL_EN: Record<string, string> = {
   জার্নাল: "Journals",
   ক্রয়: "Purchases",
   বেতন: "Payroll",
+  সার্চ: "Search",
 };
 
 export const MOBILE_TABS = [
   { href: "/dashboard", label: "হোম", icon: I.home, permission: ["dashboard:view", "depot:view"] as Permission | readonly Permission[] },
   { href: "/pos", label: "বিক্রয়", icon: I.receipt, permission: "sales:create" as Permission, module: "TRADING" as BusinessModule },
-  { href: "/vouchers/receipt/new", label: "রিসিপ্ট", icon: I.book, permission: "vouchers:create" as Permission },
+  { href: "#search", label: "সার্চ", icon: I.search, isSearch: true, permission: ["dashboard:view", "depot:view"] as Permission | readonly Permission[] },
   { href: "/reports/day-book", label: "রিপোর্ট", icon: I.chart, permission: "reports:view" as Permission },
 ];

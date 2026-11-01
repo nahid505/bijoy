@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { allocateCost, batchesFor, processLoss, RICE_MILL_TEMPLATE, scaleLines, sharesBySaleValue, sharesValid, yieldPercent } from "@/lib/production";
+import { round2 } from "@/lib/calc";
+import { productionSchema } from "@/lib/validation";
 
 describe("production calculations (rice mill)", () => {
   const recipeOut = RICE_MILL_TEMPLATE.outputs.map((o) => ({ productId: o.name, quantity: o.quantity, costShare: o.costShare }));
@@ -40,7 +42,35 @@ describe("production calculations (rice mill)", () => {
     expect(sharesBySaleValue([{ quantity: 3, salePrice: 0 }, { quantity: 1, salePrice: 0 }])).toEqual([75, 25]);
   });
 
+  it("allocates cost by quantity when cost shares are omitted or zero", () => {
+    const outputs = [{ quantity: 650 }, { quantity: 50 }, { quantity: 80 }, { quantity: 200 }];
+    const split = allocateCost(32_000, outputs);
+    expect(round2(split.reduce((s, x) => s + x.amount, 0))).toBe(32_000);
+    // 650 / 980 * 32000 ≈ 21224.49
+    expect(split[0].amount).toBe(21224.49);
+    expect(split[0].unitCost).toBeCloseTo(21224.49 / 650, 4);
+    // last output absorbs rounding
+    expect(split[3].amount).toBe(round2(32_000 - split[0].amount - split[1].amount - split[2].amount));
+  });
+
   it("process loss is not computed for mixed units", () => {
     expect(processLoss([{ quantity: 100, unitId: "kg" }], [{ quantity: 10, unitId: "pcs" }])).toBeNull();
+  });
+
+  it("productionSchema allows submissions without cost shares", () => {
+    const parsed = productionSchema.safeParse({
+      date: "2026-09-05",
+      inputs: [{ productId: "paddy", quantity: 1000 }],
+      outputs: [
+        { productId: "rice", quantity: 650 },
+        { productId: "broken", quantity: 50 },
+        { productId: "bran", quantity: 80 },
+        { productId: "husk", quantity: 200 },
+      ],
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.outputs.every((o) => o.costShare === 0)).toBe(true);
+    }
   });
 });

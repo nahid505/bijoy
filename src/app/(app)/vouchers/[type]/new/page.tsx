@@ -26,7 +26,12 @@ const HELP: Record<string, string> = {
 export default async function NewVoucherPage({ params, searchParams }: { params: Promise<{ type: string }>; searchParams: SearchParams }) {
   const { type: slug } = await params;
   const type = voucherTypeFromSlug(slug);
-  if (!type) notFound();
+  if (!type) {
+    if (slug === "depot-delivery" || slug === "deliveries" || slug === "delivery") {
+      redirect("/depot/deliveries/new");
+    }
+    redirect("/dashboard");
+  }
   const ctx = await requireContext();
   // general vouchers only — depot stock in / collection / company payment have their own depot pages (depot book)
   // general-book access (a rice-mill sales key also opens the sales invoice in a rice-mill business)

@@ -14,6 +14,7 @@ import { dailyCash } from "@/server/reports/daily-cash";
 import { balancesByKind, sumBalances } from "@/server/services/ledger";
 import { type BookFilter } from "@/lib/book";
 import { depotCashSummary } from "@/server/services/depot-cash";
+import { calculateInventoryValuation } from "@/server/services/valuation";
 
 const BN_WEEKDAYS = ["রবিবার", "সোমবার", "মঙ্গলবার", "বুধবার", "বৃহস্পতিবার", "শুক্রবার", "শনিবার"];
 
@@ -324,29 +325,46 @@ export async function CashAndBalancesSection({ ctx }: { ctx: AppContext }) {
  * (গ) মোট স্টক মূল্য (Total Stock Value / বর্তমান মজুদ) - হালকা হলুদ/অ্যাম্বার শেড
  */
 export async function DebtorsCreditorsSummary({ ctx }: { ctx: AppContext }) {
-  if (!can(ctx, "accounts:view")) return null;
+  const canAccounts = can(ctx, "accounts:view");
+  const canVerify = can(ctx, "vouchers:verify");
+  if (!canAccounts && !canVerify) return null;
   const t = await getT();
   const cur = ctx.business.currencySymbol;
   const isDep = isDepot(ctx.business.businessType);
   const bookFilter: BookFilter = isDep ? "ALL" : "GENERAL";
 
-  const [debtorAccounts, creditorAccounts, products] = await Promise.all([
-    balancesByKind(ctx.business.id, ["CUSTOMER"], undefined, bookFilter).catch(() => []),
-    balancesByKind(ctx.business.id, ["SUPPLIER"], undefined, bookFilter).catch(() => []),
-    prisma.product.findMany({
-      where: {
-        businessId: ctx.business.id,
-        isActive: true,
-        ...(isDep ? {} : { isDepotProduct: false }),
-      },
-      select: {
-        id: true,
-        stock: true,
-        purchasePrice: true,
-        salePrice: true,
-        avgCost: true,
-      },
-    }).catch(() => []),
+  const [debtorAccounts, creditorAccounts, valuation, unverifiedCount] = await Promise.all([
+    canAccounts ? balancesByKind(ctx.business.id, ["CUSTOMER"], undefined, bookFilter).catch(() => []) : Promise.resolve([]),
+    canAccounts ? balancesByKind(ctx.business.id, ["SUPPLIER"], undefined, bookFilter).catch(() => []) : Promise.resolve([]),
+    canAccounts
+      ? calculateInventoryValuation(ctx.business.id, { includeDepot: isDep }).catch(() => ({
+          totalValue: 0,
+          purchasedValue: 0,
+          producedValue: 0,
+          totalProducts: 0,
+          purchasedCount: 0,
+          producedCount: 0,
+          items: [],
+          byCategory: new Map(),
+        }))
+      : Promise.resolve({
+          totalValue: 0,
+          purchasedValue: 0,
+          producedValue: 0,
+          totalProducts: 0,
+          purchasedCount: 0,
+          producedCount: 0,
+          items: [],
+          byCategory: new Map(),
+        }),
+    canVerify
+      ? prisma.voucher.count({
+          where: {
+            businessId: ctx.business.id,
+            verificationStatus: "UNVERIFIED",
+          },
+        }).catch(() => 0)
+      : Promise.resolve(0),
   ]);
 
   // Debtor balances: positive balance (debit > credit) = customer owes money (receivable)
@@ -359,22 +377,21 @@ export async function DebtorsCreditorsSummary({ ctx }: { ctx: AppContext }) {
   const totalPayable = round2(creditorDueList.reduce((sum, r) => sum + (-r.balance), 0));
   const creditorCount = creditorDueList.length;
 
-  // Stock valuation: Σ (remaining stock × (last purchase price > 0 ? purchase price : sale price))
-  let totalStockValue = 0;
-  let stockProductCount = 0;
-  for (const p of products) {
-    const qty = num(p.stock);
-    if (qty > 0.0001) {
-      stockProductCount++;
-      const pPrice = num(p.purchasePrice);
-      const sPrice = num(p.salePrice);
-      const rate = pPrice > 0 ? pPrice : sPrice > 0 ? sPrice : num(p.avgCost);
-      totalStockValue += qty * rate;
-    }
-  }
-  totalStockValue = round2(totalStockValue);
+  // Stock valuation: FIFO for purchased goods + last 3 sales avg for produced goods
+  const totalStockValue = valuation.totalValue;
+  const stockProductCount = valuation.totalProducts;
 
-  const stockHref = isDep && !can(ctx, "reports:view") ? "/depot/products" : "/reports/daily-stock";
+  const stockHref = isDep && !can(ctx, "reports:view") ? "/depot/products" : can(ctx, "reports:view") ? "/reports/stock-valuation" : "/reports/daily-stock";
+
+  const cardCount = (canAccounts ? 3 : 0) + (canVerify ? 1 : 0);
+  const gridColsClass =
+    cardCount >= 4
+      ? "grid-cols-1 md:grid-cols-2 lg:grid-cols-4"
+      : cardCount === 3
+      ? "grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
+      : cardCount === 2
+      ? "grid-cols-1 md:grid-cols-2"
+      : "grid-cols-1";
 
   return (
     <section className="mb-6 space-y-3" id="debtors-creditors-section" aria-labelledby="debtors-creditors-heading">
@@ -383,145 +400,211 @@ export async function DebtorsCreditorsSummary({ ctx }: { ctx: AppContext }) {
           <span className="flex h-6 w-6 items-center justify-center rounded-md bg-blue-100 text-blue-700 text-xs font-bold" aria-hidden>
             📊
           </span>
-          <span>{t("দেনাদার, পাওনাদার ও স্টক সামারি")}</span>
+          <span>{canAccounts ? t("দেনাদার, পাওনাদার ও স্টক সামারি") : t("লেনদেন যাচাই ও অনুমোদন")}</span>
         </h2>
         <p className="mt-1 text-xs sm:text-sm font-medium text-slate-600 leading-relaxed">
-          {t("বাজারের মোট বকেয়া পাওনা, সরবরাহকারীদের কাছে মোট দেনা এবং বর্তমান স্টক মূল্যের সারসংক্ষেপ")}
+          {canAccounts
+            ? t("বাজারের মোট বকেয়া পাওনা, সরবরাহকারীদের কাছে মোট দেনা এবং বর্তমান স্টক মূল্যের সারসংক্ষেপ")
+            : t("অনুমোদনের জন্য অপেক্ষমাণ সকল লেনদেনের সারসংক্ষেপ")}
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className={`grid ${gridColsClass} gap-4`}>
         {/* Card 1: মোট দেনাদার (Receivables / মোট বকেয়া পাওনা) */}
-        <Link
-          prefetch={false}
-          href="/accounts/debtors"
-          className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border-2 border-emerald-200/90 bg-gradient-to-br from-emerald-50 via-teal-50/50 to-white p-5 sm:p-6 shadow-sm transition-all hover:border-emerald-400 hover:shadow-md cursor-pointer"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs sm:text-sm font-bold text-emerald-800 border border-emerald-200">
-                <span className="h-2 w-2 rounded-full bg-emerald-600 animate-pulse" />
-                {t("মোট বকেয়া পাওনা")}
+        {canAccounts && (
+          <Link
+            prefetch={false}
+            href="/accounts/debtors"
+            className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border-2 border-emerald-200/90 bg-gradient-to-br from-emerald-50 via-teal-50/50 to-white p-5 sm:p-6 shadow-sm transition-all hover:border-emerald-400 hover:shadow-md cursor-pointer"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs sm:text-sm font-bold text-emerald-800 border border-emerald-200">
+                  <span className="h-2 w-2 rounded-full bg-emerald-600 animate-pulse" />
+                  {t("মোট বকেয়া পাওনা")}
+                </span>
+                <h3 className="mt-2.5 text-xl sm:text-2xl font-bold text-slate-800 leading-tight">
+                  {t("মোট দেনাদার")} <span className="text-sm sm:text-base font-semibold text-emerald-700">({t("কাস্টমার পাওনা")})</span>
+                </h3>
+              </div>
+              <div className="flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-md shadow-emerald-600/20 group-hover:scale-105 transition-transform">
+                <svg className="h-6 w-6 sm:h-7 sm:w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+              </div>
+            </div>
+
+            <div className="my-4">
+              <div className="text-3xl sm:text-4xl font-black tracking-tight text-emerald-900 tabular-nums">
+                {formatMoney(totalReceivable, cur)}
+              </div>
+              <p className="mt-2 text-sm sm:text-base font-medium text-emerald-800/90 flex items-center gap-1.5 leading-relaxed">
+                <span>👥</span>
+                <span>{t("{count} জন কাস্টমারের কাছে বাকি রয়েছে", { count: toBnDigits(debtorCount) })}</span>
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-emerald-200/80 pt-4">
+              <span className="text-xs sm:text-sm text-emerald-800/80 font-semibold">{t("কাস্টমারভিত্তিক খতিয়ান")}</span>
+              <span
+                className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-xs transition group-hover:bg-emerald-700 group-hover:shadow"
+              >
+                <span>{t("বিস্তারিত দেখুন")}</span>
+                <span aria-hidden>→</span>
               </span>
-              <h3 className="mt-2.5 text-xl sm:text-2xl font-bold text-slate-800 leading-tight">
-                {t("মোট দেনাদার")} <span className="text-sm sm:text-base font-semibold text-emerald-700">({t("কাস্টমার পাওনা")})</span>
-              </h3>
             </div>
-            <div className="flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-md shadow-emerald-600/20 group-hover:scale-105 transition-transform">
-              <svg className="h-6 w-6 sm:h-7 sm:w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-              </svg>
-            </div>
-          </div>
-
-          <div className="my-4">
-            <div className="text-3xl sm:text-4xl font-black tracking-tight text-emerald-900 tabular-nums">
-              {formatMoney(totalReceivable, cur)}
-            </div>
-            <p className="mt-2 text-sm sm:text-base font-medium text-emerald-800/90 flex items-center gap-1.5 leading-relaxed">
-              <span>👥</span>
-              <span>{t("{count} জন কাস্টমারের কাছে বাকি রয়েছে", { count: toBnDigits(debtorCount) })}</span>
-            </p>
-          </div>
-
-          <div className="flex items-center justify-between border-t border-emerald-200/80 pt-4">
-            <span className="text-xs sm:text-sm text-emerald-800/80 font-semibold">{t("কাস্টমারভিত্তিক খতিয়ান")}</span>
-            <span
-              className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-xs transition group-hover:bg-emerald-700 group-hover:shadow"
-            >
-              <span>{t("বিস্তারিত দেখুন")}</span>
-              <span aria-hidden>→</span>
-            </span>
-          </div>
-        </Link>
+          </Link>
+        )}
 
         {/* Card 2: মোট পাওনাদার (Payables / মোট দেনা) */}
-        <Link
-          prefetch={false}
-          href="/accounts/creditors"
-          className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border-2 border-rose-200/90 bg-gradient-to-br from-rose-50 via-amber-50/40 to-white p-5 sm:p-6 shadow-sm transition-all hover:border-rose-400 hover:shadow-md cursor-pointer"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-100 px-3 py-1 text-xs sm:text-sm font-bold text-rose-800 border border-rose-200">
-                <span className="h-2 w-2 rounded-full bg-rose-600 animate-pulse" />
-                {t("মোট ব্যবসায়িক দেনা")}
+        {canAccounts && (
+          <Link
+            prefetch={false}
+            href="/accounts/creditors"
+            className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border-2 border-rose-200/90 bg-gradient-to-br from-rose-50 via-amber-50/40 to-white p-5 sm:p-6 shadow-sm transition-all hover:border-rose-400 hover:shadow-md cursor-pointer"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-100 px-3 py-1 text-xs sm:text-sm font-bold text-rose-800 border border-rose-200">
+                  <span className="h-2 w-2 rounded-full bg-rose-600 animate-pulse" />
+                  {t("মোট ব্যবসায়িক দেনা")}
+                </span>
+                <h3 className="mt-2.5 text-xl sm:text-2xl font-bold text-slate-800 leading-tight">
+                  {t("মোট পাওনাদার")} <span className="text-sm sm:text-base font-semibold text-rose-700">({t("সরবরাহকারী দেনা")})</span>
+                </h3>
+              </div>
+              <div className="flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-2xl bg-rose-600 text-white shadow-md shadow-rose-600/20 group-hover:scale-105 transition-transform">
+                <svg className="h-6 w-6 sm:h-7 sm:w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                </svg>
+              </div>
+            </div>
+
+            <div className="my-4">
+              <div className="text-3xl sm:text-4xl font-black tracking-tight text-rose-900 tabular-nums">
+                {formatMoney(totalPayable, cur)}
+              </div>
+              <p className="mt-2 text-sm sm:text-base font-medium text-rose-800/90 flex items-center gap-1.5 leading-relaxed">
+                <span>🏭</span>
+                <span>{t("{count} জন সরবরাহকারীর কাছে দেনা রয়েছে", { count: toBnDigits(creditorCount) })}</span>
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-rose-200/80 pt-4">
+              <span className="text-xs sm:text-sm text-rose-800/80 font-semibold">{t("সরবরাহকারীভিত্তিক খতিয়ান")}</span>
+              <span
+                className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white shadow-xs transition group-hover:bg-rose-700 group-hover:shadow"
+              >
+                <span>{t("বিস্তারিত দেখুন")}</span>
+                <span aria-hidden>→</span>
               </span>
-              <h3 className="mt-2.5 text-xl sm:text-2xl font-bold text-slate-800 leading-tight">
-                {t("মোট পাওনাদার")} <span className="text-sm sm:text-base font-semibold text-rose-700">({t("সরবরাহকারী দেনা")})</span>
-              </h3>
             </div>
-            <div className="flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-2xl bg-rose-600 text-white shadow-md shadow-rose-600/20 group-hover:scale-105 transition-transform">
-              <svg className="h-6 w-6 sm:h-7 sm:w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-              </svg>
-            </div>
-          </div>
-
-          <div className="my-4">
-            <div className="text-3xl sm:text-4xl font-black tracking-tight text-rose-900 tabular-nums">
-              {formatMoney(totalPayable, cur)}
-            </div>
-            <p className="mt-2 text-sm sm:text-base font-medium text-rose-800/90 flex items-center gap-1.5 leading-relaxed">
-              <span>🏭</span>
-              <span>{t("{count} জন সরবরাহকারীর কাছে দেনা রয়েছে", { count: toBnDigits(creditorCount) })}</span>
-            </p>
-          </div>
-
-          <div className="flex items-center justify-between border-t border-rose-200/80 pt-4">
-            <span className="text-xs sm:text-sm text-rose-800/80 font-semibold">{t("সরবরাহকারীভিত্তিক খতিয়ান")}</span>
-            <span
-              className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white shadow-xs transition group-hover:bg-rose-700 group-hover:shadow"
-            >
-              <span>{t("বিস্তারিত দেখুন")}</span>
-              <span aria-hidden>→</span>
-            </span>
-          </div>
-        </Link>
+          </Link>
+        )}
 
         {/* Card 3: মোট স্টক (Total Stock Value / বর্তমান মজুদ) */}
-        <Link
-          prefetch={false}
-          href={stockHref}
-          className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border-2 border-amber-200/90 bg-gradient-to-br from-amber-50 via-yellow-50/50 to-white p-5 sm:p-6 shadow-sm transition-all hover:border-amber-400 hover:shadow-md cursor-pointer"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs sm:text-sm font-bold text-amber-800 border border-amber-200">
-                <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
-                {t("• মোট বর্তমান স্টক")}
+        {canAccounts && (
+          <Link
+            prefetch={false}
+            href={stockHref}
+            className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border-2 border-amber-200/90 bg-gradient-to-br from-amber-50 via-yellow-50/50 to-white p-5 sm:p-6 shadow-sm transition-all hover:border-amber-400 hover:shadow-md cursor-pointer"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs sm:text-sm font-bold text-amber-800 border border-amber-200">
+                  <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+                  {t("• মোট বর্তমান স্টক")}
+                </span>
+                <h3 className="mt-2.5 text-xl sm:text-2xl font-bold text-slate-800 leading-tight">
+                  {t("মোট স্টক মূল্য")} <span className="text-sm sm:text-base font-semibold text-amber-700">({t("বর্তমান মজুদ")})</span>
+                </h3>
+              </div>
+              <div className="flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-2xl bg-amber-500 text-white shadow-md shadow-amber-500/20 group-hover:scale-105 transition-transform">
+                <svg className="h-6 w-6 sm:h-7 sm:w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                </svg>
+              </div>
+            </div>
+
+            <div className="my-4">
+              <div className="text-3xl sm:text-4xl font-black tracking-tight text-amber-900 tabular-nums">
+                {formatMoney(totalStockValue, cur)}
+              </div>
+              <p className="mt-2 text-sm sm:text-base font-medium text-amber-800/90 flex items-center gap-1.5 leading-relaxed">
+                <span>📦</span>
+                <span>{t("{count} টি পণ্যের স্টক মজুদ রয়েছে", { count: toBnDigits(stockProductCount) })}</span>
+              </p>
+              {valuation.purchasedCount > 0 && valuation.producedCount > 0 && (
+                <div className="mt-2.5 flex flex-wrap items-center gap-2 text-xs font-semibold text-amber-900/90">
+                  <span className="bg-amber-100/90 px-2.5 py-0.5 rounded-md border border-amber-300">
+                    {t("কাঁচামাল:")} {formatMoney(valuation.purchasedValue, cur)}
+                  </span>
+                  <span>+</span>
+                  <span className="bg-yellow-100/90 px-2.5 py-0.5 rounded-md border border-yellow-300">
+                    {t("উৎপাদিত:")} {formatMoney(valuation.producedValue, cur)}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between border-t border-amber-200/80 pt-4">
+              <span className="text-xs sm:text-sm text-amber-800/80 font-semibold">{t("পণ্যভিত্তিক দৈনিক হিসাব")}</span>
+              <span
+                className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg bg-amber-600 px-4 py-2 text-sm font-bold text-white shadow-xs transition group-hover:bg-amber-700 group-hover:shadow"
+              >
+                <span>{t("বিস্তারিত দেখুন")}</span>
+                <span aria-hidden>→</span>
               </span>
-              <h3 className="mt-2.5 text-xl sm:text-2xl font-bold text-slate-800 leading-tight">
-                {t("মোট স্টক মূল্য")} <span className="text-sm sm:text-base font-semibold text-amber-700">({t("বর্তমান মজুদ")})</span>
-              </h3>
             </div>
-            <div className="flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-2xl bg-amber-500 text-white shadow-md shadow-amber-500/20 group-hover:scale-105 transition-transform">
-              <svg className="h-6 w-6 sm:h-7 sm:w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-              </svg>
-            </div>
-          </div>
+          </Link>
+        )}
 
-          <div className="my-4">
-            <div className="text-3xl sm:text-4xl font-black tracking-tight text-amber-900 tabular-nums">
-              {formatMoney(totalStockValue, cur)}
+        {/* Card 4: অপেক্ষমাণ লেনদেন (Unverified) */}
+        {canVerify && (
+          <Link
+            prefetch={false}
+            href="/audit/unverified"
+            className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border-2 border-amber-300/90 bg-gradient-to-br from-amber-50 via-orange-50/40 to-white p-5 sm:p-6 shadow-sm transition-all hover:border-orange-400 hover:shadow-md cursor-pointer"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs sm:text-sm font-bold text-amber-900 border border-amber-200">
+                  <span className={`h-2 w-2 rounded-full ${unverifiedCount > 0 ? "bg-orange-600 animate-pulse" : "bg-emerald-500"}`} />
+                  {unverifiedCount > 0 ? t("অনুমোদনের অপেক্ষায়") : t("সব অনুমোদিত")}
+                </span>
+                <h3 className="mt-2.5 text-xl sm:text-2xl font-bold text-slate-800 leading-tight">
+                  {t("অপেক্ষমাণ লেনদেন")} <span className="text-sm sm:text-base font-semibold text-orange-600">({t("Unverified")})</span>
+                </h3>
+              </div>
+              <div className="flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-md shadow-orange-500/20 group-hover:scale-105 transition-transform">
+                <svg className="h-6 w-6 sm:h-7 sm:w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+              </div>
             </div>
-            <p className="mt-2 text-sm sm:text-base font-medium text-amber-800/90 flex items-center gap-1.5 leading-relaxed">
-              <span>📦</span>
-              <span>{t("{count} টি পণ্যের স্টক মজুদ রয়েছে", { count: toBnDigits(stockProductCount) })}</span>
-            </p>
-          </div>
 
-          <div className="flex items-center justify-between border-t border-amber-200/80 pt-4">
-            <span className="text-xs sm:text-sm text-amber-800/80 font-semibold">{t("পণ্যভিত্তিক দৈনিক হিসাব")}</span>
-            <span
-              className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg bg-amber-600 px-4 py-2 text-sm font-bold text-white shadow-xs transition group-hover:bg-amber-700 group-hover:shadow"
-            >
-              <span>{t("বিস্তারিত দেখুন")}</span>
-              <span aria-hidden>→</span>
-            </span>
-          </div>
-        </Link>
+            <div className="my-4">
+              <div className="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 tabular-nums flex items-baseline gap-1.5">
+                <span>{toBnDigits(unverifiedCount)}</span>
+                <span className="text-lg sm:text-xl font-bold text-slate-600">{t("টি")}</span>
+              </div>
+              <p className="mt-2 text-sm sm:text-base font-medium text-orange-800/90 flex items-center gap-1.5 leading-relaxed">
+                <span>⏳</span>
+                <span>{unverifiedCount > 0 ? t("যাচাই ও অনুমোদনের অপেক্ষায়") : t("সকল লেনদেন অনুমোদিত")}</span>
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-amber-200/80 pt-4">
+              <span className="text-xs sm:text-sm text-orange-900/80 font-semibold">{t("অনুমোদন কিউ")}</span>
+              <span
+                className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg bg-gradient-to-r from-amber-600 to-orange-600 px-4 py-2 text-sm font-bold text-white shadow-xs transition group-hover:from-amber-700 group-hover:to-orange-700 group-hover:shadow"
+              >
+                <span>{t("যাচাই করুন")}</span>
+                <span aria-hidden>→</span>
+              </span>
+            </div>
+          </Link>
+        )}
       </div>
     </section>
   );

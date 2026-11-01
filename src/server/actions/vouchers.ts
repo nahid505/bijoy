@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { VOUCHER_TYPES, type VoucherTypeKey } from "@/lib/accounting";
 import { cashVoucherSchema, journalVoucherSchema, stockJournalSchema, tradeVoucherSchema } from "@/lib/validation";
 import { prisma } from "@/lib/db";
-import { assertPermission, ForbiddenError, getContext } from "../auth";
+import { assertPermission, can, ForbiddenError, getContext } from "../auth";
 import { audit } from "../audit";
 import { flash } from "../flash";
 import { guard, parseJsonPayload, toResult, UserError, type ActionState } from "../action-utils";
@@ -38,9 +38,17 @@ async function saveVoucher(type: EditableType, id: string | null, fd: FormData, 
     if (!base) throw new ForbiddenError();
     if (newBook === "DEPOT" && !isDepot(base.business.businessType)) throw new UserError("ডিপো হিসাব শুধু ডিপো ব্যবসায়");
     // an edit keeps the voucher's own book; the depot permissions open depot-book vouchers only
-    const book: BookKey = id
-      ? ((await prisma.voucher.findFirst({ where: { id, businessId: base.business.id }, select: { book: true } }))?.book ?? "GENERAL")
-      : newBook ?? "GENERAL";
+    const existing = id
+      ? await prisma.voucher.findFirst({ where: { id, businessId: base.business.id }, select: { book: true, verificationStatus: true } })
+      : null;
+    if (existing && existing.verificationStatus !== "UNVERIFIED" && !can(base, "vouchers:verify")) {
+      throw new UserError(
+        existing.verificationStatus === "VERIFIED"
+          ? "লেনদেনটি অনুমোদিত (Verified) ও লক করা — সম্পাদনা করতে ভেরিফিকেশন প্রত্যাহার বা অনুমোদনের প্রয়োজন"
+          : "লেনদেনটি প্রত্যাখ্যাত (Rejected) অবস্থায় লক করা — সম্পাদনা করতে ভেরিফিকেশন প্রত্যাহার বা অনুমোদনের প্রয়োজন"
+      );
+    }
+    const book: BookKey = existing?.book ?? newBook ?? "GENERAL";
     const ctx = await assertPermission(voucherAccess(type, id ? "edit" : "create", base.business.businessType, book));
     await assertVoucherAllowed(ctx, id); // assigned-only roles: only their parties' vouchers
     const before = id ? await voucherSnapshot(ctx.business.id, id) : null;
@@ -143,8 +151,15 @@ export async function deleteVoucherAction(id: string, _prev: ActionState, _fd: F
   const result = await guard(async () => {
     const base = await getContext();
     if (!base) throw new ForbiddenError();
-    const v = await prisma.voucher.findFirst({ where: { id, businessId: base.business.id }, select: { type: true, book: true } });
+    const v = await prisma.voucher.findFirst({ where: { id, businessId: base.business.id }, select: { type: true, book: true, verificationStatus: true } });
     if (!v || v.type === "OPENING") throw new UserError("ভাউচার পাওয়া যায়নি");
+    if (v.verificationStatus !== "UNVERIFIED" && !can(base, "vouchers:verify")) {
+      throw new UserError(
+        v.verificationStatus === "VERIFIED"
+          ? "লেনদেনটি অনুমোদিত (Verified) ও লক করা — ডিলিট করতে ভেরিফিকেশন প্রত্যাহার বা অনুমোদনের প্রয়োজন"
+          : "লেনদেনটি প্রত্যাখ্যাত (Rejected) অবস্থায় লক করা — ডিলিট করতে ভেরিফিকেশন প্রত্যাহার বা অনুমোদনের প্রয়োজন"
+      );
+    }
     const ctx = await assertPermission(voucherAccess(v.type, "delete", base.business.businessType, v.book));
     await assertVoucherAllowed(ctx, id);
     const before = await voucherSnapshot(ctx.business.id, id); // full posting snapshot kept in the audit log

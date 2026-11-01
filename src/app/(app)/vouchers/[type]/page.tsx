@@ -1,13 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
 import { prisma, num } from "@/lib/db";
 import { paymentStatus, PAYMENT_STATUS_LABELS } from "@/lib/calc";
 import { TRADE_TYPES, VOUCHER_TYPES, voucherTypeFromSlug } from "@/lib/accounting";
 import { formatDate, formatMoney } from "@/lib/format";
 import { Badge, EmptyState, FilterField, PageHeader, Pagination, SortHeader, TableWrap } from "@/components/ui";
-import { can, requirePermission } from "@/server/auth";
+import { VerificationBadge } from "@/components/verification-badge";
+import { can, requireContext, requirePermission } from "@/server/auth";
+import { isDepot } from "@/lib/depot";
 import { reportPeriod } from "@/server/period";
 import { pageOf, readParams, totalPages, type SearchParams } from "@/server/params";
 import { voucherPermission } from "@/server/voucher-permissions";
@@ -22,7 +24,33 @@ export async function generateMetadata({ params }: { params: Promise<{ type: str
 export default async function VoucherListPage({ params, searchParams }: { params: Promise<{ type: string }>; searchParams: SearchParams }) {
   const { type: slug } = await params;
   const type = voucherTypeFromSlug(slug);
-  if (!type) notFound();
+  if (!type) {
+    if (slug === "depot-delivery" || slug === "deliveries" || slug === "delivery") {
+      redirect("/depot/deliveries");
+    }
+    const ctx = await requireContext();
+    // Check if slug is a voucher ID
+    const v = await prisma.voucher.findFirst({
+      where: { businessId: ctx.business.id, id: slug },
+      select: { id: true },
+    });
+    if (v) {
+      redirect(`/vouchers/v/${v.id}`);
+    }
+    // Check if slug is a depot delivery ID
+    const d = await prisma.depotDelivery.findFirst({
+      where: { businessId: ctx.business.id, id: slug },
+      select: { voucherId: true },
+    });
+    if (d?.voucherId) {
+      redirect(`/vouchers/v/${d.voucherId}`);
+    }
+    // Safe fallback: redirect to deliveries if depot, else dashboard
+    if (isDepot(ctx.business.businessType)) {
+      redirect("/depot/deliveries");
+    }
+    redirect("/dashboard");
+  }
   const ctx = await requirePermission(voucherPermission(type, "view"));
   const p = await readParams(searchParams);
   const { page, skip, take } = pageOf(p);
@@ -38,6 +66,7 @@ export default async function VoucherListPage({ params, searchParams }: { params
     ...voucherScopeWhere(ctx), // assigned-only roles: their own customers / suppliers
     type,
     date: range,
+    ...(p.verification ? { verificationStatus: p.verification as any } : {}),
     ...(q ? { OR: [{ voucherNo: ci(q) }, { reference: ci(q) }, { narration: ci(q) }, { partyAccount: { name: ci(q) } }] } : {}),
   };
   const [rows, total, sums] = await Promise.all([
@@ -51,7 +80,12 @@ export default async function VoucherListPage({ params, searchParams }: { params
       })() as Prisma.VoucherOrderByWithRelationInput[],
       skip,
       take,
-      include: { partyAccount: { select: { name: true } }, cashAccount: { select: { name: true } }, createdBy: { select: { name: true } } },
+      include: {
+        partyAccount: { select: { name: true } },
+        cashAccount: { select: { name: true } },
+        createdBy: { select: { id: true, name: true } },
+        verifiedBy: { select: { id: true, name: true } },
+      },
     }),
     prisma.voucher.count({ where }),
     prisma.voucher.aggregate({ where, _sum: { amount: true, paidAmount: true } }),
@@ -70,6 +104,14 @@ export default async function VoucherListPage({ params, searchParams }: { params
         <form method="get" className="no-print flex flex-wrap items-end gap-2 border-b border-rule p-3">
           <FilterField label="শুরু"><input type="date" name="from" defaultValue={from} className="input w-40" /></FilterField>
           <FilterField label="শেষ"><input type="date" name="to" defaultValue={to} className="input w-40" /></FilterField>
+          <FilterField label="যাচাই অবস্থা">
+            <select name="verification" defaultValue={p.verification ?? ""} className="input w-40">
+              <option value="">সকল লেনদেন</option>
+              <option value="VERIFIED">শুধু অনুমোদিত</option>
+              <option value="UNVERIFIED">অপেক্ষমাণ (Pending)</option>
+              <option value="REJECTED">রিজেক্টেড</option>
+            </select>
+          </FilterField>
           <FilterField label="খুঁজুন"><input name="q" defaultValue={q} placeholder="নম্বর, পার্টি, রেফারেন্স…" className="input w-56" /></FilterField>
           <button type="submit" className="btn-secondary">খুঁজুন</button>
           <Link prefetch={false} href={`/vouchers/${slug}`} className="btn-ghost">রিসেট</Link>
@@ -94,6 +136,7 @@ export default async function VoucherListPage({ params, searchParams }: { params
                   <SortHeader basePath={`/vouchers/${slug}`} params={p} field="amount" label="টাকা" className="num" />
                   {trade && <th className="num">বাকি</th>}
                   {trade && <th>অবস্থা</th>}
+                  <th>যাচাই অবস্থা</th>
                   <th>তৈরি করেছেন</th>
                 </tr>
               </thead>
@@ -111,7 +154,18 @@ export default async function VoucherListPage({ params, searchParams }: { params
                       <td className="num font-semibold">{formatMoney(amt, cur)}</td>
                       {trade && <td className="num">{formatMoney(amt - paid, cur)}</td>}
                       {trade && <td><Badge tone={st === "PAID" ? "green" : st === "PARTIAL" ? "amber" : "red"}>{PAYMENT_STATUS_LABELS[st]}</Badge></td>}
-                      <td className="text-xs text-slate-500">{v.createdBy.name}</td>
+                      <td>
+                        <VerificationBadge
+                          voucherId={v.id}
+                          status={v.verificationStatus || "UNVERIFIED"}
+                          verifiedBy={v.verifiedBy?.name}
+                          verifiedAt={v.verifiedAt}
+                          verificationNote={v.verificationNote}
+                          canVerify={can(ctx, "vouchers:verify")}
+                          compact
+                        />
+                      </td>
+                      <td className="text-xs text-slate-500">{v.createdBy?.name ?? "—"}</td>
                     </tr>
                   );
                 })}

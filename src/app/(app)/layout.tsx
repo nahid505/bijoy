@@ -14,6 +14,8 @@ import { logoutAction } from "@/server/actions/auth";
 import { getLang, getT } from "@/server/i18n";
 import { LangToggle } from "@/components/lang";
 import { SubscriptionBanner } from "@/components/subscription-banner";
+import { TopBackBar } from "@/components/back-button";
+import { SpotlightHeaderTrigger } from "@/components/spotlight-search";
 import { unreadCount, visibleKinds } from "@/server/services/notifications";
 import { isRestricted, notificationScopeWhere } from "@/server/party-scope";
 import { reportOpenFor, reportSlugForPath } from "@/server/reports/registry";
@@ -70,6 +72,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               {t("অর্থবছর")} {toBnDigits(fy.label)} · {t("আজ")} {formatDate(new Date())}
             </p>
           </div>
+          <SpotlightHeaderTrigger />
           {alertKinds.length > 0 && (
             <Link
               prefetch={false}
@@ -109,7 +112,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </header>
         <MobileNav entries={entries} tabs={tabs} businessName={ctx.business.name} />
         <SubscriptionBanner sub={ctx.subscription} canBill={hasPermission(ctx.permissions, "billing:view")} />
-        <main className="mx-auto max-w-[1400px] px-3 py-5 sm:px-6 print:max-w-none print:p-0">{children}</main>
+        <main className="mx-auto max-w-[1400px] px-3 pt-3 pb-6 sm:px-6 print:max-w-none print:p-0">
+          <TopBackBar />
+          {children}
+        </main>
       </div>
     </div>
   );

@@ -74,12 +74,27 @@ export function sharesBySaleValue(outputs: { quantity: number; salePrice: number
  * output with a share absorbs the rounding, so Σ amounts = totalCost exactly (keeps the ledger
  * balanced). Returns per-output amount and unit cost.
  */
-export function allocateCost(totalCost: number, outputs: { quantity: number; costShare: number }[]): { amount: number; unitCost: number }[] {
+export function allocateCost(totalCost: number, outputs: { quantity: number; costShare?: number }[]): { amount: number; unitCost: number }[] {
   const total = round2(totalCost);
-  const shareSum = outputs.reduce((s, o) => s + o.costShare, 0);
-  const amounts = outputs.map((o) => (shareSum > 0 ? round2((total * o.costShare) / shareSum) : 0));
-  const last = outputs.map((o) => o.costShare > 0).lastIndexOf(true);
-  if (last >= 0) amounts[last] = round2(amounts[last] + round2(total - amounts.reduce((s, a) => s + a, 0)));
+  const shareSum = outputs.reduce((s, o) => s + (o.costShare ?? 0), 0);
+  let amounts: number[];
+  let last: number;
+  if (shareSum > 0) {
+    amounts = outputs.map((o) => round2((total * (o.costShare ?? 0)) / shareSum));
+    last = outputs.map((o) => (o.costShare ?? 0) > 0).lastIndexOf(true);
+  } else {
+    // When costShare is omitted or 0, allocate proportionally by output quantity
+    const qtySum = outputs.reduce((s, o) => s + (o.quantity > 0 ? o.quantity : 0), 0);
+    if (qtySum > 0) {
+      amounts = outputs.map((o) => (o.quantity > 0 ? round2((total * o.quantity) / qtySum) : 0));
+      last = outputs.map((o) => o.quantity > 0).lastIndexOf(true);
+    } else {
+      const share = outputs.length > 0 ? total / outputs.length : 0;
+      amounts = outputs.map(() => round2(share));
+      last = outputs.length - 1;
+    }
+  }
+  if (last >= 0) amounts[last] = round2(total - round2(amounts.reduce((s, a, i) => (i === last ? s : s + a), 0)));
   return outputs.map((o, i) => ({ amount: amounts[i], unitCost: o.quantity > 0 ? round4(amounts[i] / o.quantity) : 0 }));
 }
 

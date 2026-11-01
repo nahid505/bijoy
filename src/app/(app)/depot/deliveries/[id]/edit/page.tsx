@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { prisma, num } from "@/lib/db";
+import { round3 } from "@/lib/calc";
 import { DEPOT_ACCESS, isDepot } from "@/lib/depot";
 import { toDateInput } from "@/lib/format";
 import { PageHeader } from "@/components/ui";
@@ -18,10 +19,12 @@ export const metadata: Metadata = { title: "ডেলিভারি চাল�
 
 export default async function EditDepotDeliveryPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!id || id === "new") redirect("/depot/deliveries/new");
   const ctx = await requirePermission(DEPOT_ACCESS.deliveryEdit);
   if (!isDepot(ctx.business.businessType)) return <DepotOnlyNotice canManage={can(ctx, "business:manage")} />;
   const d = await loadDepotDelivery(ctx.business.id, id);
-  if (!d || !(await canSeeVoucher(ctx, id))) notFound(); // assigned-only roles: their parties only
+  if (!d) redirect("/depot/deliveries");
+  if (!(await canSeeVoucher(ctx, d.voucherId))) redirect("/depot/deliveries"); // assigned-only roles: their parties only
   const v = d.voucher;
   const [warehouses, dealers, companies, inv] = await Promise.all([
     prisma.warehouse.findMany({ where: { businessId: ctx.business.id }, orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true } }),
@@ -48,7 +51,23 @@ export default async function EditDepotDeliveryPage({ params }: { params: Promis
           defaults={{
             mode: d.mode, date: toDateInput(v.date), doNumber: d.doNumber ?? "", company: companies[0] ?? null, dealer: dealers[0] ?? null,
             warehouseId: v.warehouseId ?? v.items[0]?.warehouseId ?? null, vehicleNo: d.vehicleNo ?? "", driverName: d.driverName ?? "", notes: d.notes ?? "",
-            lines: v.items.map((i, k) => ({ key: k + 1, product: toProductOption(i.product), quantity: String(num(i.quantity)), freeQuantity: num(i.freeQuantity) ? String(num(i.freeQuantity)) : "", rate: String(num(i.rate)), challanRate: String(i.challanRate === null ? num(i.product.purchasePrice) : num(i.challanRate)) })),
+            lines: v.items.map((i, k) => {
+              const prodOpt = toProductOption(i.product);
+              const fQty = num(i.freeQuantity);
+              const pSize = prodOpt.packSize || 24;
+              const ctn = fQty > 0 ? Math.floor(fQty / pSize) : 0;
+              const pcs = fQty > 0 ? round3(fQty % pSize) : 0;
+              return {
+                key: k + 1,
+                product: prodOpt,
+                quantity: String(num(i.quantity)),
+                freeQuantity: fQty ? String(fQty) : "",
+                freeCartons: ctn > 0 ? String(ctn) : "",
+                freePieces: pcs > 0 ? String(pcs) : "",
+                rate: String(num(i.rate)),
+                challanRate: String(i.challanRate === null ? num(i.product.purchasePrice) : num(i.challanRate)),
+              };
+            }),
             paidAmount: String(num(v.paidAmount)), cashAccountId: pay?.account.id ?? "",
           }}
         />

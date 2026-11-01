@@ -55,7 +55,13 @@ export async function partyAging(businessId: string, kind: "CUSTOMER" | "SUPPLIE
   if (parties.length === 0) return [];
   const until = new Date(asOf.getTime() + DAY);
   const entries = await prisma.journalEntry.findMany({
-    where: { businessId, ...bookWhere(book), accountId: { in: parties.map((p) => p.accountId) }, date: { lt: until } },
+    where: {
+      businessId,
+      ...bookWhere(book),
+      accountId: { in: parties.map((p) => p.accountId) },
+      date: { lt: until },
+      voucher: { verificationStatus: { not: "REJECTED" } },
+    },
     orderBy: [{ date: "asc" }, { voucher: { createdAt: "asc" } }, { lineNo: "asc" }],
     select: { accountId: true, date: true, debit: true, credit: true, voucher: { select: { id: true, voucherNo: true, dueDate: true } } },
   });

@@ -148,16 +148,51 @@ async function saveMarketSale(tx: Tx, ctx: Ctx, input: DepotDeliveryInput, editI
 }
 
 /** A challan with its voucher, lines and parties (form, detail, print). */
-export async function loadDepotDelivery(businessId: string, voucherId: string) {
+export async function loadDepotDelivery(businessId: string, voucherOrDeliveryId: string) {
   return prisma.depotDelivery.findFirst({
-    where: { voucherId, businessId },
+    where: {
+      businessId,
+      OR: [{ voucherId: voucherOrDeliveryId }, { id: voucherOrDeliveryId }],
+    },
     include: {
-      companyAccount: { select: { id: true, name: true } },
-      dealerAccount: { select: { id: true, name: true, customer: { select: { route: true, mobile: true } } } },
+      companyAccount: {
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          supplier: {
+            select: {
+              id: true,
+              name: true,
+              mobile: true,
+              email: true,
+              address: true,
+              notes: true,
+            },
+          },
+        },
+      },
+      dealerAccount: {
+        select: {
+          id: true,
+          name: true,
+          customer: {
+            select: {
+              id: true,
+              name: true,
+              ownerName: true,
+              route: true,
+              mobile: true,
+              address: true,
+              email: true,
+            },
+          },
+        },
+      },
       voucher: {
         include: {
           payments: { include: { account: { select: { id: true, name: true } } } },
-          items: { orderBy: { lineNo: "asc" }, include: { product: { select: { id: true, name: true, code: true, barcode: true, unitId: true, salePrice: true, wholesalePrice: true, purchasePrice: true, avgCost: true, stock: true, trackBatch: true, depotCommissionRate: true, depotCommissionType: true, unit: { select: { name: true } } } } } },
+          items: { orderBy: { lineNo: "asc" }, include: { product: { select: { id: true, name: true, code: true, barcode: true, unitId: true, salePrice: true, wholesalePrice: true, purchasePrice: true, avgCost: true, stock: true, trackBatch: true, depotCommissionRate: true, depotCommissionType: true, packSize: true, unit: { select: { name: true } } } } } },
         },
       },
     },

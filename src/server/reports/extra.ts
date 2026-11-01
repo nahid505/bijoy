@@ -13,6 +13,7 @@ import type { AppContext } from "../auth";
 import { ci, rawRows, sql } from "@/lib/dialect";
 import { allowedParties, canSeeParty, voucherScopeWhere } from "../party-scope";
 import { digitVariants } from "@/lib/digits";
+import { calculateInventoryValuation } from "../services/valuation";
 
 const periodText = (from: string, to: string) => `${formatDate(from)} — ${formatDate(to)}`;
 const asOfOf = (p: ReportParams) => (p.asOf && /^\d{4}-\d{2}-\d{2}$/.test(p.asOf) ? p.asOf : toDateInput());
@@ -78,16 +79,42 @@ async function partyStatementReport(ctx: AppContext, p: ReportParams, kind: "CUS
   const cur = ctx.business.currencySymbol;
   const st = await statement(ctx.business.id, [account.id], range);
   const rows: ReportRow[] = [
-    { kind: "group", cells: { date: null, voucher: "", particulars: "প্রারম্ভিক ব্যালেন্স", debit: null, credit: null, balance: st.opening } },
-    ...st.lines.map((l) => ({ href: `/vouchers/v/${l.voucherId}`, cells: { date: l.date, voucher: l.voucherNo, particulars: [VOUCHER_TYPES[l.voucherType].label, l.narration].filter(Boolean).join(" — "), debit: l.debit || null, credit: l.credit || null, balance: l.balance } })),
-    { kind: "total", cells: { date: null, voucher: "", particulars: "সমাপনী", debit: st.totalDebit, credit: st.totalCredit, balance: st.closing } },
+    { kind: "group", cells: { date: null, voucher: "প্রারম্ভিক ব্যালেন্স", type: "প্রারম্ভিক", rawType: "OPENING", against: "", narration: "", createdBy: "সিস্টেম", debit: null, credit: null, balance: st.opening, verificationStatus: "UNVERIFIED", verifiedBy: null, verifiedAt: null, verificationNote: null } },
+    ...st.lines.map((l) => ({
+      href: l.voucherId ? `/vouchers/v/${l.voucherId}` : undefined,
+      cells: {
+        date: l.date,
+        voucher: l.voucherNo,
+        voucherId: l.voucherId,
+        type: VOUCHER_TYPES[l.voucherType]?.label ?? l.voucherType,
+        rawType: l.voucherType,
+        against: l.against,
+        narration: l.narration,
+        createdBy: l.voucherType === "OPENING" ? (l.enteredBy || "সিস্টেম") : (l.enteredBy || "অ্যাডমিন"),
+        debit: l.debit || null,
+        credit: l.credit || null,
+        balance: l.balance,
+        verificationStatus: l.verificationStatus || "UNVERIFIED",
+        verifiedBy: l.verifiedBy ?? null,
+        verifiedAt: l.verifiedAt ? (l.verifiedAt instanceof Date ? l.verifiedAt.toISOString() : String(l.verifiedAt)) : null,
+        verificationNote: l.verificationNote ?? null,
+      },
+    })),
+    { kind: "total", cells: { date: null, voucher: "সমাপনী", type: "", rawType: "", against: "", narration: "", createdBy: "", debit: st.totalDebit, credit: st.totalCredit, balance: st.closing, verificationStatus: null, verifiedBy: null, verifiedAt: null, verificationNote: null } },
   ];
   return {
     title: `${title}: ${account.name}`,
     subtitle: periodText(from, to),
+    isLedger: true,
     columns: [
-      { key: "date", label: "তারিখ", format: "date" }, { key: "voucher", label: "ভাউচার" }, { key: "particulars", label: "বিবরণ" },
-      { key: "debit", label: "ডেবিট", format: "money" }, { key: "credit", label: "ক্রেডিট", format: "money" }, { key: "balance", label: "ব্যালেন্স", format: "drcr" },
+      { key: "date", label: "তারিখ", format: "date" },
+      { key: "voucher", label: "ভাউচার" },
+      { key: "type", label: "ধরন" },
+      { key: "createdBy", label: "এন্ট্রি করেছেন" },
+      { key: "debit", label: "ডেবিট", format: "money" },
+      { key: "credit", label: "ক্রেডিট", format: "money" },
+      { key: "balance", label: "ব্যালেন্স", format: "drcr" },
+      { key: "verification", label: "যাচাই অবস্থা" },
     ],
     rows,
     summary: [{ label: "সমাপনী", value: formatMoney(Math.abs(st.closing), cur), tone: "blue" }],
@@ -113,11 +140,11 @@ export const EXTRA_REPORTS: ReportDef[] = [
       const businessId = ctx.business.id;
       const [salePays, receipts] = await Promise.all([
         prisma.voucherPayment.findMany({
-          where: { voucher: { businessId, book: "GENERAL", type: "SALES", date: range, ...voucherScopeWhere(ctx) } },
+          where: { voucher: { businessId, book: "GENERAL", type: "SALES", date: range, verificationStatus: { not: "REJECTED" }, ...voucherScopeWhere(ctx) } },
           include: { account: { select: { name: true } }, voucher: { select: { id: true, voucherNo: true, date: true, partyAccount: { select: { name: true } } } } },
         }),
         prisma.journalEntry.findMany({
-          where: { businessId, book: "GENERAL", date: range, credit: { gt: 0 }, account: { kind: "CUSTOMER" }, voucher: { type: "RECEIPT", ...voucherScopeWhere(ctx) } },
+          where: { businessId, book: "GENERAL", date: range, credit: { gt: 0 }, account: { kind: "CUSTOMER" }, voucher: { type: "RECEIPT", verificationStatus: { not: "REJECTED" }, ...voucherScopeWhere(ctx) } },
           include: { account: { select: { name: true } }, voucher: { select: { id: true, voucherNo: true, reference: true, cashAccount: { select: { name: true } } } } },
         }),
       ]);
@@ -158,7 +185,7 @@ export const EXTRA_REPORTS: ReportDef[] = [
       const cur = ctx.business.currencySymbol;
       const accounts = await listAccounts(ctx.business.id, { nature: "EXPENSE", group: { isDirect: false } });
       const entries = await prisma.journalEntry.findMany({
-        where: { businessId: ctx.business.id, book: "GENERAL", date: range, accountId: { in: accounts.map((a) => a.id) } },
+        where: { businessId: ctx.business.id, book: "GENERAL", date: range, accountId: { in: accounts.map((a) => a.id) }, voucher: { verificationStatus: { not: "REJECTED" } } },
         orderBy: [{ date: "asc" }],
         include: { voucher: { select: { id: true, voucherNo: true, narration: true, type: true } } },
       });
@@ -198,7 +225,7 @@ export const EXTRA_REPORTS: ReportDef[] = [
       const [trade, ledger, cashOpen] = await Promise.all([
         rawRows<{ d: Date; type: string; amount: string }>(prisma, sql`
           SELECT "date" AS d, "type"::text AS type, SUM("amount")::text AS amount FROM "Voucher"
-          WHERE "businessId" = ${b} AND "book" = 'GENERAL' AND "date" >= ${range.gte} AND "date" < ${range.lt} AND "type" IN ('SALES','SALES_RETURN','PURCHASE','PURCHASE_RETURN')
+          WHERE "businessId" = ${b} AND "book" = 'GENERAL' AND "date" >= ${range.gte} AND "date" < ${range.lt} AND "type" IN ('SALES','SALES_RETURN','PURCHASE','PURCHASE_RETURN') AND "verificationStatus" <> 'REJECTED'
           GROUP BY 1, 2`),
         rawRows<{ d: Date; bucket: string; amount: string }>(prisma, sql`
           SELECT je."date" AS d,
@@ -210,14 +237,14 @@ export const EXTRA_REPORTS: ReportDef[] = [
             END AS bucket,
             SUM(CASE WHEN a."kind" = 'CUSTOMER' THEN je."credit" WHEN a."kind" = 'SUPPLIER' THEN je."debit" ELSE je."debit" - je."credit" END)::text AS amount
           FROM "JournalEntry" je JOIN "Account" a ON a."id" = je."accountId" JOIN "AccountGroup" g ON g."id" = a."groupId" JOIN "Voucher" v ON v."id" = je."voucherId"
-          WHERE je."businessId" = ${b} AND je."book" = 'GENERAL' AND je."date" >= ${range.gte} AND je."date" < ${range.lt}
+          WHERE je."businessId" = ${b} AND je."book" = 'GENERAL' AND je."date" >= ${range.gte} AND je."date" < ${range.lt} AND v."verificationStatus" <> 'REJECTED'
           GROUP BY 1, 2`),
-        prisma.journalEntry.aggregate({ where: { businessId: b, book: "GENERAL", date: { lt: range.gte }, account: { kind: { in: ["CASH", "BANK"] } } }, _sum: { debit: true, credit: true } }),
+        prisma.journalEntry.aggregate({ where: { businessId: b, book: "GENERAL", date: { lt: range.gte }, account: { kind: { in: ["CASH", "BANK"] } }, voucher: { verificationStatus: { not: "REJECTED" } } }, _sum: { debit: true, credit: true } }),
       ]);
       // walk-in sales are cash collections too
       const walkIn = await rawRows<{ d: Date; amount: string }>(prisma, sql`
         SELECT "date" AS d, SUM("amount")::text AS amount FROM "Voucher"
-        WHERE "businessId" = ${b} AND "book" = 'GENERAL' AND "type" = 'SALES' AND "partyAccountId" IS NULL AND "date" >= ${range.gte} AND "date" < ${range.lt} GROUP BY 1`);
+        WHERE "businessId" = ${b} AND "book" = 'GENERAL' AND "type" = 'SALES' AND "partyAccountId" IS NULL AND "date" >= ${range.gte} AND "date" < ${range.lt} AND "verificationStatus" <> 'REJECTED' GROUP BY 1`);
       let cash = round2(num(cashOpen._sum.debit) - num(cashOpen._sum.credit));
       const rows: ReportRow[] = [];
       const t = { sales: 0, purchase: 0, collection: 0, paid: 0, expense: 0, net: 0 };
@@ -267,7 +294,7 @@ export const EXTRA_REPORTS: ReportDef[] = [
       const b = ctx.business.id;
       const cashAccounts = await prisma.account.findMany({ where: { businessId: b, kind: { in: ["CASH", "BANK"] } }, select: { id: true } });
       const cashIds = new Set(cashAccounts.map((a) => a.id));
-      const cashEntries = await prisma.journalEntry.findMany({ where: { businessId: b, book: "GENERAL", date: range, accountId: { in: [...cashIds] } }, select: { voucherId: true, debit: true, credit: true } });
+      const cashEntries = await prisma.journalEntry.findMany({ where: { businessId: b, book: "GENERAL", date: range, accountId: { in: [...cashIds] }, voucher: { verificationStatus: { not: "REJECTED" } } }, select: { voucherId: true, debit: true, credit: true } });
       const voucherIds = [...new Set(cashEntries.map((e) => e.voucherId))];
       const counter = voucherIds.length
         ? await prisma.journalEntry.findMany({ where: { voucherId: { in: voucherIds }, accountId: { notIn: [...cashIds] } }, select: { voucherId: true, debit: true, credit: true, account: { select: { kind: true, name: true, group: { select: { id: true, name: true } } } } } })
@@ -329,49 +356,118 @@ export const EXTRA_REPORTS: ReportDef[] = [
   {
     slug: "stock-valuation",
     title: "স্টক মূল্যায়ন",
-    description: "ক্যাটাগরিভিত্তিক মজুদ পরিমাণ, গড় ক্রয়মূল্য, মজুদ মূল্য ও সম্ভাব্য বিক্রয়মূল্য",
+    description: "ক্যাটাগরিভিত্তিক মজুদ পরিমাণ, কাঁচামাল FIFO লট ও উৎপাদিত পণ্যের সর্বশেষ ৩ বিক্রির গড় দরে মূল্যায়ন",
     filters: ["q"],
     permission: "reports:view",
     async run(ctx, p) {
       const cur = ctx.business.currencySymbol;
-      const q = p.q?.trim();
-      const products = await prisma.product.findMany({
-        where: { businessId: ctx.business.id, isActive: true, isDepotProduct: false, ...(q ? { OR: digitVariants(q).map((v) => ({ name: ci(v) })) } : {}) }, // general stock only
-        include: { category: { select: { name: true } }, unit: { select: { name: true } } },
-        orderBy: [{ category: { name: "asc" } }, { name: "asc" }],
-      });
-      const groups = new Map<string, typeof products>();
-      for (const pr of products) (groups.get(pr.category?.name ?? "ক্যাটাগরিহীন") ?? groups.set(pr.category?.name ?? "ক্যাটাগরিহীন", []).get(pr.category?.name ?? "ক্যাটাগরিহীন")!).push(pr);
+      const q = p.q?.trim().toLowerCase();
+      const valuation = await calculateInventoryValuation(ctx.business.id);
+
+      let items = valuation.items;
+      if (q) {
+        items = items.filter(
+          (it) =>
+            it.name.toLowerCase().includes(q) ||
+            (it.code && it.code.toLowerCase().includes(q)) ||
+            it.category.toLowerCase().includes(q),
+        );
+      }
+
+      // Group items by category
+      const groups = new Map<string, typeof items>();
+      for (const it of items) {
+        const cat = it.category || "ক্যাটাগরিহীন";
+        const list = groups.get(cat) ?? [];
+        list.push(it);
+        groups.set(cat, list);
+      }
+
       const rows: ReportRow[] = [];
       let tCost = 0, tRetail = 0;
+
       for (const [g, list] of groups) {
         let gc = 0, gr = 0;
-        rows.push({ kind: "group", cells: { product: g, qty: null, rate: null, cost: null, price: null, retail: null, margin: null } });
-        for (const pr of list) {
-          const qty = num(pr.stock);
-          const cost = round2(qty * num(pr.avgCost));
-          const retail = round2(qty * num(pr.salePrice));
-          gc += cost; gr += retail;
-          rows.push({ indent: 1, href: `/products/${pr.id}`, cells: { product: `${pr.name} (${pr.unit.name})`, qty, rate: num(pr.avgCost), cost, price: num(pr.salePrice), retail, margin: round2(retail - cost) } });
+        rows.push({
+          kind: "group",
+          cells: { product: g, kind: null, qty: null, rate: null, cost: null, price: null, retail: null, margin: null },
+        });
+
+        for (const it of list) {
+          gc += it.value;
+          gr += it.retailValue;
+          const kindLabel = it.kind === "PRODUCED" ? "উৎপাদিত (বিক্রির গড়)" : "ক্রয়/কাঁচামাল (FIFO)";
+
+          rows.push({
+            indent: 1,
+            href: `/products/${it.productId}`,
+            cells: {
+              product: `${it.name} (${it.unit})`,
+              kind: kindLabel,
+              qty: it.stock,
+              rate: it.rate,
+              cost: it.value,
+              price: it.salePrice,
+              retail: it.retailValue,
+              margin: round2(it.retailValue - it.value),
+            },
+          });
         }
-        rows.push({ kind: "subtotal", cells: { product: `${g} — মোট`, qty: null, rate: null, cost: round2(gc), price: null, retail: round2(gr), margin: round2(gr - gc) } });
-        tCost += gc; tRetail += gr;
+
+        rows.push({
+          kind: "subtotal",
+          cells: {
+            product: `${g} — মোট`,
+            kind: null,
+            qty: null,
+            rate: null,
+            cost: round2(gc),
+            price: null,
+            retail: round2(gr),
+            margin: round2(gr - gc),
+          },
+        });
+        tCost += gc;
+        tRetail += gr;
       }
-      rows.push({ kind: "total", cells: { product: "সর্বমোট", qty: null, rate: null, cost: round2(tCost), price: null, retail: round2(tRetail), margin: round2(tRetail - tCost) } });
+
+      rows.push({
+        kind: "total",
+        cells: {
+          product: "সর্বমোট",
+          kind: null,
+          qty: null,
+          rate: null,
+          cost: round2(tCost),
+          price: null,
+          retail: round2(tRetail),
+          margin: round2(tRetail - tCost),
+        },
+      });
+
       const inv = await prisma.account.findFirst({ where: { businessId: ctx.business.id, systemKey: "INVENTORY" }, select: { id: true } });
-      const ledger = inv ? (await balancesBefore(ctx.business.id, undefined, [inv.id], "ALL")).get(inv.id) ?? 0 : 0; // stock is physical: both books
+      const ledger = inv ? (await balancesBefore(ctx.business.id, undefined, [inv.id], "ALL")).get(inv.id) ?? 0 : 0;
+
       return {
         title: "স্টক মূল্যায়ন",
-        subtitle: `${formatDate(new Date())} পর্যন্ত — মুভিং গড় ক্রয়মূল্যে`,
+        subtitle: `${formatDate(new Date())} পর্যন্ত — কাঁচামাল FIFO লট ও উৎপাদিত পণ্য সর্বশেষ ৩ বিক্রির গড় দরে`,
         columns: [
-          { key: "product", label: "পণ্য" }, { key: "qty", label: "মজুদ", format: "qty" }, { key: "rate", label: "গড় ক্রয়মূল্য", format: "money" }, { key: "cost", label: "মজুদ মূল্য", format: "money" },
-          { key: "price", label: "বিক্রয়মূল্য", format: "money" }, { key: "retail", label: "বিক্রয়মূল্যে মজুদ", format: "money" }, { key: "margin", label: "সম্ভাব্য মার্জিন", format: "money" },
+          { key: "product", label: "পণ্য" },
+          { key: "kind", label: "শ্রেণী / মূল্যায়ন পদ্ধতি" },
+          { key: "qty", label: "মজুদ", format: "qty" },
+          { key: "rate", label: "মূল্যায়ন দর", format: "money" },
+          { key: "cost", label: "মজুদ মূল্য", format: "money" },
+          { key: "price", label: "বিক্রয়মূল্য", format: "money" },
+          { key: "retail", label: "বিক্রয়মূল্যে মজুদ", format: "money" },
+          { key: "margin", label: "সম্ভাব্য মার্জিন", format: "money" },
         ],
         rows,
         summary: [
-          { label: "মজুদ মূল্য (ক্রয়মূল্যে)", value: formatMoney(tCost, cur), tone: "blue" },
-          { label: "মজুদ পণ্য লেজার", value: formatMoney(ledger, cur) },
+          { label: "মোট মজুদ মূল্য", value: formatMoney(tCost, cur), tone: "blue" },
+          { label: "ক্রয়কৃত / কাঁচামাল (FIFO)", value: formatMoney(valuation.purchasedValue, cur) },
+          { label: "উৎপাদিত সমাপ্ত পণ্য", value: formatMoney(valuation.producedValue, cur) },
           { label: "সম্ভাব্য মার্জিন", value: formatMoney(tRetail - tCost, cur), tone: "green" },
+          { label: "মজুদ পণ্য লেজার", value: formatMoney(ledger, cur) },
         ],
       };
     },

@@ -34,11 +34,16 @@ export function useDict(): Dict {
 
 /** Header language switcher: বাংলা | English. The choice is kept in the bl_lang cookie (1 year), so a reload or the
  *  next visit opens in the same language; server-rendered pages read the same cookie. */
-export function LangToggle() {
+export function LangToggle({ className }: { className?: string } = {}) {
   const { lang, dict } = useContext(LangCtx);
   const [pending, start] = useTransition();
   return (
-    <div id="lang-switch" role="group" aria-label={translateWith(dict, "ভাষা নির্বাচন")} className="flex h-10 sm:h-9 shrink-0 overflow-hidden rounded-lg border border-rule text-xs font-semibold shadow-2xs">
+    <div
+      id="lang-switch"
+      role="group"
+      aria-label={translateWith(dict, "ভাষা নির্বাচন")}
+      className={`inline-flex h-8 shrink-0 items-center rounded-lg border border-rule bg-slate-100/90 p-0.5 text-xs font-semibold shadow-2xs ${className ?? ""}`}
+    >
       {(Object.keys(LANG_LABELS) as Lang[]).map((l) => (
         <button
           key={l}
@@ -47,7 +52,11 @@ export function LangToggle() {
           disabled={pending || l === lang}
           aria-pressed={l === lang}
           onClick={() => start(() => setLangAction(l))}
-          className={`flex min-h-[40px] sm:min-h-0 items-center justify-center px-2.5 sm:px-2 text-xs font-bold transition ${l === lang ? "bg-brand-600 text-white" : "text-ink-700 hover:bg-ink-50"}`}
+          className={`flex h-7 items-center justify-center rounded-md px-2.5 text-xs font-semibold transition-all ${
+            l === lang
+              ? "bg-emerald-700 text-white shadow-xs font-bold cursor-default"
+              : "text-slate-600 hover:text-ink-900 hover:bg-white/60 cursor-pointer"
+          }`}
         >
           {LANG_LABELS[l]}
         </button>

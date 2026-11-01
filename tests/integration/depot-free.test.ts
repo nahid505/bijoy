@@ -89,11 +89,11 @@ run("free / scheme goods (ফ্রি পণ্য)", () => {
   it("free scheme report: received 50, given 30, left 20", async () => {
     const fake = { business: { id: ctx.businessId, currencySymbol: "৳", fiscalYearStartMonth: 7, businessType: "DEPOT" }, partyScope: { customers: null, suppliers: null }, user: { id: ctx.userId } } as never;
     const r = await DEPOT_REPORTS.find((x) => x.slug === "depot-free")!.run(fake, { from: "2026-10-01", to: "2026-10-31" });
-    expect(r.rows[0].cells).toMatchObject({ product: "সিমেন্ট", unit: "পিস", received: 50, given: 30, balance: 20 });
-    expect(r.summary?.map((s) => s.value)).toEqual(["৫০ পিস", "৩০ পিস", "২০ পিস"]);
+    expect(r.rows[0].cells).toMatchObject({ product: "সিমেন্ট", unit: "পিস", received: "2 Carton 2 Pcs", given: "1 Carton 6 Pcs", balance: "20 Pcs" });
+    expect(r.summary?.map((s) => s.value)).toEqual(["2 Carton 2 Pcs", "1 Carton 6 Pcs", "20 Pcs"]);
     // before the deliveries: only the received 50
     const early = await DEPOT_REPORTS.find((x) => x.slug === "depot-free")!.run(fake, { from: "2026-10-01", to: "2026-10-10" });
-    expect(early.rows[0].cells).toMatchObject({ received: 50, given: 0, balance: 50 });
+    expect(early.rows[0].cells).toMatchObject({ received: "2 Carton 2 Pcs", given: "0 Pcs", balance: "2 Carton 2 Pcs" });
   });
 
   it("editing the purchase's free quantity re-costs everything after it", async () => {

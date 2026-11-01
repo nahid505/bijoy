@@ -6,6 +6,7 @@ CREATE TABLE `Business` (
     `id` VARCHAR(191) NOT NULL,
     `name` TEXT NOT NULL,
     `businessType` TEXT NULL,
+    `businessTypes` JSON NOT NULL DEFAULT (json_array()),
     `logo` MEDIUMTEXT NULL,
     `address` TEXT NULL,
     `mobile` TEXT NULL,
@@ -43,6 +44,8 @@ CREATE TABLE `User` (
     `loginAlertEnabled` BOOLEAN NOT NULL DEFAULT true,
     `isActive` BOOLEAN NOT NULL DEFAULT true,
     `lastLoginAt` DATETIME(3) NULL,
+    `otpCode` TEXT NULL,
+    `otpExpires` DATETIME(3) NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
 
@@ -81,6 +84,45 @@ CREATE TABLE `Membership` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
+CREATE TABLE `UserCustomer` (
+    `id` VARCHAR(191) NOT NULL,
+    `businessId` VARCHAR(191) NOT NULL,
+    `userId` VARCHAR(191) NOT NULL,
+    `customerId` VARCHAR(191) NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    INDEX `UserCustomer_businessId_userId_idx`(`businessId`, `userId`),
+    UNIQUE INDEX `UserCustomer_userId_customerId_key`(`userId`, `customerId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `UserAccount` (
+    `id` VARCHAR(191) NOT NULL,
+    `businessId` VARCHAR(191) NOT NULL,
+    `userId` VARCHAR(191) NOT NULL,
+    `accountId` VARCHAR(191) NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    INDEX `UserAccount_businessId_userId_idx`(`businessId`, `userId`),
+    UNIQUE INDEX `UserAccount_userId_accountId_key`(`userId`, `accountId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `UserSupplier` (
+    `id` VARCHAR(191) NOT NULL,
+    `businessId` VARCHAR(191) NOT NULL,
+    `userId` VARCHAR(191) NOT NULL,
+    `supplierId` VARCHAR(191) NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    INDEX `UserSupplier_businessId_userId_idx`(`businessId`, `userId`),
+    UNIQUE INDEX `UserSupplier_userId_supplierId_key`(`userId`, `supplierId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
 CREATE TABLE `AccountGroup` (
     `id` VARCHAR(191) NOT NULL,
     `businessId` VARCHAR(191) NOT NULL,
@@ -89,8 +131,11 @@ CREATE TABLE `AccountGroup` (
     `isDirect` BOOLEAN NOT NULL DEFAULT false,
     `systemKey` VARCHAR(191) NULL,
     `sortOrder` INTEGER NOT NULL DEFAULT 0,
+    `parentId` VARCHAR(191) NULL,
+    `description` TEXT NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
+    INDEX `AccountGroup_parentId_idx`(`parentId`),
     UNIQUE INDEX `AccountGroup_businessId_systemKey_key`(`businessId`, `systemKey`),
     UNIQUE INDEX `AccountGroup_businessId_name_key`(`businessId`, `name`),
     PRIMARY KEY (`id`)
@@ -111,6 +156,7 @@ CREATE TABLE `Account` (
     `description` TEXT NULL,
     `bankName` TEXT NULL,
     `accountNumber` TEXT NULL,
+    `imageUrl` TEXT NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
 
@@ -125,7 +171,8 @@ CREATE TABLE `Account` (
 CREATE TABLE `Voucher` (
     `id` VARCHAR(191) NOT NULL,
     `businessId` VARCHAR(191) NOT NULL,
-    `type` ENUM('OPENING', 'RECEIPT', 'PAYMENT', 'JOURNAL', 'SALES', 'PURCHASE', 'SALES_RETURN', 'PURCHASE_RETURN', 'STOCK_JOURNAL') NOT NULL,
+    `type` ENUM('OPENING', 'RECEIPT', 'PAYMENT', 'JOURNAL', 'SALES', 'PURCHASE', 'SALES_RETURN', 'PURCHASE_RETURN', 'STOCK_JOURNAL', 'PRODUCTION', 'DEPOT_DELIVERY') NOT NULL,
+    `book` ENUM('GENERAL', 'DEPOT') NOT NULL DEFAULT 'GENERAL',
     `voucherNo` VARCHAR(191) NOT NULL,
     `date` DATETIME(3) NOT NULL,
     `reference` TEXT NULL,
@@ -145,11 +192,16 @@ CREATE TABLE `Voucher` (
     `adjustmentAccountId` VARCHAR(191) NULL,
     `createdById` VARCHAR(191) NOT NULL,
     `updatedById` VARCHAR(191) NULL,
+    `verificationStatus` ENUM('UNVERIFIED', 'VERIFIED', 'REJECTED') NOT NULL DEFAULT 'UNVERIFIED',
+    `verifiedById` VARCHAR(191) NULL,
+    `verifiedAt` DATETIME(3) NULL,
+    `verificationNote` TEXT NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
 
     INDEX `Voucher_businessId_type_date_idx`(`businessId`, `type`, `date`),
     INDEX `Voucher_businessId_date_idx`(`businessId`, `date`),
+    INDEX `Voucher_businessId_verificationStatus_idx`(`businessId`, `verificationStatus`),
     INDEX `Voucher_partyAccountId_idx`(`partyAccountId`),
     INDEX `Voucher_returnOfId_idx`(`returnOfId`),
     UNIQUE INDEX `Voucher_businessId_voucherNo_key`(`businessId`, `voucherNo`),
@@ -182,9 +234,11 @@ CREATE TABLE `JournalEntry` (
     `credit` DECIMAL(14, 2) NOT NULL DEFAULT 0,
     `narration` TEXT NULL,
     `lineNo` INTEGER NOT NULL DEFAULT 0,
+    `book` ENUM('GENERAL', 'DEPOT') NOT NULL DEFAULT 'GENERAL',
 
     INDEX `JournalEntry_businessId_accountId_date_idx`(`businessId`, `accountId`, `date`),
     INDEX `JournalEntry_businessId_date_idx`(`businessId`, `date`),
+    INDEX `JournalEntry_businessId_book_date_idx`(`businessId`, `book`, `date`),
     INDEX `JournalEntry_voucherId_idx`(`voucherId`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -199,12 +253,15 @@ CREATE TABLE `VoucherItem` (
     `unitFactor` DECIMAL(14, 6) NOT NULL DEFAULT 1,
     `quantity` DECIMAL(14, 3) NOT NULL,
     `baseQuantity` DECIMAL(14, 3) NOT NULL,
+    `freeQuantity` DECIMAL(14, 3) NOT NULL DEFAULT 0,
+    `challanRate` DECIMAL(14, 2) NULL,
     `rate` DECIMAL(14, 2) NOT NULL,
     `discount` DECIMAL(14, 2) NOT NULL DEFAULT 0,
     `amount` DECIMAL(14, 2) NOT NULL,
     `costRate` DECIMAL(14, 4) NOT NULL DEFAULT 0,
     `costAmount` DECIMAL(14, 2) NOT NULL DEFAULT 0,
     `direction` INTEGER NOT NULL DEFAULT 0,
+    `costShare` DECIMAL(7, 4) NULL,
     `batchNo` TEXT NULL,
     `expiryDate` DATETIME(3) NULL,
     `batchId` VARCHAR(191) NULL,
@@ -225,10 +282,14 @@ CREATE TABLE `Customer` (
     `mobile` VARCHAR(191) NULL,
     `email` VARCHAR(255) NULL,
     `address` TEXT NULL,
+    `imageUrl` TEXT NULL,
     `notes` TEXT NULL,
     `creditLimit` DECIMAL(14, 2) NOT NULL DEFAULT 0,
     `creditDays` INTEGER NOT NULL DEFAULT 0,
     `groupName` VARCHAR(191) NULL,
+    `ownerName` TEXT NULL,
+    `route` TEXT NULL,
+    `isDepotDealer` BOOLEAN NOT NULL DEFAULT false,
     `isActive` BOOLEAN NOT NULL DEFAULT true,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
@@ -249,6 +310,7 @@ CREATE TABLE `Supplier` (
     `mobile` VARCHAR(191) NULL,
     `email` VARCHAR(255) NULL,
     `address` TEXT NULL,
+    `imageUrl` TEXT NULL,
     `notes` TEXT NULL,
     `creditDays` INTEGER NOT NULL DEFAULT 0,
     `isActive` BOOLEAN NOT NULL DEFAULT true,
@@ -315,8 +377,12 @@ CREATE TABLE `Product` (
     `categoryId` VARCHAR(191) NULL,
     `brandId` VARCHAR(191) NULL,
     `unitId` VARCHAR(191) NOT NULL,
+    `packSize` DECIMAL(14, 3) NOT NULL DEFAULT 24,
     `purchasePrice` DECIMAL(14, 2) NOT NULL DEFAULT 0,
     `salePrice` DECIMAL(14, 2) NOT NULL DEFAULT 0,
+    `depotCommissionRate` DECIMAL(14, 4) NOT NULL DEFAULT 0,
+    `depotCommissionType` ENUM('FIXED', 'PERCENT') NOT NULL DEFAULT 'FIXED',
+    `isDepotProduct` BOOLEAN NOT NULL DEFAULT false,
     `wholesalePrice` DECIMAL(14, 2) NOT NULL DEFAULT 0,
     `minStock` DECIMAL(14, 3) NOT NULL DEFAULT 0,
     `openingStock` DECIMAL(14, 3) NOT NULL DEFAULT 0,
@@ -330,6 +396,7 @@ CREATE TABLE `Product` (
 
     INDEX `Product_businessId_name_idx`(`businessId`, `name`),
     INDEX `Product_businessId_categoryId_idx`(`businessId`, `categoryId`),
+    INDEX `Product_businessId_isDepotProduct_idx`(`businessId`, `isDepotProduct`),
     UNIQUE INDEX `Product_businessId_code_key`(`businessId`, `code`),
     UNIQUE INDEX `Product_businessId_barcode_key`(`businessId`, `barcode`),
     PRIMARY KEY (`id`)
@@ -346,7 +413,7 @@ CREATE TABLE `StockMovement` (
     `batchNo` VARCHAR(191) NULL,
     `expiryDate` DATETIME(3) NULL,
     `batchId` VARCHAR(191) NULL,
-    `type` ENUM('OPENING', 'PURCHASE', 'SALE', 'SALES_RETURN', 'PURCHASE_RETURN', 'ADJUSTMENT_IN', 'ADJUSTMENT_OUT') NOT NULL,
+    `type` ENUM('OPENING', 'PURCHASE', 'SALE', 'SALES_RETURN', 'PURCHASE_RETURN', 'ADJUSTMENT_IN', 'ADJUSTMENT_OUT', 'PRODUCTION_IN', 'PRODUCTION_OUT', 'DEPOT_OUT') NOT NULL,
     `date` DATETIME(3) NOT NULL,
     `quantityIn` DECIMAL(14, 3) NOT NULL DEFAULT 0,
     `quantityOut` DECIMAL(14, 3) NOT NULL DEFAULT 0,
@@ -1070,6 +1137,102 @@ CREATE TABLE `Invoice` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+-- CreateTable
+CREATE TABLE `Recipe` (
+    `id` VARCHAR(191) NOT NULL,
+    `businessId` VARCHAR(191) NOT NULL,
+    `name` VARCHAR(191) NOT NULL,
+    `code` TEXT NULL,
+    `description` TEXT NULL,
+    `isActive` BOOLEAN NOT NULL DEFAULT true,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    INDEX `Recipe_businessId_idx`(`businessId`),
+    UNIQUE INDEX `Recipe_businessId_name_key`(`businessId`, `name`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `RecipeLine` (
+    `id` VARCHAR(191) NOT NULL,
+    `recipeId` VARCHAR(191) NOT NULL,
+    `productId` VARCHAR(191) NOT NULL,
+    `kind` ENUM('INPUT', 'OUTPUT') NOT NULL,
+    `quantity` DECIMAL(14, 3) NOT NULL,
+    `costShare` DECIMAL(7, 4) NOT NULL DEFAULT 0,
+    `lineNo` INTEGER NOT NULL DEFAULT 0,
+
+    INDEX `RecipeLine_recipeId_idx`(`recipeId`),
+    INDEX `RecipeLine_productId_idx`(`productId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `ProductionRun` (
+    `id` VARCHAR(191) NOT NULL,
+    `businessId` VARCHAR(191) NOT NULL,
+    `voucherId` VARCHAR(191) NOT NULL,
+    `recipeId` VARCHAR(191) NULL,
+    `batches` DECIMAL(14, 4) NOT NULL DEFAULT 1,
+    `extraCost` DECIMAL(14, 2) NOT NULL DEFAULT 0,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    UNIQUE INDEX `ProductionRun_voucherId_key`(`voucherId`),
+    INDEX `ProductionRun_businessId_idx`(`businessId`),
+    INDEX `ProductionRun_recipeId_idx`(`recipeId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `DepotDelivery` (
+    `id` VARCHAR(191) NOT NULL,
+    `businessId` VARCHAR(191) NOT NULL,
+    `voucherId` VARCHAR(191) NOT NULL,
+    `mode` ENUM('COMPANY_PAID', 'DEPOT_COLLECTION') NOT NULL,
+    `companyAccountId` VARCHAR(191) NULL,
+    `dealerAccountId` VARCHAR(191) NULL,
+    `doNumber` TEXT NULL,
+    `vehicleNo` TEXT NULL,
+    `driverName` TEXT NULL,
+    `notes` TEXT NULL,
+    `commissionTotal` DECIMAL(14, 2) NOT NULL DEFAULT 0,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `DepotDelivery_voucherId_key`(`voucherId`),
+    INDEX `DepotDelivery_businessId_idx`(`businessId`),
+    INDEX `DepotDelivery_companyAccountId_idx`(`companyAccountId`),
+    INDEX `DepotDelivery_dealerAccountId_idx`(`dealerAccountId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `PaddyPurchase` (
+    `id` VARCHAR(191) NOT NULL,
+    `businessId` VARCHAR(191) NOT NULL,
+    `voucherId` VARCHAR(191) NOT NULL,
+    `bagCount` INTEGER NOT NULL DEFAULT 0,
+    `variety` TEXT NULL,
+    `moisturePct` DECIMAL(5, 2) NULL,
+    `vehicleGrossKg` DECIMAL(14, 3) NULL,
+    `vehicleTareKg` DECIMAL(14, 3) NULL,
+    `labourCost` DECIMAL(14, 2) NOT NULL DEFAULT 0,
+    `grossKg` DECIMAL(14, 3) NOT NULL,
+    `dhaltaKg` DECIMAL(14, 3) NOT NULL DEFAULT 0,
+    `netKg` DECIMAL(14, 3) NOT NULL,
+    `mon` DECIMAL(14, 2) NOT NULL,
+    `ratePerMon` DECIMAL(14, 2) NOT NULL,
+    `totalPrice` DECIMAL(14, 2) NOT NULL,
+    `notes` TEXT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `PaddyPurchase_voucherId_key`(`voucherId`),
+    INDEX `PaddyPurchase_businessId_idx`(`businessId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
 -- AddForeignKey
 ALTER TABLE `Role` ADD CONSTRAINT `Role_businessId_fkey` FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
@@ -1083,7 +1246,37 @@ ALTER TABLE `Membership` ADD CONSTRAINT `Membership_businessId_fkey` FOREIGN KEY
 ALTER TABLE `Membership` ADD CONSTRAINT `Membership_roleId_fkey` FOREIGN KEY (`roleId`) REFERENCES `Role`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE `UserCustomer` ADD CONSTRAINT `UserCustomer_businessId_fkey` FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `UserCustomer` ADD CONSTRAINT `UserCustomer_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `UserCustomer` ADD CONSTRAINT `UserCustomer_customerId_fkey` FOREIGN KEY (`customerId`) REFERENCES `Customer`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `UserAccount` ADD CONSTRAINT `UserAccount_businessId_fkey` FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `UserAccount` ADD CONSTRAINT `UserAccount_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `UserAccount` ADD CONSTRAINT `UserAccount_accountId_fkey` FOREIGN KEY (`accountId`) REFERENCES `Account`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `UserSupplier` ADD CONSTRAINT `UserSupplier_businessId_fkey` FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `UserSupplier` ADD CONSTRAINT `UserSupplier_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `UserSupplier` ADD CONSTRAINT `UserSupplier_supplierId_fkey` FOREIGN KEY (`supplierId`) REFERENCES `Supplier`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE `AccountGroup` ADD CONSTRAINT `AccountGroup_businessId_fkey` FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `AccountGroup` ADD CONSTRAINT `AccountGroup_parentId_fkey` FOREIGN KEY (`parentId`) REFERENCES `AccountGroup`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `Account` ADD CONSTRAINT `Account_businessId_fkey` FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
@@ -1114,6 +1307,9 @@ ALTER TABLE `Voucher` ADD CONSTRAINT `Voucher_createdById_fkey` FOREIGN KEY (`cr
 
 -- AddForeignKey
 ALTER TABLE `Voucher` ADD CONSTRAINT `Voucher_updatedById_fkey` FOREIGN KEY (`updatedById`) REFERENCES `User`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `Voucher` ADD CONSTRAINT `Voucher_verifiedById_fkey` FOREIGN KEY (`verifiedById`) REFERENCES `User`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `VoucherPayment` ADD CONSTRAINT `VoucherPayment_voucherId_fkey` FOREIGN KEY (`voucherId`) REFERENCES `Voucher`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
@@ -1400,6 +1596,42 @@ ALTER TABLE `Invoice` ADD CONSTRAINT `Invoice_businessId_fkey` FOREIGN KEY (`bus
 -- AddForeignKey
 ALTER TABLE `Invoice` ADD CONSTRAINT `Invoice_planId_fkey` FOREIGN KEY (`planId`) REFERENCES `Plan`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
+-- AddForeignKey
+ALTER TABLE `Recipe` ADD CONSTRAINT `Recipe_businessId_fkey` FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `RecipeLine` ADD CONSTRAINT `RecipeLine_recipeId_fkey` FOREIGN KEY (`recipeId`) REFERENCES `Recipe`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `RecipeLine` ADD CONSTRAINT `RecipeLine_productId_fkey` FOREIGN KEY (`productId`) REFERENCES `Product`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `ProductionRun` ADD CONSTRAINT `ProductionRun_businessId_fkey` FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `ProductionRun` ADD CONSTRAINT `ProductionRun_voucherId_fkey` FOREIGN KEY (`voucherId`) REFERENCES `Voucher`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `ProductionRun` ADD CONSTRAINT `ProductionRun_recipeId_fkey` FOREIGN KEY (`recipeId`) REFERENCES `Recipe`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `DepotDelivery` ADD CONSTRAINT `DepotDelivery_businessId_fkey` FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `DepotDelivery` ADD CONSTRAINT `DepotDelivery_voucherId_fkey` FOREIGN KEY (`voucherId`) REFERENCES `Voucher`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `DepotDelivery` ADD CONSTRAINT `DepotDelivery_companyAccountId_fkey` FOREIGN KEY (`companyAccountId`) REFERENCES `Account`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `DepotDelivery` ADD CONSTRAINT `DepotDelivery_dealerAccountId_fkey` FOREIGN KEY (`dealerAccountId`) REFERENCES `Account`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `PaddyPurchase` ADD CONSTRAINT `PaddyPurchase_businessId_fkey` FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `PaddyPurchase` ADD CONSTRAINT `PaddyPurchase_voucherId_fkey` FOREIGN KEY (`voucherId`) REFERENCES `Voucher`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
 -- ── integrity rules (CHECK constraints, ported from the PostgreSQL migrations) ──
 ALTER TABLE `JournalEntry` ADD CONSTRAINT `JournalEntry_amounts_nonnegative` CHECK (`debit` >= 0 AND `credit` >= 0);
 ALTER TABLE `JournalEntry` ADD CONSTRAINT `JournalEntry_single_side` CHECK ((`debit` > 0) <> (`credit` > 0));
@@ -1434,27 +1666,36 @@ ALTER TABLE `SmsSettings` ADD CONSTRAINT `SmsSettings_threshold_nonneg` CHECK (`
 INSERT IGNORE INTO `Feature` (`key`, `nameBn`, `nameEn`, `descriptionBn`, `descriptionEn`, `icon`, `tier`, `status`, `defaultEnabled`, `sortOrder`, `updatedAt`) VALUES ('ACCOUNTING', 'হিসাব (অ্যাকাউন্টিং)', 'Accounting', 'ডাবল-এন্ট্রি হিসাব: রিসিপ্ট, পেমেন্ট, জার্নাল, খরচ, চার্ট অব অ্যাকাউন্টস, ক্যাশ ও ব্যাংক বুক।', 'Double-entry books: receipts, payments, journals, expenses, chart of accounts, cash and bank books.', '📒', 'FREE', 'AVAILABLE', 1, 0, CURRENT_TIMESTAMP(3));
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_accounting_view_vouchers_view', 'ACCOUNTING', 'VIEW', 'vouchers:view', 1);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_accounting_view_accounts_view', 'ACCOUNTING', 'VIEW', 'accounts:view', 1);
+INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_accounting_view_reports_ledger_view', 'ACCOUNTING', 'VIEW', 'reports.ledger:view', 1);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_accounting_create_vouchers_create', 'ACCOUNTING', 'CREATE', 'vouchers:create', 1);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_accounting_create_accounts_manage', 'ACCOUNTING', 'CREATE', 'accounts:manage', 1);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_accounting_edit_vouchers_edit', 'ACCOUNTING', 'EDIT', 'vouchers:edit', 1);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_accounting_edit_accounts_manage', 'ACCOUNTING', 'EDIT', 'accounts:manage', 1);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_accounting_delete_vouchers_delete', 'ACCOUNTING', 'DELETE', 'vouchers:delete', 1);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_accounting_export_reports_view', 'ACCOUNTING', 'EXPORT', 'reports:view', 0);
+INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_accounting_export_reports_ledger_print', 'ACCOUNTING', 'EXPORT', 'reports.ledger:print', 1);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_accounting_print_vouchers_view', 'ACCOUNTING', 'PRINT', 'vouchers:view', 1);
+INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_accounting_print_reports_ledger_print', 'ACCOUNTING', 'PRINT', 'reports.ledger:print', 1);
 INSERT IGNORE INTO `Feature` (`key`, `nameBn`, `nameEn`, `descriptionBn`, `descriptionEn`, `icon`, `tier`, `status`, `defaultEnabled`, `sortOrder`, `updatedAt`) VALUES ('SALES', 'বিক্রয়', 'Sales', 'বিক্রয় ইনভয়েস, বিক্রয় ফেরত, বাকি বিক্রয়, ছাড় ও ভ্যাট — স্টক ও হিসাবে স্বয়ংক্রিয় পোস্টিং।', 'Sales invoices and returns, credit sales, discounts and VAT — posted to stock and books automatically.', '🧾', 'FREE', 'AVAILABLE', 1, 10, CURRENT_TIMESTAMP(3));
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_sales_view_sales_view', 'SALES', 'VIEW', 'sales:view', 1);
+INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_sales_view_auto_rice_mill_sales_view', 'SALES', 'VIEW', 'auto_rice_mill.sales:view', 1);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_sales_create_sales_create', 'SALES', 'CREATE', 'sales:create', 1);
+INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_sales_create_auto_rice_mill_sales_create', 'SALES', 'CREATE', 'auto_rice_mill.sales:create', 1);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_sales_edit_sales_edit', 'SALES', 'EDIT', 'sales:edit', 1);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_sales_delete_sales_delete', 'SALES', 'DELETE', 'sales:delete', 1);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_sales_print_sales_view', 'SALES', 'PRINT', 'sales:view', 1);
 INSERT IGNORE INTO `Feature` (`key`, `nameBn`, `nameEn`, `descriptionBn`, `descriptionEn`, `icon`, `tier`, `status`, `defaultEnabled`, `sortOrder`, `updatedAt`) VALUES ('PURCHASE', 'ক্রয়', 'Purchase', 'ক্রয় ভাউচার ও ক্রয় ফেরত, সরবরাহকারীর বাকি, ব্যাচ ও মেয়াদসহ স্টক গ্রহণ।', 'Purchase vouchers and returns, supplier credit, stock receipt with batches and expiry.', '🛒', 'PAID', 'AVAILABLE', 1, 20, CURRENT_TIMESTAMP(3));
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_purchase_view_purchases_view', 'PURCHASE', 'VIEW', 'purchases:view', 1);
+INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_purchase_view_auto_rice_mill_procurement_view', 'PURCHASE', 'VIEW', 'auto_rice_mill.procurement:view', 1);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_purchase_create_purchases_create', 'PURCHASE', 'CREATE', 'purchases:create', 1);
+INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_purchase_create_auto_rice_mill_procurement_create', 'PURCHASE', 'CREATE', 'auto_rice_mill.procurement:create', 1);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_purchase_edit_purchases_edit', 'PURCHASE', 'EDIT', 'purchases:edit', 1);
+INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_purchase_edit_auto_rice_mill_procurement_create', 'PURCHASE', 'EDIT', 'auto_rice_mill.procurement:create', 1);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_purchase_delete_purchases_delete', 'PURCHASE', 'DELETE', 'purchases:delete', 1);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_purchase_print_purchases_view', 'PURCHASE', 'PRINT', 'purchases:view', 1);
 INSERT IGNORE INTO `Feature` (`key`, `nameBn`, `nameEn`, `descriptionBn`, `descriptionEn`, `icon`, `tier`, `status`, `defaultEnabled`, `sortOrder`, `updatedAt`) VALUES ('INVENTORY', 'ইনভেন্টরি (পণ্য ও স্টক)', 'Inventory', 'পণ্য তালিকা, ইউনিট, স্টক অবস্থা ও গুদামভিত্তিক মজুদ। বিক্রয়/ক্রয় ভাউচারে পণ্য বাছাই সবসময় চালু থাকে।', 'Product list, units, stock levels and per-warehouse quantities. Picking products in sales / purchase vouchers always works.', '🏷', 'FREE', 'AVAILABLE', 1, 30, CURRENT_TIMESTAMP(3));
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_inventory_view_inventory_view', 'INVENTORY', 'VIEW', 'inventory:view', 1);
+INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_inventory_view_auto_rice_mill_inventory_view', 'INVENTORY', 'VIEW', 'auto_rice_mill.inventory:view', 1);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_inventory_create_inventory_manage', 'INVENTORY', 'CREATE', 'inventory:manage', 1);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_inventory_edit_inventory_manage', 'INVENTORY', 'EDIT', 'inventory:manage', 1);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_inventory_delete_inventory_manage', 'INVENTORY', 'DELETE', 'inventory:manage', 1);
@@ -1518,12 +1759,16 @@ INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permissio
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_product_expiry_edit_inventory_manage', 'PRODUCT_EXPIRY', 'EDIT', 'inventory:manage', 0);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_product_expiry_delete_stock_adjust', 'PRODUCT_EXPIRY', 'DELETE', 'stock:adjust', 0);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_product_expiry_export_reports_view', 'PRODUCT_EXPIRY', 'EXPORT', 'reports:view', 0);
-INSERT IGNORE INTO `Feature` (`key`, `nameBn`, `nameEn`, `descriptionBn`, `descriptionEn`, `icon`, `tier`, `status`, `defaultEnabled`, `sortOrder`, `updatedAt`) VALUES ('PRODUCTION', 'প্রোডাকশন ম্যানেজমেন্ট', 'Production Management', 'কাঁচামাল থেকে তৈরি পণ্য: রেসিপি (BOM), উৎপাদন এন্ট্রি, কাঁচামাল খরচ ও উৎপাদন ব্যয়।', 'Raw materials to finished goods: recipes (BOM), production entries, material consumption and production cost.', '🏭', 'PAID', 'COMING_SOON', 0, 140, CURRENT_TIMESTAMP(3));
-INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_production_view_production_view', 'PRODUCTION', 'VIEW', 'production:view', 0);
-INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_production_create_production_manage', 'PRODUCTION', 'CREATE', 'production:manage', 0);
-INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_production_edit_production_manage', 'PRODUCTION', 'EDIT', 'production:manage', 0);
-INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_production_delete_production_manage', 'PRODUCTION', 'DELETE', 'production:manage', 0);
-INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_production_approve_production_approve', 'PRODUCTION', 'APPROVE', 'production:approve', 0);
+INSERT IGNORE INTO `Feature` (`key`, `nameBn`, `nameEn`, `descriptionBn`, `descriptionEn`, `icon`, `tier`, `status`, `defaultEnabled`, `sortOrder`, `updatedAt`) VALUES ('PRODUCTION', 'প্রোডাকশন ম্যানেজমেন্ট', 'Production Management', 'কাঁচামাল থেকে তৈরি পণ্য: রেসিপি (BOM), উৎপাদন এন্ট্রি, কাঁচামাল খরচ, বাই-প্রোডাক্ট (যেমন ধান → চাল, খুদ, কুঁড়া, তুষ), ফলন ও প্রসেস লস, উৎপাদন ব্যয় এবং স্বয়ংক্রিয় স্টক সমন্বয়।', 'Raw materials to finished goods: recipes (BOM), production entries, by-products (e.g. paddy → rice, broken rice, bran, husk), yield and process loss, production cost and automatic stock adjustment.', '🏭', 'PAID', 'AVAILABLE', 1, 140, CURRENT_TIMESTAMP(3));
+INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_production_view_production_view', 'PRODUCTION', 'VIEW', 'production:view', 1);
+INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_production_view_auto_rice_mill_milling_view', 'PRODUCTION', 'VIEW', 'auto_rice_mill.milling:view', 1);
+INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_production_create_production_manage', 'PRODUCTION', 'CREATE', 'production:manage', 1);
+INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_production_create_auto_rice_mill_milling_create', 'PRODUCTION', 'CREATE', 'auto_rice_mill.milling:create', 1);
+INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_production_edit_production_manage', 'PRODUCTION', 'EDIT', 'production:manage', 1);
+INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_production_edit_auto_rice_mill_milling_create', 'PRODUCTION', 'EDIT', 'auto_rice_mill.milling:create', 1);
+INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_production_delete_production_manage', 'PRODUCTION', 'DELETE', 'production:manage', 1);
+INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_production_delete_auto_rice_mill_milling_create', 'PRODUCTION', 'DELETE', 'auto_rice_mill.milling:create', 1);
+INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_production_print_production_view', 'PRODUCTION', 'PRINT', 'production:view', 1);
 INSERT IGNORE INTO `Feature` (`key`, `nameBn`, `nameEn`, `descriptionBn`, `descriptionEn`, `icon`, `tier`, `status`, `defaultEnabled`, `sortOrder`, `updatedAt`) VALUES ('MEMO_ENTRY', 'মেমো এন্ট্রি', 'Memo Entry', 'দ্রুত কাঁচা মেমো/চালান এন্ট্রি, পরে যাচাই করে বিক্রয় বা ক্রয় ভাউচারে রূপান্তর।', 'Quick rough memo / challan entry, verified and converted to sales or purchase vouchers later.', '📝', 'FREE', 'COMING_SOON', 0, 150, CURRENT_TIMESTAMP(3));
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_memo_entry_view_memo_view', 'MEMO_ENTRY', 'VIEW', 'memo:view', 0);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_memo_entry_create_memo_manage', 'MEMO_ENTRY', 'CREATE', 'memo:manage', 0);

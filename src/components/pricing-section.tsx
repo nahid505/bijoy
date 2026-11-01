@@ -3,9 +3,10 @@ import Link from "next/link";
 import { toBnDigits } from "@/lib/format";
 import { FeatureComparison, PlanCards, type FeatureRow, type PlanCardData } from "./plan-cards";
 
-export function PricingSection({ heading = "h1", plans, features, cycle, trialDays, currency, loggedIn, basePath }: {
+export function PricingSection({ heading = "h1", plans, features, cycle, trialDays, currency, loggedIn, basePath, showComparison = true }: {
   plans: PlanCardData[]; features: FeatureRow[];
   heading?: "h1" | "h2"; cycle: "MONTHLY" | "YEARLY"; trialDays: number; currency: string; loggedIn: boolean; basePath: string;
+  showComparison?: boolean;
 }) {
   const Heading = heading;
   const tab = (c: "MONTHLY" | "YEARLY", label: string) => (
@@ -23,12 +24,14 @@ export function PricingSection({ heading = "h1", plans, features, cycle, trialDa
         <PlanCards plans={plans} features={features} cycle={cycle} currency={currency}
           cta={(p) => loggedIn
             ? <Link prefetch={false} href="/billing" className="btn-secondary w-full justify-center">সাবস্ক্রিপশন দেখুন</Link>
-            : <Link prefetch={false} href={`/register?plan=${p.code}`} className={`${p.code === "BUSINESS" ? "btn-primary" : "btn-secondary"} w-full justify-center`}>{p.free ? "ফ্রি শুরু করুন" : trialDays > 0 ? "ফ্রি ট্রায়াল শুরু করুন" : "শুরু করুন"}</Link>} />
+            : <Link prefetch={false} href={`/register?plan=${p.code}`} className={`${p.code === "BUSINESS" ? "btn-primary" : "btn-secondary"} w-full justify-center`}>{p.free ? "ফ্রি শুরু করুন" : trialDays > 0 ? "ফ্রি ট্রায়াল শুরু করুন" : "প্ল্যানটি নিন"}</Link>} />
       </div>
-      <div className="panel mt-10 p-4 sm:p-6">
-        <h2 className="mb-3 text-lg font-bold text-ink-900">প্ল্যান তুলনা</h2>
-        <FeatureComparison plans={plans} features={features} />
-      </div>
+      {showComparison && (
+        <div className="panel mt-10 p-4 sm:p-6">
+          <h2 className="mb-3 text-lg font-bold text-ink-900">প্ল্যান তুলনা</h2>
+          <FeatureComparison plans={plans} features={features} />
+        </div>
+      )}
     </section>
   );
 }

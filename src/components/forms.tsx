@@ -257,10 +257,10 @@ export function ConfirmSubmitButton({
   );
 }
 
-export function PrintButton({ label = "প্রিন্ট" }: { label?: string }) {
+export function PrintButton({ label = "প্রিন্ট", className = "btn-secondary" }: { label?: string; className?: string }) {
   const t = useT();
   return (
-    <button type="button" className="btn-secondary" onClick={() => window.print()}>
+    <button type="button" className={className} onClick={() => window.print()}>
       🖨 {t(label)}
     </button>
   );

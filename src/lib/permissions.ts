@@ -38,6 +38,11 @@ export const PERMISSION_GROUPS = [
       { key: "vouchers:create", label: "ভাউচার তৈরি" },
       { key: "vouchers:edit", label: "ভাউচার সম্পাদনা" },
       { key: "vouchers:delete", label: "ভাউচার মুছা" },
+      {
+        key: "vouchers:verify",
+        label: "লেনদেন যাচাই ও অনুমোদন (ভেরিফিকেশন)",
+        hint: "লেনদেন ভেরিফাই ও রিজেক্ট করার ক্ষমতা, ভেরিফাইড লেনদেন আনলক ও পুনরায় যাচাই করার অনুমতি",
+      },
     ],
   },
   {

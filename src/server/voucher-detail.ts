@@ -8,13 +8,14 @@ export async function loadVoucher(businessId: string, id: string) {
       partyAccount: { include: { customer: true, supplier: true } },
       cashAccount: { select: { name: true } },
       warehouse: { select: { name: true } },
-      createdBy: { select: { name: true } },
-      updatedBy: { select: { name: true } },
+      createdBy: { select: { id: true, name: true } },
+      updatedBy: { select: { id: true, name: true } },
+      verifiedBy: { select: { id: true, name: true } },
       entries: { orderBy: { lineNo: "asc" }, include: { account: { select: { id: true, name: true, group: { select: { name: true } } } } } },
       items: {
         orderBy: { lineNo: "asc" },
         include: {
-          product: { select: { name: true, code: true } },
+          product: { select: { name: true, code: true, depotCommissionRate: true, depotCommissionType: true } },
           unit: { select: { name: true } },
           warehouse: { select: { name: true } },
           stockMovements: { where: { batchId: { not: null } }, orderBy: { createdAt: "asc" }, select: { quantityIn: true, quantityOut: true, batch: { select: { batchNo: true, expiryDate: true } } } },

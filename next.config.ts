@@ -26,6 +26,9 @@ const nextConfig: NextConfig = {
       { source: "/purchases/new", destination: "/vouchers/purchase/new", permanent: false },
       { source: "/sales/new", destination: "/vouchers/sales/new", permanent: false },
       { source: "/auto-rice-mill/milling", destination: "/production/new", permanent: false },
+      { source: "/vouchers/v/new", destination: "/depot/deliveries/new", permanent: false },
+      { source: "/vouchers/view/:id", destination: "/vouchers/v/:id", permanent: false },
+      { source: "/vouchers/edit/:id", destination: "/vouchers/v/:id/edit", permanent: false },
     ];
   },
 };

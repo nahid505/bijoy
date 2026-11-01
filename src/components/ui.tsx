@@ -8,15 +8,17 @@ export async function PageHeader({
   description,
   actions,
   crumbs,
+  className = "mb-5",
 }: {
-  title: string;
-  description?: string;
+  title: string | React.ReactNode;
+  description?: string | React.ReactNode;
   actions?: React.ReactNode;
   crumbs?: { label: string; href?: string }[];
+  className?: string;
 }) {
   const t = await getT();
   return (
-    <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div className={`flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between ${className}`}>
       <div>
         {crumbs && (
           <nav className="no-print mb-1 flex flex-wrap items-center gap-1 text-xs text-slate-500">
@@ -28,10 +30,16 @@ export async function PageHeader({
             ))}
           </nav>
         )}
-        <h1 className="text-xl font-bold text-ink-900">{t(title)}</h1>
-        {description && <p className="mt-0.5 text-sm text-slate-500">{t(description)}</p>}
+        <h1 className="text-xl font-bold text-ink-900">{typeof title === "string" ? t(title) : title}</h1>
+        {description && (
+          typeof description === "string" ? (
+            <p className="mt-0.5 text-sm text-slate-500">{t(description)}</p>
+          ) : (
+            <div className="mt-0.5 text-sm text-slate-500">{description}</div>
+          )
+        )}
       </div>
-      {actions && <div className="no-print flex flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="no-print flex items-center gap-2 overflow-x-auto whitespace-nowrap py-2 no-scrollbar max-w-full">{actions}</div>}
     </div>
   );
 }

@@ -297,6 +297,7 @@ export async function ProductEditPage({ id, kind = "GENERAL" }: { id: string | n
                   purchasePrice: num(pr.purchasePrice), salePrice: num(pr.salePrice), wholesalePrice: num(pr.wholesalePrice), depotCommissionRate: num(pr.depotCommissionRate),
                   depotCommissionType: pr.depotCommissionType, isDepotProduct: pr.isDepotProduct,
                   minStock: num(pr.minStock), openingStock: num(pr.openingStock), openingRate: num(pr.openingRate), trackBatch: pr.trackBatch,
+                  packSize: num(pr.packSize) || 24,
                 }
               : {}
           }

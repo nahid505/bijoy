@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/server/auth";
 import { loadPlans } from "@/server/billing/plans";
 import { PricingSection } from "@/components/pricing-section";
 import { PublicFooter, PublicHeader } from "@/components/public-site";
+import { DashboardPreviewGallery } from "@/components/dashboard-preview-gallery";
 import { toBnDigits } from "@/lib/format";
 
 export const metadata: Metadata = {
@@ -40,28 +41,11 @@ const FAQ = [
   { q: "আমার ডেটা কি অন্য কেউ দেখতে পারবে?", a: "না। প্রতিটি ব্যবসার ডেটা আলাদা; শুধু আপনি যাদের অনুমতি দেবেন তারাই দেখতে পারবেন।" },
 ];
 
-/** Static preview of the product (drawn with markup — no real customer data). */
-function Preview({ title, rows }: { title: string; rows: [string, string][] }) {
-  return (
-    <figure className="panel overflow-hidden">
-      <div className="flex items-center gap-1.5 border-b border-rule bg-slate-50 px-3 py-2" aria-hidden>
-        <span className="h-2.5 w-2.5 rounded-full bg-red-300" /><span className="h-2.5 w-2.5 rounded-full bg-amber-300" /><span className="h-2.5 w-2.5 rounded-full bg-green-300" />
-      </div>
-      <div className="p-4">
-        <p className="mb-3 font-semibold text-ink-900">{title}</p>
-        <ul className="space-y-1.5 text-sm">
-          {rows.map(([a, b]) => <li key={a} className="flex justify-between border-b border-dashed border-rule pb-1.5"><span className="text-slate-600">{a}</span><span className="font-medium tabular-nums text-ink-900">{b}</span></li>)}
-        </ul>
-      </div>
-      <figcaption className="sr-only">{title} — নমুনা</figcaption>
-    </figure>
-  );
-}
-
 export default async function Home({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const cycle = (await searchParams).cycle === "YEARLY" ? "YEARLY" : "MONTHLY";
+  const sp = await searchParams;
+  const cycle = sp?.cycle === "YEARLY" ? "YEARLY" : "MONTHLY";
   const [user, { plans, features, settings }] = await Promise.all([getCurrentUser(), loadPlans({ publicOnly: true, activeOnly: true })]);
-  const trial = settings.trialDays;
+  const trial = settings?.trialDays ?? 0;
   const email = process.env.PLATFORM_SUPPORT_EMAIL;
   return (
     <div className="min-h-screen bg-paper">
@@ -72,8 +56,10 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.07]" style={{ backgroundImage: "repeating-linear-gradient(0deg, #fff 0 1px, transparent 1px 28px)" }} />
           <div className="relative mx-auto grid max-w-6xl gap-10 px-4 py-16 md:grid-cols-2 md:py-24">
             <div>
-              <h1 className="text-3xl font-bold leading-tight sm:text-4xl">ব্যবসার পুরো হিসাব,<br />সহজ বাংলায়।</h1>
-              <p className="mt-4 text-lg text-ink-100">হিসাব, বিক্রয়-ক্রয়, স্টক, পিওএস, পে-রোল ও রিপোর্ট — এক জায়গায়। দোকান থেকে ডিস্ট্রিবিউটর, সব ধরনের ব্যবসার জন্য।</p>
+              <h1 className="text-2xl font-bold leading-snug sm:text-3xl md:text-4xl md:leading-tight lg:text-[2.6rem] lg:leading-[1.22] text-balance">
+                ছোট কিংবা বড় ব্যবসার জন্য আন্তর্জাতিক মানের সহজ ও নিরাপদ সফটওয়্যার।
+              </h1>
+              <p className="mt-4 text-base sm:text-lg text-ink-100">হিসাব, বিক্রয়-ক্রয়, স্টক, পিওএস, পে-রোল ও রিপোর্ট — এক জায়গায়। দোকান থেকে ডিস্ট্রিবিউটর, সব ধরনের ব্যবসার জন্য।</p>
               <div className="mt-7 flex flex-wrap gap-3">
                 {user ? (
                   <Link prefetch={false} href="/dashboard" className="btn-primary px-5 py-2.5 text-base">ড্যাশবোর্ডে যান →</Link>
@@ -87,14 +73,14 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
               </div>
               <p className="mt-3 text-sm text-ink-200">কার্ড লাগবে না · যেকোনো সময় বাতিল · ডেটা কখনো মুছে না</p>
             </div>
-            <div className="hidden text-ink-900 md:block">
-              <Preview title="আজকের সারসংক্ষেপ" rows={[["আজকের বিক্রি", "৳ ৪৮,৫৫০"], ["নগদ জমা", "৳ ৩২,১০০"], ["কাস্টমারের বাকি", "৳ ১,২৫,৪০০"], ["কম স্টক পণ্য", "৭টি"], ["৩০ দিনে মেয়াদ শেষ", "৩টি ব্যাচ"]]} />
+            <div className="w-full mt-6 md:mt-0">
+              <DashboardPreviewGallery />
             </div>
           </div>
         </section>
 
         {/* features */}
-        <section id="features" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-16">
+        <section id="features" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-12 md:py-16">
           <h2 className="text-center text-2xl font-bold text-ink-900">যা যা পাচ্ছেন</h2>
           <p className="mt-2 text-center text-slate-600">প্রয়োজনমতো মডিউল চালু বা বন্ধ করুন</p>
           <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -108,21 +94,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           </ul>
         </section>
 
-        {/* screenshots */}
-        <section aria-labelledby="shots" className="bg-white py-16">
-          <div className="mx-auto max-w-6xl px-4">
-            <h2 id="shots" className="text-center text-2xl font-bold text-ink-900">এক নজরে</h2>
-            <div className="mt-8 grid gap-4 md:grid-cols-3">
-              <Preview title="লাভ-ক্ষতি (এই মাস)" rows={[["বিক্রয়", "৳ ৯,৮০,০০০"], ["বিক্রিত পণ্যের ব্যয়", "৳ ৭,১০,০০০"], ["পরিচালন ব্যয়", "৳ ১,১৫,০০০"], ["নিট লাভ", "৳ ১,৫৫,০০০"]]} />
-              <Preview title="কাস্টমার লেজার" rows={[["০১ অক্টো · বিক্রয় #১০৪২", "৳ ১২,৫০০"], ["০৩ অক্টো · রসিদ", "− ৳ ১০,০০০"], ["০৫ অক্টো · বিক্রয় #১০৫৮", "৳ ৮,২০০"], ["বর্তমান বাকি", "৳ ১০,৭০০"]]} />
-              <Preview title="স্টক অবস্থা" rows={[["মোট পণ্য", "৪৮২টি"], ["স্টক মূল্য", "৳ ১৮,৪০,০০০"], ["কম স্টক", "৭টি"], ["মেয়াদোত্তীর্ণ", "২টি ব্যাচ"]]} />
-            </div>
-            <p className="mt-3 text-center text-xs text-slate-400">নমুনা সংখ্যা — উদাহরণ মাত্র</p>
-          </div>
-        </section>
-
         {/* free trial */}
-        <section id="trial" aria-labelledby="trial-heading" className="mx-auto max-w-6xl scroll-mt-20 px-4 pt-16">
+        <section id="trial" aria-labelledby="trial-heading" className="mx-auto max-w-6xl scroll-mt-20 px-4 pb-12 md:pb-16">
           <div className="panel grid gap-6 p-6 md:grid-cols-[1fr_2fr] md:items-center">
             <div>
               <h2 id="trial-heading" className="text-2xl font-bold text-ink-900">{trial > 0 ? `${toBnDigits(trial)} দিনের ফ্রি ট্রায়াল` : "ফ্রি প্ল্যান দিয়ে শুরু করুন"}</h2>
@@ -145,9 +118,19 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           </div>
         </section>
 
-        {/* pricing + comparison (from the database) */}
-        <div className="mx-auto max-w-6xl px-4 py-16">
-          <PricingSection heading="h2" plans={plans} features={features} cycle={cycle} trialDays={trial} currency={settings.currency === "BDT" ? "৳" : settings.currency} loggedIn={!!user} basePath="/" />
+        {/* pricing */}
+        <div className="mx-auto max-w-6xl px-4 pb-12 md:pb-16">
+          <PricingSection
+            heading="h2"
+            plans={plans}
+            features={features}
+            cycle={cycle}
+            trialDays={trial}
+            currency={settings?.currency === "BDT" ? "৳" : (settings?.currency ?? "৳")}
+            loggedIn={!!user}
+            basePath="/"
+            showComparison={false}
+          />
         </div>
 
         {/* why */}
@@ -185,25 +168,34 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
 
         {/* contact + final CTA */}
         <section id="contact" aria-labelledby="contact-heading" className="scroll-mt-20 bg-brand-700 text-white">
-          <div className="mx-auto flex max-w-6xl flex-col items-start gap-6 px-4 py-12 md:flex-row md:items-center md:justify-between">
-            <div>
+          <div className="mx-auto flex max-w-6xl flex-col items-start gap-8 px-4 py-12 md:flex-row md:items-center md:justify-between">
+            <div className="flex-1">
               <h2 id="contact-heading" className="text-2xl font-bold">যোগাযোগ</h2>
               <p className="mt-1 text-brand-50">প্রশ্ন আছে বা ডেমো দেখতে চান? সরাসরি যোগাযোগ করুন:</p>
-              <address className="mt-4 space-y-2 not-italic">
+              <address className="mt-4 space-y-2.5 not-italic">
                 <p className="text-lg font-semibold">
                   {CONTACT.person} <span className="text-sm font-normal text-brand-100">({CONTACT.role})</span>
                 </p>
                 <p className="flex items-start gap-2"><span aria-hidden>📍</span><span><span className="sr-only">ঠিকানা: </span>{CONTACT.address}</span></p>
                 <p className="flex items-center gap-2">
                   <span aria-hidden>📞</span>
-                  <a href={CONTACT.phoneHref} className="text-lg font-bold underline decoration-2 underline-offset-4 hover:text-brand-50" aria-label={`কল করুন: ${CONTACT.phoneDisplay}`}>{CONTACT.phoneDisplay}</a>
+                  <a href={CONTACT.phoneHref} className="text-lg font-bold underline decoration-2 underline-offset-4 hover:text-brand-50" aria-label={`কল করুন: ${CONTACT.phoneDisplay}`}>{CONTACT.phoneWithWa}</a>
                 </p>
-                {email && <p className="flex items-center gap-2"><span aria-hidden>✉</span><a href={`mailto:${email}`} className="underline">{email}</a></p>}
+                <p className="flex items-center gap-2">
+                  <span aria-hidden>💬</span>
+                  <a href={CONTACT.whatsappHref} target="_blank" rel="noopener noreferrer" className="text-base font-semibold underline decoration-2 underline-offset-4 hover:text-brand-50">হোয়াটসঅ্যাপে চ্যাট করুন</a>
+                </p>
+                <p className="flex items-center gap-2">
+                  <span aria-hidden>✉️</span>
+                  <a href={CONTACT.emailHref} className="text-base font-semibold underline decoration-2 underline-offset-4 hover:text-brand-50">{CONTACT.email}</a>
+                </p>
               </address>
             </div>
-            <Link prefetch={false} href={user ? "/dashboard" : "/register"} className="rounded-md bg-white px-5 py-2.5 font-semibold text-brand-800 hover:bg-brand-50">
-              {user ? "ড্যাশবোর্ডে যান →" : "ফ্রি ট্রায়াল শুরু করুন"}
-            </Link>
+            <div className="flex flex-col items-start sm:items-center gap-4">
+              <Link prefetch={false} href={user ? "/dashboard" : "/register"} className="rounded-md bg-white px-5 py-2.5 font-semibold text-brand-800 hover:bg-brand-50 shadow-sm">
+                {user ? "ড্যাশবোর্ডে যান →" : "ফ্রি ট্রায়াল শুরু করুন"}
+              </Link>
+            </div>
           </div>
         </section>
       </main>

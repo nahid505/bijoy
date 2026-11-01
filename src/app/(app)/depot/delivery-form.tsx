@@ -14,7 +14,7 @@ import { SearchableAccountSelect } from "@/components/account-select";
 import type { AccountOption, PartyOption, ProductOption, WarehouseOption } from "@/components/trade-parts";
 import { challanTotals, DEPOT_MODE_LABELS, depotTotals, type DepotMode } from "@/lib/depot";
 import { formatMoney, formatQty, toBnDigits } from "@/lib/format";
-import { round2 } from "@/lib/calc";
+import { round2, round3 } from "@/lib/calc";
 import { useT } from "@/components/lang";
 
 export interface DepotLineState {
@@ -23,6 +23,9 @@ export interface DepotLineState {
   quantity: string;
   /** free / scheme quantity — leaves the stock, never billed */
   freeQuantity: string;
+  /** dual unit inputs: cartons and broken pieces */
+  freeCartons?: string;
+  freePieces?: string;
   /** DO release: commission per unit; market sale: the sale rate (= the challan rate) */
   rate: string;
   /** dealer challan rate — the product's latest purchase price, filled in when the product is chosen */
@@ -46,7 +49,7 @@ export interface DepotDefaults {
 
 const n = (v: string) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 let seq = 1000;
-const blankLine = (): DepotLineState => ({ key: ++seq, product: null, quantity: "", freeQuantity: "", rate: "", challanRate: "" });
+const blankLine = (): DepotLineState => ({ key: ++seq, product: null, quantity: "", freeQuantity: "", freeCartons: "", freePieces: "", rate: "", challanRate: "" });
 /** the challan rate is the product's company price / DP (what the depot pays the company) */
 const purchaseRate = (p: ProductOption | null) => (p && p.purchasePrice > 0 ? String(p.purchasePrice) : "");
 /** DO release: the commission per unit; market sale: the depot product's dealer rate (else its DP) */
@@ -83,6 +86,31 @@ export function DepotDeliveryForm({
   const [f, setF] = useState(defaults);
   const set = <K extends keyof DepotDefaults>(k: K, v: DepotDefaults[K]) => setF((x) => ({ ...x, [k]: v }));
   const setLine = (key: number, patch: Partial<DepotLineState>) => setF((x) => ({ ...x, lines: x.lines.map((l) => (l.key === key ? { ...l, ...patch } : l)) }));
+  const getFreeCtn = (l: DepotLineState) => {
+    if (l.freeCartons !== undefined) return l.freeCartons;
+    const f = n(l.freeQuantity);
+    const sz = l.product?.packSize || 24;
+    const c = f > 0 ? Math.floor(f / sz) : 0;
+    return c > 0 ? String(c) : "";
+  };
+  const getFreePcs = (l: DepotLineState) => {
+    if (l.freePieces !== undefined) return l.freePieces;
+    const f = n(l.freeQuantity);
+    const sz = l.product?.packSize || 24;
+    const p = f > 0 ? round3(f % sz) : 0;
+    return p > 0 ? String(p) : "";
+  };
+  function updateFree(key: number, ctnStr: string, pcsStr: string, product: ProductOption | null) {
+    const packSize = product?.packSize || 24;
+    const ctn = n(ctnStr);
+    const pcs = n(pcsStr);
+    const totalPcs = round3(ctn * packSize + pcs);
+    setLine(key, {
+      freeCartons: ctnStr,
+      freePieces: pcsStr,
+      freeQuantity: totalPcs > 0 ? String(totalPcs) : "",
+    });
+  }
   const doRelease = f.mode === "COMPANY_PAID";
   const money = (v: number) => formatMoney(v, currency);
   const used = f.lines.filter((l) => l.product || l.quantity);
@@ -348,7 +376,7 @@ export function DepotDeliveryForm({
                   <th className="w-10 px-3 py-3 text-center">#</th>
                   <th className="min-w-48 px-3 py-3 text-left">{t("পণ্যের নাম ও কোড")}</th>
                   <th className="w-36 px-3 py-3 text-center">{t("মূল পরিমাণ")}</th>
-                  <th className="w-28 px-3 py-3 text-center">{t("ফ্রি পরিমাণ")}</th>
+                  <th className="w-48 px-2 py-3 text-center">{t("ফ্রি পরিমাণ (কা. ও পিস)")}</th>
                   <th className="w-32 px-3 py-3 text-right" title={t("পণ্যের সর্বশেষ ক্রয়মূল্য — চালানে ছাপা হবে")}>
                     {t("দর / রেট")}
                   </th>
@@ -397,13 +425,18 @@ export function DepotDeliveryForm({
                             book="depot"
                             id={`line-${i}`}
                             value={l.product}
-                            onChange={(p) =>
+                            onChange={(p) => {
+                              const ctn = getFreeCtn(l);
+                              const pcs = getFreePcs(l);
+                              const packSize = p?.packSize || 24;
+                              const totalPcs = round3(n(ctn) * packSize + n(pcs));
                               setLine(l.key, {
                                 product: p,
                                 rate: rateFor(f.mode, p),
                                 challanRate: purchaseRate(p),
-                              })
-                            }
+                                freeQuantity: totalPcs > 0 ? String(totalPcs) : (l.freeQuantity || ""),
+                              });
+                            }}
                             placeholder={t("পণ্য খুঁজুন")}
                             currency={currency}
                           />
@@ -452,20 +485,57 @@ export function DepotDeliveryForm({
                       </td>
 
                       {/* ফ্রি পরিমাণ */}
-                      <td className="px-3 py-3">
-                        <div className="flex items-center justify-center">
-                          <input
-                            aria-label={t("ফ্রি পরিমাণ")}
-                            className="input-num h-8 w-20 text-center font-bold text-emerald-700 bg-emerald-50/50 border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500/20"
-                            type="text"
-                            inputMode="decimal"
-                            data-numeric
-                            min="0"
-                            step="any"
-                            value={l.freeQuantity}
-                            onChange={(e) => setLine(l.key, { freeQuantity: e.target.value })}
-                            placeholder="০"
-                          />
+                      <td className="px-2 py-3">
+                        <div className="flex flex-col items-center gap-1">
+                          <div className="flex items-center gap-1.5">
+                            <div className="flex flex-col items-center">
+                              <input
+                                aria-label={t("কার্টুন")}
+                                title={t("কার্টুন")}
+                                placeholder="০"
+                                className="input-num h-8 w-16 text-center font-bold text-emerald-700 bg-emerald-50/50 border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500/20 text-xs px-1"
+                                type="text"
+                                inputMode="decimal"
+                                data-numeric
+                                min="0"
+                                step="any"
+                                value={getFreeCtn(l)}
+                                onChange={(e) => {
+                                  const ctn = e.target.value;
+                                  const currentPcs = getFreePcs(l);
+                                  updateFree(l.key, ctn, currentPcs, l.product);
+                                }}
+                              />
+                              <span className="text-[10px] text-slate-500 mt-0.5">{t("কার্টুন")}</span>
+                            </div>
+                            <span className="text-slate-400 font-bold mb-3">+</span>
+                            <div className="flex flex-col items-center">
+                              <input
+                                aria-label={t("পিস")}
+                                title={t("পিস")}
+                                placeholder="০"
+                                className="input-num h-8 w-16 text-center font-bold text-emerald-700 bg-emerald-50/50 border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500/20 text-xs px-1"
+                                type="text"
+                                inputMode="decimal"
+                                data-numeric
+                                min="0"
+                                step="any"
+                                value={getFreePcs(l)}
+                                onChange={(e) => {
+                                  const pcs = e.target.value;
+                                  const currentCtn = getFreeCtn(l);
+                                  updateFree(l.key, currentCtn, pcs, l.product);
+                                }}
+                              />
+                              <span className="text-[10px] text-slate-500 mt-0.5">{t("পিস")}</span>
+                            </div>
+                          </div>
+                          {n(l.freeQuantity) > 0 && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded tabular-nums whitespace-nowrap">
+                              <span>= {formatQty(n(l.freeQuantity))} {t("পিস")}</span>
+                              <span className="text-[10px] text-emerald-600 font-normal">({t("১ কা.")} = {toBnDigits(l.product?.packSize || 24)})</span>
+                            </span>
+                          )}
                         </div>
                         <FieldError name={`lines.${i}.freeQuantity`} />
                       </td>

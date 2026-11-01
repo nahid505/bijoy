@@ -13,8 +13,8 @@ import { partyListWhere } from "@/server/party-scope";
 import { partySummaries } from "@/server/services/ledger";
 import { REPORT_ACCESS } from "@/lib/permissions";
 import { LedgerAvatar } from "@/components/ledger-avatar";
-import { Badge, FilterField, PageHeader, PrintHeader } from "@/components/ui";
-import { PrintButton } from "@/components/forms";
+import { Badge, PrintHeader } from "@/components/ui";
+import { PartyLedgerFilter } from "./party-ledger-filter";
 import type { SearchParams } from "@/server/params";
 
 interface PartyLedgerListProps {
@@ -22,7 +22,7 @@ interface PartyLedgerListProps {
   searchParams: Record<string, string | undefined>;
   basePath: string;
   title: string;
-  description: string;
+  description?: string;
   crumbs: { label: string; href?: string }[];
 }
 
@@ -188,105 +188,65 @@ export async function PartyLedgerList({
         subtitle={periodSubtitle}
       />
 
-      <PageHeader
-        title={t(title)}
-        description={t(description)}
-        crumbs={crumbs}
-        actions={
-          <div className="flex items-center gap-2">
-            {canCreate && (
-              <Link
-                prefetch={false}
-                href={isCustomer ? "/customers/new" : "/suppliers/new"}
-                className="btn-primary flex items-center gap-1.5"
-              >
-                <span>{isCustomer ? "👤" : "🏭"}</span>
-                <span>{isCustomer ? t("নতুন কাস্টমার") : t("নতুন সরবরাহকারী")}</span>
-              </Link>
-            )}
-          </div>
-        }
-      />
-
-      <section className="panel overflow-hidden border border-slate-200/80 shadow-xs">
-        {/* Search & Filters */}
-        <div className="border-b border-slate-100 bg-slate-50/60 p-4">
-          <form
-            action={basePath}
-            method="get"
-            className="no-print flex flex-wrap items-end gap-3"
-          >
-            <FilterField label={t("খুঁজুন")}>
-              <input
-                name="q"
-                defaultValue={p.q}
-                className="input w-56 sm:w-64"
-                placeholder={isCustomer ? t("নাম, কোড, মোবাইল…") : t("নাম, কোড, মোবাইল…")}
-              />
-            </FilterField>
-            <FilterField label={t("হতে")}>
-              <input
-                type="date"
-                name="from"
-                defaultValue={from}
-                className="input w-36"
-              />
-            </FilterField>
-            <FilterField label={t("পর্যন্ত")}>
-              <input
-                type="date"
-                name="to"
-                defaultValue={to}
-                className="input w-36"
-              />
-            </FilterField>
-            <FilterField label={t("ফিল্টার")}>
-              <select
-                name="status"
-                defaultValue={filterStatus}
-                className="input w-36"
-              >
-                <option value="all">{t("সকল")}</option>
-                <option value="due">{isCustomer ? t("শুধু বকেয়া পাওনা") : t("শুধু দেনা")}</option>
-              </select>
-            </FilterField>
-            <div className="flex items-center gap-2">
-              <button
-                type="submit"
-                className="btn-secondary min-h-[38px] px-4 font-semibold text-xs sm:text-sm"
-              >
-                <span>🔍</span>
-                <span>{t("খুঁজুন")}</span>
-              </button>
-              <Link
-                prefetch={false}
-                href={basePath}
-                className="btn-ghost min-h-[38px] px-3 text-xs sm:text-sm text-slate-500 hover:text-slate-700"
-              >
-                {t("রিসেট")}
-              </Link>
-              <PrintButton label={t("প্রিন্ট")} />
-              <Link
-                prefetch={false}
-                href={`/api/reports/${isCustomer ? "customers" : "suppliers"}?${new URLSearchParams({
-                  ...(p.from ? { from: p.from } : {}),
-                  ...(p.to ? { to: p.to } : {}),
-                  ...(p.q ? { q: p.q } : {}),
-                }).toString()}`}
-                className="btn-ghost min-h-[38px] px-2.5 text-xs font-semibold text-slate-600 hover:text-brand-700"
-                title={t("সিএসভি ডাউনলোড")}
-              >
-                <span>📥</span>
-                <span>CSV</span>
-              </Link>
+      <section className="panel border border-slate-200/80 shadow-xs">
+        {/* Sticky Header: Title/Action, Filter Strip, Table Column Header */}
+        <div className="sticky top-0 z-20 bg-white shadow-sm no-print rounded-t-lg">
+          {/* 1. Title + Action Bar */}
+          <div className="border-b border-slate-100 px-3.5 py-2 sm:px-6 sm:py-2.5 bg-white rounded-t-lg">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                {crumbs && (
+                  <nav className="mb-0.5 flex flex-wrap items-center gap-1 text-[11px] sm:text-xs text-slate-500">
+                    {crumbs.map((c, i) => (
+                      <span key={i} className="flex items-center gap-1">
+                        {c.href ? <Link prefetch={false} href={c.href} className="hover:text-brand-700">{t(c.label)}</Link> : t(c.label)}
+                        {i < crumbs.length - 1 && <span aria-hidden>›</span>}
+                      </span>
+                    ))}
+                  </nav>
+                )}
+                <h1 className="text-base sm:text-xl font-bold text-ink-900 leading-tight">{t(title)}</h1>
+                {description && <p className="mt-0.5 text-xs text-slate-500">{t(description)}</p>}
+              </div>
+              {canCreate && (
+                <Link
+                  prefetch={false}
+                  href={isCustomer ? "/customers/new" : "/suppliers/new"}
+                  className="btn-primary flex items-center gap-1.5 shrink-0 text-xs sm:text-sm px-2.5 py-1.5 sm:px-4 sm:py-2"
+                >
+                  <span>{isCustomer ? "👤" : "🏭"}</span>
+                  <span>{isCustomer ? t("নতুন কাস্টমার") : t("নতুন সরবরাহকারী")}</span>
+                </Link>
+              )}
             </div>
-          </form>
+          </div>
+
+          {/* 2. Filter Strip (Horizontal scroll on mobile) */}
+          <PartyLedgerFilter
+            basePath={basePath}
+            isCustomer={isCustomer}
+            q={p.q}
+            from={from}
+            to={to}
+            filterStatus={filterStatus}
+          />
+
+          {/* 3. Table Column Header Bar */}
+          <div className="border-b border-gray-200 bg-slate-50/90 px-3.5 sm:px-6 py-2 sm:py-2.5 flex items-center justify-between text-xs sm:text-sm font-bold text-gray-700 tracking-wider">
+            <div className="min-w-0 flex-1 truncate">
+              {isCustomer ? t("কাস্টমার / হিসাব বিবরণী") : t("সরবরাহকারী / হিসাব বিবরণী")}
+            </div>
+            <div className="text-right w-48 sm:w-64 shrink-0 font-bold">
+              <span>{isCustomer ? t("ব্যালেন্স / মোট পাওনা") : t("ব্যালেন্স / মোট দেনা")}</span>{" "}
+              <span className="text-xs font-normal text-slate-400">({cur})</span>
+            </div>
+          </div>
         </div>
 
         {/* List / Card Table View */}
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
-            <thead>
+            <thead className="hidden print:table-header-group">
               <tr className="border-b border-gray-200 bg-slate-50/80 text-xs sm:text-sm font-semibold text-gray-700 tracking-wider">
                 <th className="py-4 px-4 sm:px-6 font-bold">{isCustomer ? t("কাস্টমার / হিসাব বিবরণী") : t("সরবরাহকারী / হিসাব বিবরণী")}</th>
                 <th className="py-4 px-4 sm:px-6 text-right w-48 sm:w-64 font-bold">

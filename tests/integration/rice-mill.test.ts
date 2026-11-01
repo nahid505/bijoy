@@ -15,7 +15,7 @@ import { saveProduction } from "@/server/services/production";
 import { deleteVoucher, saveCashVoucher, saveTradeVoucher } from "@/server/services/voucher";
 import { balancesBefore } from "@/server/services/ledger";
 import { trialBalance } from "@/server/services/report";
-import { dailyMilling, millOutputKind, millProducts, millSales, millStock, millSummary, toKg } from "@/server/services/rice-mill";
+import { dailyMilling, millOutputKind, millProducts, millSales, millStock, millSummary, millingProfitAnalysis, toKg } from "@/server/services/rice-mill";
 import { DAILY_MILLING_REPORT, RICE_MILL_REPORT } from "@/server/reports/rice-mill";
 import { dailyStock, DAILY_STOCK_REPORT } from "@/server/reports/daily-stock";
 
@@ -115,7 +115,7 @@ run("auto rice mill", () => {
       ],
       extraCost: 3000, costAccountId: acc.CASH,
     } as never;
-    await saveProduction(ctx, input);
+    const prd = await saveProduction(ctx, input);
     const m = await millSummary(ctx.businessId, OCT);
     expect([m.milling.runs, m.milling.milledKg, m.milling.producedKg, m.milling.lossKg, m.milling.lossPercent, m.milling.extraCost]).toEqual([1, 5000, 4950, 50, 1, 3000]);
     expect(Object.fromEntries(m.milling.produced.map((o) => [o.name, o.percent]))).toEqual({ "মিনিকেট চাল": 66, "তুষ": 20, "কুঁড়া": 8, "খুদ": 5 });
@@ -123,6 +123,21 @@ run("auto rice mill", () => {
     expect(m.purchase.byVariety[0].variety).toBe("মিনিকেট");
     const ids = await millProducts(ctx.businessId);
     expect([ids.paddy, ids.outputs.sort()]).toEqual([[p.paddy], [p.rice, p.broken, p.bran, p.husk].sort()]);
+
+    const analysis = await millingProfitAnalysis(ctx.businessId, prd.id);
+    expect(analysis).not.toBeNull();
+    expect(analysis!.items).toHaveLength(4);
+    expect(analysis!.totalRawFifoCost).toBeGreaterThan(0);
+    expect(analysis!.rawInputs).toHaveLength(1);
+    expect(analysis!.rawInputs[0].quantityKg).toBe(5000);
+    expect(analysis!.rawInputs[0].fifoCost).toBe(analysis!.totalRawFifoCost);
+    expect(analysis!.rawInputs[0].ratePerMon).toBeGreaterThan(0);
+    expect(analysis!.consumedLots.length).toBeGreaterThan(0);
+    expect(analysis!.totalPotentialRevenue).toBeGreaterThan(0);
+    expect(analysis!.totalNetProfit).toBe(Math.round((analysis!.totalPotentialRevenue - analysis!.totalRawFifoCost) * 100) / 100);
+    expect(analysis!.items.reduce((s, it) => s + it.rawMaterialCost, 0)).toBeCloseTo(analysis!.totalRawFifoCost, 2);
+    const riceItem = analysis!.items.find((it) => it.name === "মিনিকেট চাল")!;
+    expect(riceItem.rawMaterialCost).toBeCloseTo(analysis!.totalRawFifoCost * (3300 / 4950), 2);
   });
 
   it("daily milling: one row per batch — paddy, rice / কুঁড়া / খুদ / তুষ in kg and bags, yield %, operator; day totals", async () => {

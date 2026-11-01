@@ -84,7 +84,10 @@ export async function revalueProducts(tx: Tx, businessId: string, productIds: It
   for (const productId of new Set(productIds)) {
     const product = await tx.product.findUniqueOrThrow({ where: { id: productId }, select: { id: true, name: true, purchasePrice: true, trackBatch: true } });
     const moves: Move[] = await tx.stockMovement.findMany({
-      where: { productId },
+      where: {
+        productId,
+        OR: [{ voucherId: null }, { voucher: { verificationStatus: { not: "REJECTED" } } }],
+      },
       orderBy: [{ date: "asc" }, { createdAt: "asc" }, { id: "asc" }],
       include: { voucher: { select: { type: true } } },
     });

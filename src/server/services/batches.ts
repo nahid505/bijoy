@@ -162,8 +162,10 @@ export async function syncBatchQuantities(tx: Tx, productId: string) {
     await rawExec(tx, sql`
       UPDATE "ProductBatch" b
       JOIN (
-        SELECT pb."id", COALESCE(SUM(m."quantityIn" - m."quantityOut"), 0) AS qty
-        FROM "ProductBatch" pb LEFT JOIN "StockMovement" m ON m."batchId" = pb."id"
+        SELECT pb."id", COALESCE(SUM(CASE WHEN v."verificationStatus" = 'REJECTED' THEN 0 ELSE m."quantityIn" - m."quantityOut" END), 0) AS qty
+        FROM "ProductBatch" pb
+        LEFT JOIN "StockMovement" m ON m."batchId" = pb."id"
+        LEFT JOIN "Voucher" v ON v."id" = m."voucherId"
         WHERE pb."productId" = ${productId}
         GROUP BY pb."id"
       ) s ON s."id" = b."id"
@@ -175,8 +177,10 @@ export async function syncBatchQuantities(tx: Tx, productId: string) {
     UPDATE "ProductBatch" b
     SET "quantity" = s.qty, "updatedAt" = CURRENT_TIMESTAMP
     FROM (
-      SELECT pb."id", COALESCE(SUM(m."quantityIn" - m."quantityOut"), 0) AS qty
-      FROM "ProductBatch" pb LEFT JOIN "StockMovement" m ON m."batchId" = pb."id"
+      SELECT pb."id", COALESCE(SUM(CASE WHEN v."verificationStatus" = 'REJECTED' THEN 0 ELSE m."quantityIn" - m."quantityOut" END), 0) AS qty
+      FROM "ProductBatch" pb
+      LEFT JOIN "StockMovement" m ON m."batchId" = pb."id"
+      LEFT JOIN "Voucher" v ON v."id" = m."voucherId"
       WHERE pb."productId" = ${productId}
       GROUP BY pb."id"
     ) s

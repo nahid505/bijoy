@@ -112,6 +112,12 @@ enum NotificationSeverity {
   INFO
 }
 
+enum VerificationStatus {
+  UNVERIFIED
+  VERIFIED
+  REJECTED
+}
+
 // ───────────────────────────── tenancy & access ─────────────────────────────
 
 model Business {
@@ -209,6 +215,7 @@ model User {
   smsCreated        SmsMessage[]       @relation("SmsCreatedBy")
   vouchersCreated   Voucher[]          @relation("VoucherCreatedBy")
   vouchersUpdated   Voucher[]          @relation("VoucherUpdatedBy")
+  vouchersVerified  Voucher[]          @relation("VoucherVerifiedBy")
 }
 
 // Permissions are string keys (see src/lib/permissions.ts); "*" = everything.
@@ -393,6 +400,11 @@ model Voucher {
   createdBy           User        @relation("VoucherCreatedBy", fields: [createdById], references: [id])
   updatedById         String?
   updatedBy           User?       @relation("VoucherUpdatedBy", fields: [updatedById], references: [id])
+  verificationStatus  VerificationStatus @default(UNVERIFIED)
+  verifiedById        String?
+  verifiedBy          User?       @relation("VoucherVerifiedBy", fields: [verifiedById], references: [id])
+  verifiedAt          DateTime?
+  verificationNote    String?
   createdAt           DateTime    @default(now())
   updatedAt           DateTime    @updatedAt
 
@@ -412,6 +424,7 @@ model Voucher {
   @@unique([businessId, sourceKey])
   @@index([businessId, type, date])
   @@index([businessId, date])
+  @@index([businessId, verificationStatus])
   @@index([partyAccountId])
   @@index([returnOfId])
 }
@@ -612,6 +625,7 @@ model Product {
   brand               Brand?              @relation(fields: [brandId], references: [id])
   unitId              String
   unit                Unit                @relation(fields: [unitId], references: [id])
+  packSize            Decimal             @default(24) @db.Decimal(14, 3)
   purchasePrice       Decimal             @default(0) @db.Decimal(14, 2) // last purchase rate (base unit)
   salePrice           Decimal             @default(0) @db.Decimal(14, 2)
   /// depot: commission the company pays per base unit delivered against its DO (FIXED: taka per unit;

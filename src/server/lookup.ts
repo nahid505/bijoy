@@ -118,10 +118,11 @@ export async function searchParties(businessId: string, kind: PartyKind, q: stri
   }));
 }
 
-export function toProductOption(p: { id: string; name: string; code: string | null; barcode: string | null; unitId: string; trackBatch: boolean; salePrice: unknown; wholesalePrice: unknown; purchasePrice: unknown; avgCost: unknown; stock: unknown; depotCommissionRate?: unknown; depotCommissionType?: string | null }): ProductOption {
+export function toProductOption(p: { id: string; name: string; code: string | null; barcode: string | null; unitId: string; trackBatch: boolean; salePrice: unknown; wholesalePrice: unknown; purchasePrice: unknown; avgCost: unknown; stock: unknown; depotCommissionRate?: unknown; depotCommissionType?: string | null; packSize?: unknown }): ProductOption {
   return {
     id: p.id, name: p.name, code: p.code, barcode: p.barcode, unitId: p.unitId, trackBatch: p.trackBatch,
     salePrice: num(p.salePrice as never), wholesalePrice: num(p.wholesalePrice as never), purchasePrice: num(p.purchasePrice as never), avgCost: num(p.avgCost as never), stock: num(p.stock as never),
+    packSize: p.packSize !== undefined ? num(p.packSize as never) || 24 : 24,
     // the challan's default commission: taka per base unit (a PERCENT product: its % of the DP)
     ...(p.depotCommissionRate !== undefined
       ? { depotCommissionRate: commissionPerUnit({ depotCommissionType: p.depotCommissionType, depotCommissionRate: num(p.depotCommissionRate as never), purchasePrice: num(p.purchasePrice as never) }) }

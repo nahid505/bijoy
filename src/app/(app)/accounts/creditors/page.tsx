@@ -12,7 +12,6 @@ export default async function CreditorsPage({ searchParams }: { searchParams: Se
       searchParams={params}
       basePath="/accounts/creditors"
       title="পাওনাদার (সরবরাহকারী দেনা)"
-      description="সরবরাহকারীদের কাছে ব্যবসার দেনা — প্রতিটি সরবরাহকারীর নিজস্ব খতিয়ান থেকে"
       crumbs={[{ label: "হিসাব", href: "/accounts" }, { label: "পাওনাদার" }]}
     />
   );

@@ -84,7 +84,7 @@ export async function dailyCash(businessId: string, params: { date?: string; sco
 
   const [openMap, entries] = await Promise.all([
     ids.length ? balancesBefore(businessId, range.gte, ids) : new Map<string, number>(),
-    ids.length ? prisma.journalEntry.findMany({ where: { businessId, book: "GENERAL", accountId: { in: ids }, date: range }, select: { voucherId: true, debit: true, credit: true } }) : [],
+    ids.length ? prisma.journalEntry.findMany({ where: { businessId, book: "GENERAL", accountId: { in: ids }, date: range, voucher: { verificationStatus: { not: "REJECTED" } } }, select: { voucherId: true, debit: true, credit: true } }) : [],
   ]);
   let opening = round2([...openMap.values()].reduce((s, v) => s + v, 0));
 
@@ -93,7 +93,7 @@ export async function dailyCash(businessId: string, params: { date?: string; sco
   const voucherIds = [...net].filter(([, v]) => round2(v) !== 0).map(([id]) => id);
   const vouchers = voucherIds.length
     ? await prisma.voucher.findMany({
-        where: { id: { in: voucherIds }, businessId },
+        where: { id: { in: voucherIds }, businessId, verificationStatus: { not: "REJECTED" } },
         orderBy: [{ date: "asc" }, { createdAt: "asc" }],
         select: {
           id: true, voucherNo: true, type: true, narration: true,

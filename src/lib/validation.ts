@@ -199,6 +199,7 @@ export const productSchema = z.object({
   purchasePrice: money,
   salePrice: money,
   wholesalePrice: money.default(0),
+  packSize: z.coerce.number().min(1, "কার্টুন সাইজ কমপক্ষে ১ হতে হবে").optional(),
   depotCommissionRate: money.optional(), // depot: commission per base unit or percent (absent = unchanged)
   depotCommissionType: z.enum(["FIXED", "PERCENT"]).optional(), // absent = unchanged
   isDepotProduct: z.boolean().optional(), // absent = unchanged (new product: general)
@@ -432,11 +433,17 @@ export type PaddyPurchaseInput = z.infer<typeof paddyPurchaseSchema>;
 
 // ───────────────────────── production (BOM) ─────────────────────────
 
-const costShare = z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).min(0, "ঋণাত্মক হতে পারবে না").max(100, "সর্বোচ্চ ১০০%");
+const costShare = z
+  .preprocess((v) => (v === "" || v === undefined || v === null ? 0 : v), z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).min(0, "ঋণাত্মক হতে পারবে না").max(100, "সর্বোচ্চ ১০০%"))
+  .default(0);
 const productLine = { productId: z.string().min(1, "পণ্য নির্বাচন করুন"), quantity };
 
-/** Shared rules: products not repeated, none both material and product, output shares total 100 %. */
-function productionRules(v: { inputs: { productId: string }[]; outputs: { productId: string; costShare: number }[] }, ctx: z.RefinementCtx) {
+/** Shared rules: products not repeated, none both material and product, output shares total 100 % (when required). */
+function productionRules(
+  v: { inputs: { productId: string }[]; outputs: { productId: string; costShare?: number }[] },
+  ctx: z.RefinementCtx,
+  opts?: { requireShareTotal?: boolean },
+) {
   const seen = new Set<string>();
   for (const [kind, list] of [["inputs", v.inputs], ["outputs", v.outputs]] as const) {
     list.forEach((l, i) => {
@@ -444,8 +451,12 @@ function productionRules(v: { inputs: { productId: string }[]; outputs: { produc
       seen.add(l.productId);
     });
   }
-  const total = v.outputs.reduce((s, o) => s + o.costShare, 0);
-  if (Math.abs(total - 100) >= 0.01) ctx.addIssue({ code: "custom", path: ["outputs"], message: `উৎপাদিত পণ্যের খরচ-ভাগের যোগফল ১০০% হতে হবে (এখন ${Math.round(total * 100) / 100}%)` });
+  const total = v.outputs.reduce((s, o) => s + (o.costShare ?? 0), 0);
+  if (opts?.requireShareTotal) {
+    if (Math.abs(total - 100) >= 0.01) ctx.addIssue({ code: "custom", path: ["outputs"], message: `উৎপাদিত পণ্যের খরচ-ভাগের যোগফল ১০০% হতে হবে (এখন ${Math.round(total * 100) / 100}%)` });
+  } else if (total > 0 && Math.abs(total - 100) >= 0.01) {
+    ctx.addIssue({ code: "custom", path: ["outputs"], message: `উৎপাদিত পণ্যের খরচ-ভাগের যোগফল ১০০% হতে হবে (এখন ${Math.round(total * 100) / 100}%)` });
+  }
 }
 
 export const recipeSchema = z
@@ -457,7 +468,7 @@ export const recipeSchema = z
     inputs: z.array(z.object(productLine)).min(1, "কমপক্ষে একটি কাঁচামাল দিন").max(50),
     outputs: z.array(z.object({ ...productLine, costShare })).min(1, "কমপক্ষে একটি উৎপাদিত পণ্য দিন").max(50),
   })
-  .superRefine(productionRules);
+  .superRefine((v, ctx) => productionRules(v, ctx, { requireShareTotal: true }));
 export type RecipeInput = z.infer<typeof recipeSchema>;
 
 export const productionSchema = z
@@ -472,7 +483,7 @@ export const productionSchema = z
     costAccountId: optionalId,
   })
   .superRefine((v, ctx) => {
-    productionRules(v, ctx);
+    productionRules(v, ctx, { requireShareTotal: false });
     if (v.extraCost > 0 && !v.costAccountId) ctx.addIssue({ code: "custom", path: ["costAccountId"], message: "অতিরিক্ত খরচ কোন হিসাব থেকে (নগদ/ব্যাংক/খরচ খাত) তা নির্বাচন করুন" });
   });
 export type ProductionInput = z.infer<typeof productionSchema>;

@@ -6,10 +6,9 @@ import { EntryDateInput } from "@/components/entry-date-input";
 import { useMemo, useState } from "react";
 import { ActionForm, Field, FieldError, SubmitButton, type FormAction } from "@/components/forms";
 import { SearchSelect } from "@/components/search-select";
-import { SearchableAccountSelect } from "@/components/account-select";
 import type { AccountOption, ProductOption, UnitOption, WarehouseOption } from "@/components/trade-parts";
-import { formatMoney, formatQty, toBnDigits, toDateInput } from "@/lib/format";
-import { allocateCost, batchesFor, processLoss, shareTotal, sharesBySaleValue, sharesValid, yieldPercent } from "@/lib/production";
+import { formatQty, toBnDigits, toDateInput } from "@/lib/format";
+import { batchesFor, processLoss, shareTotal, sharesBySaleValue, sharesValid, yieldPercent } from "@/lib/production";
 
 type Line = { key: string; product: ProductOption | null; quantity: string; costShare: string; batchNo: string };
 let seq = 0;
@@ -39,9 +38,9 @@ function useUnits(units: UnitOption[]) {
 
 /** Product table shared by both forms. */
 function LineTable({
-  title, hint, lines, setLines, units, outputs, currency, showStock, batches, prefix,
+  title, hint, lines, setLines, units, outputs, showCostShare = false, currency, showStock, batches, prefix,
 }: {
-  title: string; hint?: string; lines: Line[]; setLines: (l: Line[]) => void; units: UnitOption[]; outputs: boolean; currency: string;
+  title: string; hint?: string; lines: Line[]; setLines: (l: Line[]) => void; units: UnitOption[]; outputs: boolean; showCostShare?: boolean; currency: string;
   showStock?: boolean; batches?: boolean; prefix: string;
 }) {
   const unitName = useUnits(units);
@@ -54,7 +53,7 @@ function LineTable({
       <div className="overflow-x-auto">
         <table className="table min-w-[640px]">
           <thead>
-            <tr><th className="w-8">#</th><th>পণ্য</th><th className="w-36 text-right">পরিমাণ</th>{outputs && <th className="w-32 text-right">খরচ-ভাগ %</th>}{batches && <th className="w-36">ব্যাচ নং</th>}<th className="w-10" /></tr>
+            <tr><th className="w-8">#</th><th>পণ্য</th><th className="w-36 text-right">পরিমাণ</th>{showCostShare && <th className="w-32 text-right">খরচ-ভাগ %</th>}{batches && <th className="w-36">ব্যাচ নং</th>}<th className="w-10" /></tr>
           </thead>
           <tbody>
             {lines.map((l, i) => {
@@ -74,7 +73,7 @@ function LineTable({
                     </div>
                     <FieldError name={`${prefix}.${i}.quantity`} />
                   </td>
-                  {outputs && (
+                  {showCostShare && (
                     <td><input className="input-num" inputMode="decimal" data-numeric value={l.costShare} onChange={(e) => update(l.key, { costShare: e.target.value })} aria-label={`খরচ-ভাগ %, সারি ${i + 1}`} /></td>
                   )}
                   {batches && (
@@ -93,8 +92,8 @@ function LineTable({
   );
 }
 
-/** Yield, loss and cost-share checks shown under both forms. */
-function Analysis({ inputs, outputs, unitOf }: { inputs: Line[]; outputs: Line[]; unitOf: (p: ProductOption | null) => string }) {
+/** Yield, loss and optional cost-share checks shown under forms. */
+function Analysis({ inputs, outputs, unitOf, showCostShare = false }: { inputs: Line[]; outputs: Line[]; unitOf: (p: ProductOption | null) => string; showCostShare?: boolean }) {
   const main = inputs.find((l) => l.product && n(l.quantity) > 0);
   const loss = processLoss(
     inputs.filter((l) => l.product).map((l) => ({ quantity: n(l.quantity), unitId: l.product!.unitId })),
@@ -102,7 +101,7 @@ function Analysis({ inputs, outputs, unitOf }: { inputs: Line[]; outputs: Line[]
   );
   const shares = outputs.map((o) => ({ costShare: n(o.costShare) }));
   return (
-    <div className="grid gap-3 rounded-lg bg-ink-50 p-3 text-sm sm:grid-cols-3">
+    <div className={`grid gap-3 rounded-lg bg-ink-50 p-3 text-sm ${showCostShare ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
       <div>
         <p className="text-xs font-semibold text-slate-500">ফলন (প্রধান কাঁচামালের তুলনায়)</p>
         {main ? outputs.filter((o) => o.product).map((o) => (
@@ -113,10 +112,12 @@ function Analysis({ inputs, outputs, unitOf }: { inputs: Line[]; outputs: Line[]
         <p className="text-xs font-semibold text-slate-500">প্রসেস লস</p>
         {loss ? <p className={loss.quantity < 0 ? "text-credit" : ""}><strong className="tabular-nums">{formatQty(loss.quantity)} {unitOf(main?.product ?? null)}</strong> ({toBnDigits(loss.percent)}%){loss.quantity < 0 && " — উৎপাদন কাঁচামালের চেয়ে বেশি!"}</p> : <p className="text-slate-400">ভিন্ন একক — হিসাব প্রযোজ্য নয়</p>}
       </div>
-      <div>
-        <p className="text-xs font-semibold text-slate-500">খরচ-ভাগের যোগফল</p>
-        <p className={sharesValid(shares) ? "text-brand-700" : "text-credit"}><strong className="tabular-nums">{toBnDigits(shareTotal(shares))}%</strong> {sharesValid(shares) ? "✓" : "(১০০% হতে হবে)"}</p>
-      </div>
+      {showCostShare && (
+        <div>
+          <p className="text-xs font-semibold text-slate-500">খরচ-ভাগের যোগফল</p>
+          <p className={sharesValid(shares) ? "text-brand-700" : "text-credit"}><strong className="tabular-nums">{toBnDigits(shareTotal(shares))}%</strong> {sharesValid(shares) ? "✓" : "(১০০% হতে হবে)"}</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -150,11 +151,11 @@ export function RecipeForm({ action, units, recipe, currency }: { action: FormAc
         <Field label="বিবরণ" name="description" className="sm:col-span-2 lg:col-span-4"><input id="description" className="input" value={description} onChange={(e) => setDescription(e.target.value)} /></Field>
       </div>
       <LineTable title="কাঁচামাল (প্রতি ব্যাচে)" hint="প্রথম সারির কাঁচামালটি প্রধান — উৎপাদনের সময় এর পরিমাণ দিলে বাকি সব স্বয়ংক্রিয়ভাবে হিসাব হবে।" lines={inputs} setLines={setInputs} units={units} outputs={false} currency={currency} prefix="inputs" />
-      <LineTable title="উৎপাদিত পণ্য ও বাই-প্রোডাক্ট (প্রতি ব্যাচে)" hint="খরচ-ভাগ: মোট উৎপাদন ব্যয়ের কত % কোন পণ্য বহন করবে (যোগফল ১০০%)। প্রধান পণ্যে বেশি, বাই-প্রোডাক্টে কম।" lines={outputs} setLines={setOutputs} units={units} outputs currency={currency} prefix="outputs" />
+      <LineTable title="উৎপাদিত পণ্য ও বাই-প্রোডাক্ট (প্রতি ব্যাচে)" hint="খরচ-ভাগ: মোট উৎপাদন ব্যয়ের কত % কোন পণ্য বহন করবে (যোগফল ১০০%)। প্রধান পণ্যে বেশি, বাই-প্রোডাক্টে কম।" lines={outputs} setLines={setOutputs} units={units} outputs showCostShare currency={currency} prefix="outputs" />
       <div className="flex flex-wrap gap-2">
         <button type="button" className="btn-secondary btn-sm" onClick={bySaleValue}>বিক্রয়মূল্য অনুযায়ী খরচ-ভাগ হিসাব করুন</button>
       </div>
-      <Analysis inputs={inputs} outputs={outputs} unitOf={unitOf} />
+      <Analysis inputs={inputs} outputs={outputs} unitOf={unitOf} showCostShare />
       <div className="flex gap-2"><SubmitButton>সংরক্ষণ করুন</SubmitButton><Link prefetch={false} href="/production/recipes" className="btn-secondary">বাতিল</Link></div>
     </ActionForm>
   );
@@ -168,10 +169,10 @@ export interface ProductionDefaults {
   warehouseId: string | null;
   reference: string;
   narration: string;
-  extraCost: number;
-  costAccountId: string;
+  extraCost?: number;
+  costAccountId?: string;
   inputs: { product: ProductOption; quantity: number; batchNo: string | null }[];
-  outputs: { product: ProductOption; quantity: number; costShare: number; batchNo: string | null }[];
+  outputs: { product: ProductOption; quantity: number; costShare?: number; batchNo: string | null }[];
 }
 
 export function ProductionForm({
@@ -179,7 +180,7 @@ export function ProductionForm({
 }: {
   /** no transaction:change_date permission */
   dateLocked?: boolean;
-  action: FormAction; units: UnitOption[]; recipes: RecipeData[]; warehouses: WarehouseOption[]; accounts: AccountOption[];
+  action: FormAction; units: UnitOption[]; recipes: RecipeData[]; warehouses: WarehouseOption[]; accounts?: AccountOption[];
   defaults: ProductionDefaults | null; currency: string; multiWarehouse: boolean;
 }) {
   const unitOf = useUnits(units);
@@ -188,10 +189,8 @@ export function ProductionForm({
   const [warehouseId, setWarehouseId] = useState(defaults?.warehouseId ?? warehouses[0]?.id ?? "");
   const [reference, setReference] = useState(defaults?.reference ?? "");
   const [narration, setNarration] = useState(defaults?.narration ?? "");
-  const [extraCost, setExtraCost] = useState(defaults ? fmtNum(defaults.extraCost) : "");
-  const [costAccountId, setCostAccountId] = useState(defaults?.costAccountId ?? "");
   const [inputs, setInputs] = useState<Line[]>(() => (defaults?.inputs.length ? defaults.inputs.map((l) => ({ ...newLine(l.product, fmtNum(l.quantity)), batchNo: l.batchNo ?? "" })) : [newLine()]));
-  const [outputs, setOutputs] = useState<Line[]>(() => (defaults?.outputs.length ? defaults.outputs.map((l) => ({ ...newLine(l.product, fmtNum(l.quantity), fmtNum(l.costShare)), batchNo: l.batchNo ?? "" })) : [newLine(null, "", "100")]));
+  const [outputs, setOutputs] = useState<Line[]>(() => (defaults?.outputs.length ? defaults.outputs.map((l) => ({ ...newLine(l.product, fmtNum(l.quantity)), batchNo: l.batchNo ?? "" })) : [newLine()]));
   const recipe = recipes.find((r) => r.id === recipeId) ?? null;
   const [mainQty, setMainQty] = useState(() => (defaults?.inputs[0] ? fmtNum(defaults.inputs[0].quantity) : ""));
   const batches = recipe ? batchesFor(recipe.inputs[0]?.quantity ?? 0, n(mainQty)) : 1;
@@ -202,19 +201,14 @@ export function ProductionForm({
     const b = batchesFor(r.inputs[0]?.quantity ?? 0, n(qty));
     if (!(b > 0)) return;
     setInputs(r.inputs.map((l) => newLine(l.product, fmtNum(l.quantity * b))));
-    setOutputs(r.outputs.map((l) => newLine(l.product, fmtNum(l.quantity * b), fmtNum(l.costShare))));
+    setOutputs(r.outputs.map((l) => newLine(l.product, fmtNum(l.quantity * b))));
   };
-
-  // live cost preview (materials at today's average cost; the server costs them on the entry date)
-  const materials = inputs.reduce((s, l) => s + n(l.quantity) * (l.product ? l.product.avgCost || l.product.purchasePrice : 0), 0);
-  const total = materials + n(extraCost);
-  const split = allocateCost(total, outputs.map((o) => ({ quantity: n(o.quantity), costShare: n(o.costShare) })));
 
   const payload = JSON.stringify({
     date, reference: reference || null, narration: narration || null, recipeId: recipeId || null, batches: batches > 0 ? batches : 1,
-    warehouseId: multiWarehouse ? warehouseId || null : null, extraCost: extraCost || 0, costAccountId: costAccountId || null,
+    warehouseId: multiWarehouse ? warehouseId || null : null, extraCost: defaults?.extraCost ?? 0, costAccountId: defaults?.costAccountId || null,
     inputs: inputs.filter((l) => l.product || l.quantity).map((l) => ({ productId: l.product?.id ?? "", quantity: l.quantity, batchNo: l.batchNo || null })),
-    outputs: outputs.filter((l) => l.product || l.quantity).map((l) => ({ productId: l.product?.id ?? "", quantity: l.quantity, costShare: l.costShare || 0, batchNo: l.batchNo || null, expiryDate: null })),
+    outputs: outputs.filter((l) => l.product || l.quantity).map((l) => ({ productId: l.product?.id ?? "", quantity: l.quantity, costShare: 0, batchNo: l.batchNo || null, expiryDate: null })),
   });
 
   return (
@@ -239,45 +233,13 @@ export function ProductionForm({
           </Field>
         )}
         <Field label="রেফারেন্স" name="reference"><input id="reference" className="input" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="যেমন লট / শিফট নং" /></Field>
+        <Field label="মন্তব্য" name="narration" className="sm:col-span-2 lg:col-span-3"><input id="narration" className="input" value={narration} onChange={(e) => setNarration(e.target.value)} /></Field>
       </div>
 
       <LineTable title="ব্যবহৃত কাঁচামাল (স্টক থেকে কমবে)" lines={inputs} setLines={setInputs} units={units} outputs={false} currency={currency} showStock batches prefix="inputs" />
       <LineTable title="উৎপাদিত পণ্য ও বাই-প্রোডাক্ট (স্টকে যোগ হবে)" hint="প্রকৃত ওজন/পরিমাণ লিখুন — রেসিপির হিসাব থেকে কম-বেশি হতে পারে।" lines={outputs} setLines={setOutputs} units={units} outputs currency={currency} batches prefix="outputs" />
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Field label="অতিরিক্ত উৎপাদন খরচ (মজুরি, বিদ্যুৎ, জ্বালানি)" name="extraCost"><input id="extraCost" className="input-num" inputMode="decimal" data-numeric value={extraCost} onChange={(e) => setExtraCost(e.target.value)} placeholder="০" /></Field>
-        <div className="lg:col-span-2">
-          <label className="mb-1 block text-sm font-medium text-ink-800" htmlFor="costAccountId">খরচ কোন হিসাব থেকে {n(extraCost) > 0 && "*"}</label>
-          <SearchableAccountSelect id="costAccountId" scope="all" known={accounts} value={costAccountId} onChange={(v) => setCostAccountId(v)} placeholder="নগদ / ব্যাংক / খরচের খাত" currency={currency} />
-          <FieldError name="costAccountId" />
-        </div>
-        <Field label="মন্তব্য" name="narration"><input id="narration" className="input" value={narration} onChange={(e) => setNarration(e.target.value)} /></Field>
-      </div>
-
       <Analysis inputs={inputs} outputs={outputs} unitOf={unitOf} />
-
-      <section className="rounded-lg border border-rule p-3" aria-label="খরচের হিসাব">
-        <h3 className="mb-2 text-sm font-semibold text-ink-900">আনুমানিক উৎপাদন ব্যয়</h3>
-        <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
-          <div className="flex justify-between"><dt>কাঁচামাল (বর্তমান গড় দরে)</dt><dd className="tabular-nums">{formatMoney(materials, currency)}</dd></div>
-          <div className="flex justify-between"><dt>অতিরিক্ত খরচ</dt><dd className="tabular-nums">{formatMoney(n(extraCost), currency)}</dd></div>
-          <div className="flex justify-between font-semibold"><dt>মোট ব্যয়</dt><dd className="tabular-nums">{formatMoney(total, currency)}</dd></div>
-        </dl>
-        <div className="mt-2 overflow-x-auto">
-        <table className="table min-w-[520px]">
-          <thead><tr><th>পণ্য</th><th className="text-right">পরিমাণ</th><th className="text-right">খরচ-ভাগ</th><th className="text-right">ব্যয়</th><th className="text-right">প্রতি এককের খরচ</th></tr></thead>
-          <tbody>
-            {outputs.filter((o) => o.product).map((o) => {
-              const i = outputs.indexOf(o);
-              return (
-                <tr key={o.key}><td>{o.product!.name}</td><td className="num">{formatQty(n(o.quantity))} {unitOf(o.product)}</td><td className="num">{toBnDigits(n(o.costShare))}%</td><td className="num">{formatMoney(split[i]?.amount ?? 0, currency)}</td><td className="num">{formatMoney(split[i]?.unitCost ?? 0, currency)}</td></tr>
-              );
-            })}
-          </tbody>
-        </table>
-        </div>
-        <p className="mt-2 text-xs text-slate-500">সংরক্ষণের সময় কাঁচামালের খরচ উৎপাদনের তারিখের গড় দরে হিসাব হয়; পরে পুরনো তারিখের ক্রয় বদলালে উৎপাদন ব্যয়ও স্বয়ংক্রিয়ভাবে সংশোধন হয়।</p>
-      </section>
 
       <div className="flex gap-2"><SubmitButton>উৎপাদন সংরক্ষণ করুন</SubmitButton><Link prefetch={false} href="/production" className="btn-secondary">বাতিল</Link></div>
     </ActionForm>
