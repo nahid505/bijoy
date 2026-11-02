@@ -34,7 +34,8 @@ export default async function EditEmployeePage({ params }: { params: Promise<{ i
           code: e.code, name: e.name, mobile: e.mobile ?? "", email: e.email ?? "", address: e.address ?? "", nid: e.nid ?? "", tin: e.tin ?? "", departmentId: e.departmentId ?? "",
           designation: e.designation ?? "", joiningDate: toDateInput(e.joiningDate), exitDate: e.exitDate ? toDateInput(e.exitDate) : "", status: e.status, basicSalary: num(e.basicSalary),
           overtimeEligible: e.overtimeEligible, overtimeRate: e.overtimeRate === null ? "" : String(num(e.overtimeRate)), paymentMethod: e.paymentMethod ?? "", bankName: e.bankName ?? "",
-          bankAccountNo: e.bankAccountNo ?? "", notes: e.notes ?? "", components: e.components.map((c) => ({ componentId: c.componentId, calcType: c.calcType, value: num(c.value) })),
+          branchName: e.branchName ?? "", routingNo: e.routingNo ?? e.routingNumber ?? "", bankAccountNo: e.bankAccountNo ?? e.bankAccountNumber ?? "", bankAccountName: e.bankAccountName ?? "",
+          notes: e.notes ?? "", components: e.components.map((c) => ({ componentId: c.componentId, calcType: c.calcType, value: num(c.value) })),
         }}
       />
     </>

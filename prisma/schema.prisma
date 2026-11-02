@@ -118,6 +118,20 @@ enum VerificationStatus {
   REJECTED
 }
 
+enum BankApiProvider {
+  CUSTOM_BANK_API
+  BEFTN_API
+  NPSB_GATEWAY
+  MFS_PAYOUT
+}
+
+enum BankTransferStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  PARTIAL
+}
+
 // ───────────────────────────── tenancy & access ─────────────────────────────
 
 model Business {
@@ -186,6 +200,8 @@ model Business {
   productionRuns      ProductionRun[]
   paddyPurchases      PaddyPurchase[]
   depotDeliveries     DepotDelivery[]
+  bankTransfers       BankTransferLog[]
+  disbursementBatches BankDisbursementBatch[]
 }
 
 model User {
@@ -215,7 +231,10 @@ model User {
   smsCreated        SmsMessage[]       @relation("SmsCreatedBy")
   vouchersCreated   Voucher[]          @relation("VoucherCreatedBy")
   vouchersUpdated   Voucher[]          @relation("VoucherUpdatedBy")
-  vouchersVerified  Voucher[]          @relation("VoucherVerifiedBy")
+  vouchersVerified             Voucher[]               @relation("VoucherVerifiedBy")
+  attendancesVerified          Attendance[]            @relation("AttendanceVerifiedBy")
+  bankTransfersInitiated       BankTransferLog[]       @relation("BankTransfersInitiated")
+  disbursementBatchesInitiated BankDisbursementBatch[] @relation("DisbursementBatchesInitiated")
 }
 
 // Permissions are string keys (see src/lib/permissions.ts); "*" = everything.
@@ -351,12 +370,23 @@ model Account {
   notifications          Notification[]
   payrollPayableFor      PayrollSettings[] @relation("PayrollPayableAccount")
   payrollAdvanceFor      PayrollSettings[] @relation("PayrollAdvanceAccount")
+  payrollDisbursementFor PayrollSettings[] @relation("PayrollDisbursementAccount")
   payComponents          PayComponent[]    @relation("PayComponentAccount")
   payComponentsLiab      PayComponent[]    @relation("PayComponentLiability")
   depotCompanyDeliveries DepotDelivery[]   @relation("DepotCompany")
   depotDealerDeliveries  DepotDelivery[]   @relation("DepotDealer")
   payslipLines           PayslipLine[]     @relation("PayslipLineAccount")
   payslipLinesLiab       PayslipLine[]     @relation("PayslipLineLiability")
+  // Bank API integration for corporate payout
+  isApiEnabled        Boolean                @default(false)
+  apiProvider         BankApiProvider?
+  apiEndpointUrl      String?
+  apiClientId         String?
+  apiClientSecret     String?                @db.Text
+  corporateAccountNo  String?
+  webhookSecret       String?
+  bankTransfers       BankTransferLog[]
+  disbursementBatches BankDisbursementBatch[]
 
   @@unique([businessId, systemKey])
   @@unique([businessId, code])
@@ -418,7 +448,9 @@ model Voucher {
   smsMessages    SmsMessage[]
   payrollRun     PayrollRun?      @relation("PayrollRunVoucher")
   advance        EmployeeAdvance? @relation("PayrollAdvanceVoucher")
-  salaryPayments SalaryPayment[]  @relation("SalaryPaymentVoucher")
+  salaryPayments      SalaryPayment[]         @relation("SalaryPaymentVoucher")
+  bankTransfers       BankTransferLog[]
+  disbursementBatches BankDisbursementBatch[]
 
   @@unique([businessId, voucherNo])
   @@unique([businessId, sourceKey])
@@ -1009,6 +1041,16 @@ model PayrollSettings {
   salaryPayableAccount   Account? @relation("PayrollPayableAccount", fields: [salaryPayableAccountId], references: [id])
   advanceAccountId       String?
   advanceAccount         Account? @relation("PayrollAdvanceAccount", fields: [advanceAccountId], references: [id])
+  disbursementAccountId  String?
+  disbursementAccount    Account? @relation("PayrollDisbursementAccount", fields: [disbursementAccountId], references: [id])
+  // Default Bank API settings for payroll
+  isBankApiEnabled       Boolean          @default(false)
+  bankApiProvider        BankApiProvider?
+  bankApiEndpointUrl     String?
+  bankApiClientId        String?
+  bankApiClientSecret    String?          @db.Text
+  bankCorporateAccountNo String?
+  bankWebhookSecret      String?
   updatedAt              DateTime @updatedAt
 }
 
@@ -1044,9 +1086,14 @@ model Employee {
   basicSalary      Decimal                   @default(0) @db.Decimal(14, 2) // monthly
   overtimeEligible Boolean                   @default(true)
   overtimeRate     Decimal?                  @db.Decimal(14, 2) // per hour; empty = basic / (working days x hours) x multiplier
-  paymentMethod    String? // CASH | BANK | MOBILE
-  bankName         String?
-  bankAccountNo    String?
+  paymentMethod     String? // BANK | CASH | MFS_BKASH | MFS_NAGAD | MOBILE
+  bankName          String?
+  branchName        String?
+  routingNo         String? // 9-digit routing number
+  routingNumber     String?
+  bankAccountNo     String?
+  bankAccountNumber String?
+  bankAccountName   String? // name as in bank account
   notes            String?
   createdAt        DateTime                  @default(now())
   updatedAt        DateTime                  @updatedAt
@@ -1056,6 +1103,7 @@ model Employee {
   payslips         Payslip[]
   advances         EmployeeAdvance[]
   payments         SalaryPayment[]
+  bankTransfers    BankTransferLog[]
 
   @@unique([businessId, code])
   @@index([businessId, status])
@@ -1132,11 +1180,17 @@ model Attendance {
   overtimeHours Decimal          @default(0) @db.Decimal(6, 2)
   lateMinutes   Int              @default(0)
   note          String?
-  updatedById   String?
-  updatedAt     DateTime         @updatedAt
+  updatedById        String?
+  updatedAt          DateTime           @updatedAt
+  verificationStatus VerificationStatus @default(UNVERIFIED)
+  verifiedById       String?
+  verifiedBy         User?              @relation("AttendanceVerifiedBy", fields: [verifiedById], references: [id])
+  verifiedAt         DateTime?
+  verificationNote   String?
 
   @@unique([employeeId, date])
   @@index([businessId, date])
+  @@index([businessId, verificationStatus])
 }
 
 model PayrollRun {
@@ -1205,6 +1259,7 @@ model Payslip {
   updatedAt          DateTime        @updatedAt
   lines              PayslipLine[]
   payments           SalaryPayment[]
+  bankTransfers      BankTransferLog[]
 
   @@unique([employeeId, year, month, kind]) // one payslip per employee, month and kind: no duplicate payroll
   @@index([businessId, year, month])
@@ -1273,6 +1328,75 @@ model SalaryPayment {
   @@index([businessId, date])
   @@index([voucherId])
   @@index([payslipId])
+}
+
+/// A batch execution of direct bank API salary disbursements.
+model BankDisbursementBatch {
+  id             String             @id @default(cuid())
+  businessId     String
+  business       Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  year           Int
+  month          Int
+  accountId      String
+  account        Account            @relation(fields: [accountId], references: [id])
+  provider       BankApiProvider
+  totalAmount    Decimal            @db.Decimal(14, 2)
+  totalEmployees Int
+  successCount   Int                @default(0)
+  failedCount    Int                @default(0)
+  status         BankTransferStatus @default(PENDING)
+  idempotencyKey String             @unique
+  voucherId      String?
+  voucher        Voucher?           @relation(fields: [voucherId], references: [id])
+  initiatedById  String
+  initiatedBy    User               @relation("DisbursementBatchesInitiated", fields: [initiatedById], references: [id])
+  transfers      BankTransferLog[]
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([businessId, year, month])
+  @@index([idempotencyKey])
+}
+
+/// Audit log and transaction status for every employee salary transferred via Bank API.
+model BankTransferLog {
+  id              String             @id @default(cuid())
+  businessId      String
+  business        Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  batchId         String
+  batch           BankDisbursementBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  employeeId      String
+  employee        Employee           @relation(fields: [employeeId], references: [id])
+  payslipId       String
+  payslip         Payslip            @relation(fields: [payslipId], references: [id])
+  accountId       String
+  account         Account            @relation(fields: [accountId], references: [id])
+  amount          Decimal            @db.Decimal(14, 2)
+  beneficiaryName String
+  bankName        String?
+  branchName      String?
+  accountNumber   String
+  routingNumber   String?
+  paymentMethod   String?
+  idempotencyKey  String             @unique
+  bankTxId        String?
+  utrNumber       String?
+  status          BankTransferStatus @default(PENDING)
+  errorMessage    String?
+  responsePayload Json?
+  voucherId       String?
+  voucher         Voucher?           @relation(fields: [voucherId], references: [id])
+  initiatedById   String
+  initiatedBy     User               @relation("BankTransfersInitiated", fields: [initiatedById], references: [id])
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([businessId, createdAt])
+  @@index([businessId, status])
+  @@index([batchId])
+  @@index([payslipId])
+  @@index([employeeId])
+  @@index([idempotencyKey])
 }
 
 // ───────────────────────── Feature & module management ─────────────────────────

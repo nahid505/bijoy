@@ -16,6 +16,7 @@ import {
 import type { EmployeeInput, PayComponentInput, PayrollSettingsFormInput } from "@/lib/validation";
 import { assertAccounts, assertNotLocked, nextVoucherNo, writeEntries, type Ctx, type Tx } from "./accounting";
 import { intList, lockKey } from "@/lib/dialect";
+import { encryptSecret } from "../sms/secret";
 
 const TX = { timeout: 120_000, maxWait: 10_000 };
 
@@ -134,8 +135,12 @@ export async function savePayrollSettings(ctx: Ctx, input: PayrollSettingsFormIn
     const current = await tx.payrollSettings.findUniqueOrThrow({ where: { businessId: ctx.businessId } });
     const payable = input.salaryPayableAccountId ?? current.salaryPayableAccountId;
     const advance = input.advanceAccountId ?? current.advanceAccountId;
+    const disbursement = input.disbursementAccountId ?? current.disbursementAccountId;
     const accs = await assertAccounts(tx, ctx.businessId, [payable, advance].filter(Boolean) as string[]);
     for (const a of accs.values()) if (a.kind !== "GENERAL") throw new UserError(`"${a.name}" এখানে ব্যবহার করা যাবে না (নগদ/ব্যাংক/পার্টি হিসাব নয়)`);
+    if (disbursement) {
+      await assertAccounts(tx, ctx.businessId, [disbursement], { kinds: ["BANK", "CASH"], label: "ব্যাংক/নগদ হিসাব" });
+    }
     // unpaid salary sits on the current payable ledger: switching would split the balance
     if (payable && payable !== current.salaryPayableAccountId && (await unpaidPayslips(tx, ctx.businessId)).length) {
       throw new UserError("অপরিশোধিত বেতন থাকা অবস্থায় \"বেতন প্রদেয়\" লেজার পরিবর্তন করা যাবে না");
@@ -143,12 +148,21 @@ export async function savePayrollSettings(ctx: Ctx, input: PayrollSettingsFormIn
     if (advance && advance !== current.advanceAccountId && (await advanceOutstanding(tx, ctx.businessId)).some((a) => a.outstanding > 0.004)) {
       throw new UserError("অনাদায়ী অগ্রিম/ঋণ থাকা অবস্থায় \"কর্মচারী অগ্রিম\" লেজার পরিবর্তন করা যাবে না");
     }
+    const isBankApiEnabled = input.isBankApiEnabled !== undefined ? input.isBankApiEnabled : current.isBankApiEnabled;
+    const bankApiProvider = input.bankApiProvider !== undefined ? input.bankApiProvider : current.bankApiProvider;
+    const bankApiEndpointUrl = input.bankApiEndpointUrl !== undefined ? input.bankApiEndpointUrl : current.bankApiEndpointUrl;
+    const bankApiClientId = input.bankApiClientId ? (input.bankApiClientId.startsWith("v1:") ? input.bankApiClientId : encryptSecret(input.bankApiClientId)) : (input.bankApiClientId === "" ? null : current.bankApiClientId);
+    const bankApiClientSecret = input.bankApiClientSecret ? (input.bankApiClientSecret.startsWith("v1:") ? input.bankApiClientSecret : encryptSecret(input.bankApiClientSecret)) : (input.bankApiClientSecret === "" ? null : current.bankApiClientSecret);
+    const bankCorporateAccountNo = input.bankCorporateAccountNo !== undefined ? input.bankCorporateAccountNo : current.bankCorporateAccountNo;
+    const bankWebhookSecret = input.bankWebhookSecret !== undefined ? input.bankWebhookSecret : current.bankWebhookSecret;
+
     return tx.payrollSettings.update({
       where: { businessId: ctx.businessId },
       data: {
         workingDaysMode: input.workingDaysMode, fixedWorkingDays: input.fixedWorkingDays, weeklyOffDays: [...new Set(input.weeklyOffDays)].sort(),
         hoursPerDay: input.hoursPerDay, overtimeMultiplier: input.overtimeMultiplier, lateDaysPerAbsence: input.lateDaysPerAbsence, absenceBasis: input.absenceBasis,
-        salaryPayableAccountId: payable, advanceAccountId: advance,
+        salaryPayableAccountId: payable, advanceAccountId: advance, disbursementAccountId: disbursement,
+        isBankApiEnabled, bankApiProvider, bankApiEndpointUrl, bankApiClientId, bankApiClientSecret, bankCorporateAccountNo, bankWebhookSecret,
       },
     });
   }, TX);
@@ -250,11 +264,14 @@ export async function saveEmployee(ctx: Ctx, input: EmployeeInput, id?: string) 
       if (c.kind === "EARNING" && line.calcType === "PERCENT_OF_GROSS") throw new UserError(`"${c.name}": আয়ের উপাদান মোট বেতনের % হতে পারে না`);
       if ((line.calcType === "RULE") !== (c.calcType === "RULE")) throw new UserError(`"${c.name}": নিয়মভিত্তিক উপাদানের হিসাবের ধরন পরিবর্তন করা যাবে না`);
     }
+    const bankAccountNo = input.bankAccountNo ?? input.bankAccountNumber ?? null;
+    const routingNo = input.routingNo ?? input.routingNumber ?? null;
     const data = {
       name: input.name, mobile: input.mobile, email: input.email, address: input.address, nid: input.nid, tin: input.tin, departmentId: input.departmentId,
       designation: input.designation, joiningDate: input.joiningDate, exitDate: input.exitDate, status: input.status, basicSalary: input.basicSalary,
       overtimeEligible: input.overtimeEligible, overtimeRate: input.overtimeRate, paymentMethod: input.paymentMethod, bankName: input.bankName,
-      bankAccountNo: input.bankAccountNo, notes: input.notes,
+      branchName: input.branchName, routingNo, routingNumber: routingNo, bankAccountNo, bankAccountNumber: bankAccountNo,
+      bankAccountName: input.bankAccountName, notes: input.notes,
     };
     const employee = existing
       ? await tx.employee.update({ where: { id: existing.id }, data: { ...data, ...(input.code ? { code: input.code } : {}) } })
@@ -311,7 +328,17 @@ export async function saveAttendance(
         await tx.attendance.deleteMany({ where: { employeeId: r.employeeId, date: input.date } });
         continue;
       }
-      const data = { status: r.status, overtimeHours: r.overtimeHours, lateMinutes: r.status === "LATE" ? r.lateMinutes : 0, note: r.note, updatedById: ctx.userId };
+      const data = {
+        status: r.status,
+        overtimeHours: r.overtimeHours,
+        lateMinutes: r.status === "LATE" ? r.lateMinutes : 0,
+        note: r.note,
+        updatedById: ctx.userId,
+        verificationStatus: "UNVERIFIED" as const,
+        verifiedById: null,
+        verifiedAt: null,
+        verificationNote: null,
+      };
       await tx.attendance.upsert({ where: key, create: { ...data, businessId: ctx.businessId, employeeId: r.employeeId, date: input.date }, update: data });
       saved++;
     }
@@ -338,7 +365,7 @@ export async function attendanceSummaries(businessId: string, year: number, mont
     include: { department: { select: { name: true } } },
     orderBy: [{ code: "asc" }],
   });
-  const rows = await prisma.attendance.findMany({ where: { businessId, employeeId: { in: employees.map((e) => e.id) }, date: { gte: monthStart(year, month), lte: monthEnd(year, month) } } });
+  const rows = await prisma.attendance.findMany({ where: { businessId, employeeId: { in: employees.map((e) => e.id) }, date: { gte: monthStart(year, month), lte: monthEnd(year, month) }, verificationStatus: { not: "REJECTED" } } });
   return {
     workingDays: wd,
     items: employees.map((e) => {
@@ -373,7 +400,7 @@ async function computePayslip(tx: Tx, businessId: string, cfg: PayrollConfig, ru
   const existing = await tx.payslip.findUnique({ where: { employeeId_year_month_kind: { employeeId, year: run.year, month: run.month, kind: run.kind } }, include: { lines: { where: { isManual: true }, include: { component: true } } } });
   if (existing && existing.runId !== run.id) throw new UserError(`${e.name}: এই মাসের বেতন ইতিমধ্যে অন্য হিসাবে আছে`);
   const regular = run.kind === "REGULAR";
-  const attendanceRows = regular ? await tx.attendance.findMany({ where: { employeeId, date: { gte: from, lte: to } }, select: { status: true, overtimeHours: true } }) : [];
+  const attendanceRows = regular ? await tx.attendance.findMany({ where: { employeeId, date: { gte: from, lte: to }, verificationStatus: { not: "REJECTED" } }, select: { status: true, overtimeHours: true } }) : [];
   const attendance = regular ? summarizeAttendance(attendanceRows.map((r) => ({ status: r.status, overtimeHours: num(r.overtimeHours) })), cfg.settings.lateDaysPerAbsence, round2(run.workingDays * fraction)) : null;
 
   // structure: the employee's own lines of this run kind; a bonus run also applies every active bonus component by default

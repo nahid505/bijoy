@@ -478,7 +478,9 @@ async function restorePayroll(
       id: must(e.id), businessId, code: String(e.code), name: String(e.name), mobile: str(e.mobile), email: str(e.email), address: str(e.address), nid: str(e.nid), tin: str(e.tin),
       departmentId: id(e.departmentId), designation: str(e.designation), joiningDate: date(e.joiningDate)!, exitDate: date(e.exitDate), status: e.status as never, basicSalary: n(e.basicSalary),
       overtimeEligible: e.overtimeEligible !== false, overtimeRate: e.overtimeRate === null || e.overtimeRate === undefined ? null : n(e.overtimeRate),
-      paymentMethod: str(e.paymentMethod), bankName: str(e.bankName), bankAccountNo: str(e.bankAccountNo), notes: str(e.notes),
+      paymentMethod: str(e.paymentMethod), bankName: str(e.bankName), branchName: str(e.branchName), routingNo: str(e.routingNo ?? e.routingNumber),
+      routingNumber: str(e.routingNumber ?? e.routingNo), bankAccountNo: str(e.bankAccountNo ?? e.bankAccountNumber),
+      bankAccountNumber: str(e.bankAccountNumber ?? e.bankAccountNo), bankAccountName: str(e.bankAccountName), notes: str(e.notes),
     })),
   });
   await tx.employeeSalaryComponent.createMany({ data: pr.employeeComponents.map((l) => ({ id: must(l.id), employeeId: must(l.employeeId), componentId: must(l.componentId), calcType: l.calcType as never, value: n(l.value) })) });

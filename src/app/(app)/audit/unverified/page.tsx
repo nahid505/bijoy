@@ -1,8 +1,10 @@
+import React from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { prisma, num } from "@/lib/db";
 import { VOUCHER_TYPES, type VoucherTypeKey } from "@/lib/accounting";
 import { formatMoney, toBnDigits, toDateInput, dayRange } from "@/lib/format";
+import { round2 } from "@/lib/calc";
 import { FilterField, PageHeader } from "@/components/ui";
 import { can, requirePermission } from "@/server/auth";
 import { getT } from "@/server/i18n";
@@ -30,6 +32,9 @@ export default async function UnverifiedVouchersPage({
   const hasDateFilter = Boolean(p.from || p.to);
   const dateRange = hasDateFilter ? dayRange(p.from ?? "1970-01-01", p.to ?? toDateInput()) : undefined;
 
+  const shouldFetchAttendance = !typeFilter || typeFilter === "ATTENDANCE";
+  const shouldFetchVouchers = !typeFilter || typeFilter !== "ATTENDANCE";
+
   const andConditions: any[] = [
     { businessId: ctx.business.id },
     { verificationStatus: "UNVERIFIED" },
@@ -42,7 +47,7 @@ export default async function UnverifiedVouchersPage({
         { depotDelivery: { isNot: null } },
       ],
     });
-  } else if (typeFilter) {
+  } else if (typeFilter && typeFilter !== "ATTENDANCE") {
     andConditions.push({ type: typeFilter as any });
   }
 
@@ -69,37 +74,78 @@ export default async function UnverifiedVouchersPage({
     AND: andConditions,
   };
 
-  const [vouchers, sums] = await Promise.all([
-    prisma.voucher.findMany({
-      where,
-      orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-      take: 500,
-      include: {
-        partyAccount: { select: { name: true } },
-        cashAccount: { select: { name: true } },
-        createdBy: { select: { id: true, name: true } },
-        verifiedBy: { select: { id: true, name: true } },
-        depotDelivery: {
-          select: {
-            doNumber: true,
-            commissionTotal: true,
-            dealerAccount: { select: { name: true } },
-            companyAccount: { select: { name: true } },
+  const attAndConditions: any[] = [
+    { businessId: ctx.business.id },
+    { verificationStatus: "UNVERIFIED" },
+  ];
+  if (dateRange) {
+    attAndConditions.push({ date: dateRange });
+  }
+  if (q) {
+    attAndConditions.push({
+      OR: [
+        { employee: { name: ci(q) } },
+        { employee: { code: ci(q) } },
+        { employee: { designation: ci(q) } },
+        { employee: { department: { name: ci(q) } } },
+        { note: ci(q) },
+      ],
+    });
+  }
+
+  const [vouchersData, attendanceRows] = await Promise.all([
+    shouldFetchVouchers
+      ? Promise.all([
+          prisma.voucher.findMany({
+            where,
+            orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+            take: 500,
+            include: {
+              partyAccount: { select: { name: true } },
+              cashAccount: { select: { name: true } },
+              createdBy: { select: { id: true, name: true } },
+              verifiedBy: { select: { id: true, name: true } },
+              depotDelivery: {
+                select: {
+                  doNumber: true,
+                  commissionTotal: true,
+                  dealerAccount: { select: { name: true } },
+                  companyAccount: { select: { name: true } },
+                },
+              },
+            },
+          }),
+          prisma.voucher.aggregate({
+            where,
+            _sum: { amount: true },
+            _count: true,
+          }),
+        ])
+      : Promise.resolve([[], { _count: 0, _sum: { amount: null } } as any]),
+    shouldFetchAttendance
+      ? prisma.attendance.findMany({
+          where: { AND: attAndConditions },
+          orderBy: [{ date: "desc" }, { updatedAt: "desc" }],
+          take: 500,
+          include: {
+            employee: {
+              select: {
+                id: true,
+                name: true,
+                code: true,
+                designation: true,
+                basicSalary: true,
+                department: { select: { name: true } },
+              },
+            },
           },
-        },
-      },
-    }),
-    prisma.voucher.aggregate({
-      where,
-      _sum: { amount: true },
-      _count: true,
-    }),
+        })
+      : Promise.resolve([]),
   ]);
 
-  const totalCount = sums._count ?? 0;
-  const totalAmount = num(sums._sum.amount);
+  const [vouchers, sums] = vouchersData;
 
-  const initialVouchers: UnverifiedVoucherItem[] = vouchers.map((v) => {
+  const voucherItems: UnverifiedVoucherItem[] = vouchers.map((v: any) => {
     const isDepot = Boolean(v.depotDelivery || v.type === "DEPOT_DELIVERY");
     let typeLabel: string = VOUCHER_TYPES[v.type as VoucherTypeKey]?.label || v.type;
     if (isDepot) {
@@ -135,6 +181,93 @@ export default async function UnverifiedVouchersPage({
       cashOrBankName: v.cashAccount?.name ?? null,
     };
   });
+
+  type AttendanceRow = (typeof attendanceRows)[number];
+  const attendanceGroups = new Map<string, AttendanceRow[]>();
+  for (const row of attendanceRows) {
+    const dKey = row.date.toISOString().slice(0, 10);
+    const existing = attendanceGroups.get(dKey);
+    if (existing) {
+      existing.push(row);
+    } else {
+      attendanceGroups.set(dKey, [row]);
+    }
+  }
+
+  const attendanceItems: UnverifiedVoucherItem[] = [];
+  for (const [dKey, records] of attendanceGroups.entries()) {
+    const count = records.length;
+    const dateFormatted = dKey.replace(/-/g, "");
+    const voucherNo = `ATT-${dateFormatted}`;
+    let partyName = "";
+    let narration = "";
+
+    const statusLabels: Record<string, string> = {
+      PRESENT: t("উপস্থিত"),
+      ABSENT: t("অনুপস্থিত"),
+      LATE: t("বিলম্ব"),
+      HALF_DAY: t("অর্ধদিবস"),
+      LEAVE: t("ছুটি"),
+      UNPAID_LEAVE: t("বিনা বেতনে ছুটি"),
+      HOLIDAY: t("ছুটির দিন"),
+      WEEKLY_OFF: t("সাপ্তাহিক ছুটি"),
+    };
+
+    if (count === 1) {
+      const emp = records[0].employee;
+      partyName = `${emp.name}${emp.designation ? ` (${emp.designation})` : emp.code ? ` (${emp.code})` : ""}`;
+      const parts: string[] = [statusLabels[records[0].status] || records[0].status];
+      if (num(records[0].overtimeHours) > 0) {
+        parts.push(`${t("ওভারটাইম")}: ${toBnDigits(num(records[0].overtimeHours))} ${t("ঘণ্টা")}`);
+      }
+      if (records[0].lateMinutes > 0) {
+        parts.push(`${t("বিলম্ব")}: ${toBnDigits(records[0].lateMinutes)} ${t("মি.")}`);
+      }
+      if (records[0].note) {
+        parts.push(records[0].note);
+      }
+      narration = parts.join(" · ");
+    } else {
+      partyName = `${t("দৈনিক হাজিরা তালিকা")} (${toBnDigits(count)} ${t("জন")})`;
+      const presentCount = records.filter((r) => r.status === "PRESENT").length;
+      const absentCount = records.filter((r) => r.status === "ABSENT").length;
+      const lateCount = records.filter((r) => r.status === "LATE").length;
+      const leaveCount = records.filter((r) => r.status === "LEAVE" || r.status === "UNPAID_LEAVE").length;
+      const halfCount = records.filter((r) => r.status === "HALF_DAY").length;
+      const totalOvertime = records.reduce((s, r) => s + num(r.overtimeHours), 0);
+
+      const parts: string[] = [];
+      if (presentCount) parts.push(`${t("উপস্থিত")}: ${toBnDigits(presentCount)}`);
+      if (absentCount) parts.push(`${t("অনুপস্থিত")}: ${toBnDigits(absentCount)}`);
+      if (lateCount) parts.push(`${t("বিলম্ব")}: ${toBnDigits(lateCount)}`);
+      if (halfCount) parts.push(`${t("অর্ধদিবস")}: ${toBnDigits(halfCount)}`);
+      if (leaveCount) parts.push(`${t("ছুটি")}: ${toBnDigits(leaveCount)}`);
+      if (totalOvertime > 0) parts.push(`${t("মোট ওভারটাইম")}: ${toBnDigits(round2(totalOvertime))} ${t("ঘণ্টা")}`);
+      narration = parts.join(" · ") || t("দৈনিক হাজিরা");
+    }
+
+    attendanceItems.push({
+      id: `att:${dKey}`,
+      voucherNo,
+      type: "ATTENDANCE",
+      typeLabel: t("হাজিরা"),
+      date: records[0].date.toISOString(),
+      amount: 0,
+      narration,
+      reference: voucherNo,
+      partyName,
+      creatorName: t("এইচআর / স্টাফ"),
+      cashOrBankName: null,
+    });
+  }
+
+  const initialVouchers: UnverifiedVoucherItem[] = [
+    ...voucherItems,
+    ...attendanceItems,
+  ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  const totalCount = (sums._count ?? 0) + attendanceItems.length;
+  const totalAmount = num(sums._sum.amount);
 
   return (
     <div className="space-y-4">
@@ -207,6 +340,7 @@ export default async function UnverifiedVouchersPage({
           <FilterField label={t("লেনদেনের ধরন")}>
             <select name="type" defaultValue={typeFilter ?? ""} className="input w-48">
               <option value="">{t("সকল ধরন")}</option>
+              <option value="ATTENDANCE">{t("হাজিরা")}</option>
               <option value="SALES">{t("বিক্রয়")}</option>
               <option value="PURCHASE">{t("ক্রয়")}</option>
               <option value="RECEIPT">{t("রিসিপ্ট")}</option>

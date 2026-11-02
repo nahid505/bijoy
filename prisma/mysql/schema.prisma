@@ -121,6 +121,20 @@ enum VerificationStatus {
   REJECTED
 }
 
+enum BankApiProvider {
+  CUSTOM_BANK_API
+  BEFTN_API
+  NPSB_GATEWAY
+  MFS_PAYOUT
+}
+
+enum BankTransferStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  PARTIAL
+}
+
 // ───────────────────────────── tenancy & access ─────────────────────────────
 
 model Business {
@@ -189,6 +203,8 @@ model Business {
   productionRuns      ProductionRun[]
   paddyPurchases      PaddyPurchase[]
   depotDeliveries     DepotDelivery[]
+  bankTransfers       BankTransferLog[]
+  disbursementBatches BankDisbursementBatch[]
 }
 
 model User {
@@ -207,18 +223,21 @@ model User {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  memberships       Membership[]
-  assignedCustomers UserCustomer[]
-  assignedSuppliers UserSupplier[]
-  assignedAccounts  UserAccount[]
-  auditLogs         AuditLog[]
-  notificationReads NotificationRead[]
-  sessions          Session[]
-  smsReceived       SmsMessage[]       @relation("SmsUser")
-  smsCreated        SmsMessage[]       @relation("SmsCreatedBy")
-  vouchersCreated   Voucher[]          @relation("VoucherCreatedBy")
-  vouchersUpdated   Voucher[]          @relation("VoucherUpdatedBy")
-  vouchersVerified  Voucher[]          @relation("VoucherVerifiedBy")
+  memberships                  Membership[]
+  assignedCustomers            UserCustomer[]
+  assignedSuppliers            UserSupplier[]
+  assignedAccounts             UserAccount[]
+  auditLogs                    AuditLog[]
+  notificationReads            NotificationRead[]
+  sessions                     Session[]
+  smsReceived                  SmsMessage[]            @relation("SmsUser")
+  smsCreated                   SmsMessage[]            @relation("SmsCreatedBy")
+  vouchersCreated              Voucher[]               @relation("VoucherCreatedBy")
+  vouchersUpdated              Voucher[]               @relation("VoucherUpdatedBy")
+  vouchersVerified             Voucher[]               @relation("VoucherVerifiedBy")
+  attendancesVerified          Attendance[]            @relation("AttendanceVerifiedBy")
+  bankTransfersInitiated       BankTransferLog[]       @relation("BankTransfersInitiated")
+  disbursementBatchesInitiated BankDisbursementBatch[] @relation("DisbursementBatchesInitiated")
 }
 
 // Permissions are string keys (see src/lib/permissions.ts); "*" = everything.
@@ -347,19 +366,30 @@ model Account {
   entries                JournalEntry[]
   customer               Customer?
   supplier               Supplier?
-  partyVouchers          Voucher[]         @relation("VoucherParty")
+  partyVouchers          Voucher[]               @relation("VoucherParty")
   voucherPayments        VoucherPayment[]
-  cashVouchers           Voucher[]         @relation("VoucherCash")
-  adjustmentVouchers     Voucher[]         @relation("VoucherAdjustment")
+  cashVouchers           Voucher[]               @relation("VoucherCash")
+  adjustmentVouchers     Voucher[]               @relation("VoucherAdjustment")
   notifications          Notification[]
-  payrollPayableFor      PayrollSettings[] @relation("PayrollPayableAccount")
-  payrollAdvanceFor      PayrollSettings[] @relation("PayrollAdvanceAccount")
-  payComponents          PayComponent[]    @relation("PayComponentAccount")
-  payComponentsLiab      PayComponent[]    @relation("PayComponentLiability")
-  depotCompanyDeliveries DepotDelivery[]   @relation("DepotCompany")
-  depotDealerDeliveries  DepotDelivery[]   @relation("DepotDealer")
-  payslipLines           PayslipLine[]     @relation("PayslipLineAccount")
-  payslipLinesLiab       PayslipLine[]     @relation("PayslipLineLiability")
+  payrollPayableFor      PayrollSettings[]       @relation("PayrollPayableAccount")
+  payrollAdvanceFor      PayrollSettings[]       @relation("PayrollAdvanceAccount")
+  payrollDisbursementFor PayrollSettings[]       @relation("PayrollDisbursementAccount")
+  payComponents          PayComponent[]          @relation("PayComponentAccount")
+  payComponentsLiab      PayComponent[]          @relation("PayComponentLiability")
+  depotCompanyDeliveries DepotDelivery[]         @relation("DepotCompany")
+  depotDealerDeliveries  DepotDelivery[]         @relation("DepotDealer")
+  payslipLines           PayslipLine[]           @relation("PayslipLineAccount")
+  payslipLinesLiab       PayslipLine[]           @relation("PayslipLineLiability")
+  // Bank API integration for corporate payout
+  isApiEnabled           Boolean                 @default(false)
+  apiProvider            BankApiProvider?
+  apiEndpointUrl         String?                 @db.Text
+  apiClientId            String?                 @db.Text
+  apiClientSecret        String?                 @db.Text
+  corporateAccountNo     String?                 @db.Text
+  webhookSecret          String?                 @db.Text
+  bankTransfers          BankTransferLog[]
+  disbursementBatches    BankDisbursementBatch[]
 
   @@unique([businessId, systemKey])
   @@unique([businessId, code])
@@ -411,17 +441,19 @@ model Voucher {
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
 
-  entries        JournalEntry[]
-  items          VoucherItem[]
-  productionRun  ProductionRun?
-  paddyPurchase  PaddyPurchase?
-  depotDelivery  DepotDelivery?
-  payments       VoucherPayment[]
-  stockMovements StockMovement[]
-  smsMessages    SmsMessage[]
-  payrollRun     PayrollRun?      @relation("PayrollRunVoucher")
-  advance        EmployeeAdvance? @relation("PayrollAdvanceVoucher")
-  salaryPayments SalaryPayment[]  @relation("SalaryPaymentVoucher")
+  entries             JournalEntry[]
+  items               VoucherItem[]
+  productionRun       ProductionRun?
+  paddyPurchase       PaddyPurchase?
+  depotDelivery       DepotDelivery?
+  payments            VoucherPayment[]
+  stockMovements      StockMovement[]
+  smsMessages         SmsMessage[]
+  payrollRun          PayrollRun?             @relation("PayrollRunVoucher")
+  advance             EmployeeAdvance?        @relation("PayrollAdvanceVoucher")
+  salaryPayments      SalaryPayment[]         @relation("SalaryPaymentVoucher")
+  bankTransfers       BankTransferLog[]
+  disbursementBatches BankDisbursementBatch[]
 
   @@unique([businessId, voucherNo])
   @@unique([businessId, sourceKey])
@@ -999,20 +1031,30 @@ enum AdvanceKind {
 }
 
 model PayrollSettings {
-  businessId             String   @id
-  business               Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  workingDaysMode        String   @default("FIXED") @db.VarChar(191) // FIXED | CALENDAR | CALENDAR_LESS_OFF_DAYS
-  fixedWorkingDays       Int      @default(26)
-  weeklyOffDays          Json     @default(dbgenerated("(json_array(5))")) // 0 = Sunday … 6 = Saturday (Bangladesh: Friday)
-  hoursPerDay            Decimal  @default(8) @db.Decimal(5, 2)
-  overtimeMultiplier     Decimal  @default(2) @db.Decimal(5, 2) // Bangladesh Labour Act: twice the ordinary basic rate
-  lateDaysPerAbsence     Int      @default(3) // this many late days = one day of deduction (0 = no deduction)
-  absenceBasis           String   @default("BASIC") @db.VarChar(191) // BASIC | GROSS: salary a day of absence is deducted from
+  businessId             String           @id
+  business               Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  workingDaysMode        String           @default("FIXED") @db.VarChar(191) // FIXED | CALENDAR | CALENDAR_LESS_OFF_DAYS
+  fixedWorkingDays       Int              @default(26)
+  weeklyOffDays          Json             @default(dbgenerated("(json_array(5))")) // 0 = Sunday … 6 = Saturday (Bangladesh: Friday)
+  hoursPerDay            Decimal          @default(8) @db.Decimal(5, 2)
+  overtimeMultiplier     Decimal          @default(2) @db.Decimal(5, 2) // Bangladesh Labour Act: twice the ordinary basic rate
+  lateDaysPerAbsence     Int              @default(3) // this many late days = one day of deduction (0 = no deduction)
+  absenceBasis           String           @default("BASIC") @db.VarChar(191) // BASIC | GROSS: salary a day of absence is deducted from
   salaryPayableAccountId String?
-  salaryPayableAccount   Account? @relation("PayrollPayableAccount", fields: [salaryPayableAccountId], references: [id])
+  salaryPayableAccount   Account?         @relation("PayrollPayableAccount", fields: [salaryPayableAccountId], references: [id])
   advanceAccountId       String?
-  advanceAccount         Account? @relation("PayrollAdvanceAccount", fields: [advanceAccountId], references: [id])
-  updatedAt              DateTime @updatedAt
+  advanceAccount         Account?         @relation("PayrollAdvanceAccount", fields: [advanceAccountId], references: [id])
+  disbursementAccountId  String?
+  disbursementAccount    Account?         @relation("PayrollDisbursementAccount", fields: [disbursementAccountId], references: [id])
+  // Default Bank API settings for payroll
+  isBankApiEnabled       Boolean          @default(false)
+  bankApiProvider        BankApiProvider?
+  bankApiEndpointUrl     String?          @db.Text
+  bankApiClientId        String?          @db.Text
+  bankApiClientSecret    String?          @db.Text
+  bankCorporateAccountNo String?          @db.Text
+  bankWebhookSecret      String?          @db.Text
+  updatedAt              DateTime         @updatedAt
 }
 
 model Department {
@@ -1028,37 +1070,43 @@ model Department {
 }
 
 model Employee {
-  id               String                    @id @default(cuid())
-  businessId       String
-  business         Business                  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  code             String // employee ID, e.g. EMP-0001 (unique per business)
-  name             String
-  mobile           String?                   @db.Text
-  email            String?                   @db.VarChar(255)
-  address          String?                   @db.Text
-  nid              String?                   @db.Text
-  tin              String?                   @db.Text
-  departmentId     String?
-  department       Department?               @relation(fields: [departmentId], references: [id])
-  designation      String?                   @db.Text
-  joiningDate      DateTime
-  exitDate         DateTime?
-  status           EmploymentStatus          @default(ACTIVE)
-  basicSalary      Decimal                   @default(0) @db.Decimal(14, 2) // monthly
-  overtimeEligible Boolean                   @default(true)
-  overtimeRate     Decimal?                  @db.Decimal(14, 2) // per hour; empty = basic / (working days x hours) x multiplier
-  paymentMethod    String?                   @db.Text // CASH | BANK | MOBILE
-  bankName         String?                   @db.Text
-  bankAccountNo    String?                   @db.Text
-  notes            String?                   @db.Text
-  createdAt        DateTime                  @default(now())
-  updatedAt        DateTime                  @updatedAt
-  components       EmployeeSalaryComponent[]
-  revisions        SalaryRevision[]
-  attendances      Attendance[]
-  payslips         Payslip[]
-  advances         EmployeeAdvance[]
-  payments         SalaryPayment[]
+  id                String                    @id @default(cuid())
+  businessId        String
+  business          Business                  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  code              String // employee ID, e.g. EMP-0001 (unique per business)
+  name              String
+  mobile            String?                   @db.Text
+  email             String?                   @db.VarChar(255)
+  address           String?                   @db.Text
+  nid               String?                   @db.Text
+  tin               String?                   @db.Text
+  departmentId      String?
+  department        Department?               @relation(fields: [departmentId], references: [id])
+  designation       String?                   @db.Text
+  joiningDate       DateTime
+  exitDate          DateTime?
+  status            EmploymentStatus          @default(ACTIVE)
+  basicSalary       Decimal                   @default(0) @db.Decimal(14, 2) // monthly
+  overtimeEligible  Boolean                   @default(true)
+  overtimeRate      Decimal?                  @db.Decimal(14, 2) // per hour; empty = basic / (working days x hours) x multiplier
+  paymentMethod     String?                   @db.Text // BANK | CASH | MFS_BKASH | MFS_NAGAD | MOBILE
+  bankName          String?                   @db.Text
+  branchName        String?                   @db.Text
+  routingNo         String?                   @db.Text // 9-digit routing number
+  routingNumber     String?                   @db.Text
+  bankAccountNo     String?                   @db.Text
+  bankAccountNumber String?                   @db.Text
+  bankAccountName   String?                   @db.Text // name as in bank account
+  notes             String?                   @db.Text
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  components        EmployeeSalaryComponent[]
+  revisions         SalaryRevision[]
+  attendances       Attendance[]
+  payslips          Payslip[]
+  advances          EmployeeAdvance[]
+  payments          SalaryPayment[]
+  bankTransfers     BankTransferLog[]
 
   @@unique([businessId, code])
   @@index([businessId, status])
@@ -1126,20 +1174,26 @@ model SalaryRevision {
 }
 
 model Attendance {
-  id            String           @id @default(cuid())
-  businessId    String
-  employeeId    String
-  employee      Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  date          DateTime
-  status        AttendanceStatus
-  overtimeHours Decimal          @default(0) @db.Decimal(6, 2)
-  lateMinutes   Int              @default(0)
-  note          String?          @db.Text
-  updatedById   String?          @db.Text
-  updatedAt     DateTime         @updatedAt
+  id                 String             @id @default(cuid())
+  businessId         String
+  employeeId         String
+  employee           Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date               DateTime
+  status             AttendanceStatus
+  overtimeHours      Decimal            @default(0) @db.Decimal(6, 2)
+  lateMinutes        Int                @default(0)
+  note               String?            @db.Text
+  updatedById        String?            @db.Text
+  updatedAt          DateTime           @updatedAt
+  verificationStatus VerificationStatus @default(UNVERIFIED)
+  verifiedById       String?
+  verifiedBy         User?              @relation("AttendanceVerifiedBy", fields: [verifiedById], references: [id])
+  verifiedAt         DateTime?
+  verificationNote   String?            @db.Text
 
   @@unique([employeeId, date])
   @@index([businessId, date])
+  @@index([businessId, verificationStatus])
 }
 
 model PayrollRun {
@@ -1171,43 +1225,44 @@ model PayrollRun {
 }
 
 model Payslip {
-  id                 String          @id @default(cuid())
+  id                 String            @id @default(cuid())
   businessId         String
   runId              String
-  run                PayrollRun      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  run                PayrollRun        @relation(fields: [runId], references: [id], onDelete: Cascade)
   employeeId         String
-  employee           Employee        @relation(fields: [employeeId], references: [id])
+  employee           Employee          @relation(fields: [employeeId], references: [id])
   year               Int
   month              Int
   kind               PayrollKind
   // employee details as they were for this month
-  employeeCode       String          @db.Text
-  employeeName       String          @db.Text
-  designation        String?         @db.Text
-  departmentName     String?         @db.Text
-  basicSalary        Decimal         @db.Decimal(14, 2)
-  workingDays        Decimal         @db.Decimal(6, 2)
-  payableDays        Decimal         @db.Decimal(6, 2)
-  presentDays        Decimal         @default(0) @db.Decimal(6, 2)
-  absentDays         Decimal         @default(0) @db.Decimal(6, 2)
-  leaveDays          Decimal         @default(0) @db.Decimal(6, 2)
-  unpaidLeaveDays    Decimal         @default(0) @db.Decimal(6, 2)
-  halfDays           Decimal         @default(0) @db.Decimal(6, 2)
-  lateDays           Decimal         @default(0) @db.Decimal(6, 2)
-  holidays           Decimal         @default(0) @db.Decimal(6, 2)
-  deductedDays       Decimal         @default(0) @db.Decimal(6, 2)
-  overtimeHours      Decimal         @default(0) @db.Decimal(8, 2)
-  extraOvertimeHours Decimal         @default(0) @db.Decimal(8, 2) // entered at review, on top of attendance
-  overtimeRate       Decimal         @default(0) @db.Decimal(14, 2)
-  gross              Decimal         @db.Decimal(14, 2)
-  totalDeductions    Decimal         @db.Decimal(14, 2)
-  net                Decimal         @db.Decimal(14, 2)
-  employerCost       Decimal         @default(0) @db.Decimal(14, 2)
-  paidAmount         Decimal         @default(0) @db.Decimal(14, 2)
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
+  employeeCode       String            @db.Text
+  employeeName       String            @db.Text
+  designation        String?           @db.Text
+  departmentName     String?           @db.Text
+  basicSalary        Decimal           @db.Decimal(14, 2)
+  workingDays        Decimal           @db.Decimal(6, 2)
+  payableDays        Decimal           @db.Decimal(6, 2)
+  presentDays        Decimal           @default(0) @db.Decimal(6, 2)
+  absentDays         Decimal           @default(0) @db.Decimal(6, 2)
+  leaveDays          Decimal           @default(0) @db.Decimal(6, 2)
+  unpaidLeaveDays    Decimal           @default(0) @db.Decimal(6, 2)
+  halfDays           Decimal           @default(0) @db.Decimal(6, 2)
+  lateDays           Decimal           @default(0) @db.Decimal(6, 2)
+  holidays           Decimal           @default(0) @db.Decimal(6, 2)
+  deductedDays       Decimal           @default(0) @db.Decimal(6, 2)
+  overtimeHours      Decimal           @default(0) @db.Decimal(8, 2)
+  extraOvertimeHours Decimal           @default(0) @db.Decimal(8, 2) // entered at review, on top of attendance
+  overtimeRate       Decimal           @default(0) @db.Decimal(14, 2)
+  gross              Decimal           @db.Decimal(14, 2)
+  totalDeductions    Decimal           @db.Decimal(14, 2)
+  net                Decimal           @db.Decimal(14, 2)
+  employerCost       Decimal           @default(0) @db.Decimal(14, 2)
+  paidAmount         Decimal           @default(0) @db.Decimal(14, 2)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
   lines              PayslipLine[]
   payments           SalaryPayment[]
+  bankTransfers      BankTransferLog[]
 
   @@unique([employeeId, year, month, kind]) // one payslip per employee, month and kind: no duplicate payroll
   @@index([businessId, year, month])
@@ -1276,6 +1331,75 @@ model SalaryPayment {
   @@index([businessId, date])
   @@index([voucherId])
   @@index([payslipId])
+}
+
+/// A batch execution of direct bank API salary disbursements.
+model BankDisbursementBatch {
+  id             String             @id @default(cuid())
+  businessId     String
+  business       Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  year           Int
+  month          Int
+  accountId      String
+  account        Account            @relation(fields: [accountId], references: [id])
+  provider       BankApiProvider
+  totalAmount    Decimal            @db.Decimal(14, 2)
+  totalEmployees Int
+  successCount   Int                @default(0)
+  failedCount    Int                @default(0)
+  status         BankTransferStatus @default(PENDING)
+  idempotencyKey String             @unique
+  voucherId      String?
+  voucher        Voucher?           @relation(fields: [voucherId], references: [id])
+  initiatedById  String
+  initiatedBy    User               @relation("DisbursementBatchesInitiated", fields: [initiatedById], references: [id])
+  transfers      BankTransferLog[]
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([businessId, year, month])
+  @@index([idempotencyKey])
+}
+
+/// Audit log and transaction status for every employee salary transferred via Bank API.
+model BankTransferLog {
+  id              String                @id @default(cuid())
+  businessId      String
+  business        Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  batchId         String
+  batch           BankDisbursementBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  employeeId      String
+  employee        Employee              @relation(fields: [employeeId], references: [id])
+  payslipId       String
+  payslip         Payslip               @relation(fields: [payslipId], references: [id])
+  accountId       String
+  account         Account               @relation(fields: [accountId], references: [id])
+  amount          Decimal               @db.Decimal(14, 2)
+  beneficiaryName String                @db.Text
+  bankName        String?               @db.Text
+  branchName      String?               @db.Text
+  accountNumber   String                @db.Text
+  routingNumber   String?               @db.Text
+  paymentMethod   String?               @db.Text
+  idempotencyKey  String                @unique
+  bankTxId        String?               @db.Text
+  utrNumber       String?               @db.Text
+  status          BankTransferStatus    @default(PENDING)
+  errorMessage    String?               @db.Text
+  responsePayload Json?
+  voucherId       String?
+  voucher         Voucher?              @relation(fields: [voucherId], references: [id])
+  initiatedById   String
+  initiatedBy     User                  @relation("BankTransfersInitiated", fields: [initiatedById], references: [id])
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([businessId, createdAt])
+  @@index([businessId, status])
+  @@index([batchId])
+  @@index([payslipId])
+  @@index([employeeId])
+  @@index([idempotencyKey])
 }
 
 // ───────────────────────── Feature & module management ─────────────────────────

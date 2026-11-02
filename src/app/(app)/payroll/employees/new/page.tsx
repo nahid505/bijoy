@@ -22,7 +22,7 @@ export default async function NewEmployeePage() {
         isEdit={false}
         defaults={{
           code: "", name: "", mobile: "", email: "", address: "", nid: "", tin: "", departmentId: "", designation: "", joiningDate: toDateInput(), exitDate: "",
-          status: "ACTIVE", basicSalary: 0, overtimeEligible: true, overtimeRate: "", paymentMethod: "", bankName: "", bankAccountNo: "", notes: "",
+          status: "ACTIVE", basicSalary: 0, overtimeEligible: true, overtimeRate: "", paymentMethod: "", bankName: "", branchName: "", routingNo: "", bankAccountNo: "", bankAccountName: "", notes: "",
           components: data.components.filter((c) => c.kind === "EARNING" && c.appliesTo === "REGULAR" && c.defaultValue > 0).map((c) => ({ componentId: c.id, calcType: c.calcType, value: c.defaultValue })),
         }}
       />

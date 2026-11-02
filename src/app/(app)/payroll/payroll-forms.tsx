@@ -50,7 +50,10 @@ export interface EmployeeDefaults {
   overtimeRate: string;
   paymentMethod: string;
   bankName: string;
+  branchName?: string;
+  routingNo?: string;
   bankAccountNo: string;
+  bankAccountName?: string;
   notes: string;
   components: { componentId: string; calcType: PayCalcType; value: number }[];
 }
@@ -139,13 +142,27 @@ export function EmployeeForm({
           <Field label="টিআইএন (TIN)" name="tin"><input id="tin" className="input" value={f.tin} onChange={(e) => set("tin", e.target.value)} /></Field>
           <Field label="বেতন প্রদানের মাধ্যম" name="paymentMethod">
             <select id="paymentMethod" className="input" value={f.paymentMethod} onChange={(e) => set("paymentMethod", e.target.value)}>
-              <option value="">—</option><option value="CASH">নগদ</option><option value="BANK">ব্যাংক</option><option value="MOBILE">মোবাইল ব্যাংকিং</option>
+              <option value="">—</option>
+              <option value="BANK">ব্যাংক (BANK)</option>
+              <option value="CASH">নগদ (CASH)</option>
+              <option value="MFS_BKASH">বিকাশ (MFS_BKASH)</option>
+              <option value="MFS_NAGAD">নগদ ওয়ালেট (MFS_NAGAD)</option>
+              <option value="MOBILE">অন্যান্য মোবাইল ব্যাংকিং</option>
             </select>
           </Field>
-          {f.paymentMethod && f.paymentMethod !== "CASH" && (
+          {f.paymentMethod === "BANK" && (
             <>
-              <Field label="ব্যাংক / প্রতিষ্ঠান" name="bankName"><input id="bankName" className="input" value={f.bankName} onChange={(e) => set("bankName", e.target.value)} /></Field>
-              <Field label="হিসাব / মোবাইল নম্বর" name="bankAccountNo"><input id="bankAccountNo" className="input" value={f.bankAccountNo} onChange={(e) => set("bankAccountNo", e.target.value)} /></Field>
+              <Field label="ব্যাংকের নাম" name="bankName"><input id="bankName" className="input" placeholder="যেমন: ডাচ-বাংলা ব্যাংক" value={f.bankName} onChange={(e) => set("bankName", e.target.value)} /></Field>
+              <Field label="শাখার নাম" name="branchName"><input id="branchName" className="input" placeholder="যেমন: মতিঝিল শাখা" value={f.branchName ?? ""} onChange={(e) => set("branchName", e.target.value)} /></Field>
+              <Field label="রাউটিং নম্বর (৯ ডিজিট)" name="routingNo" hint="BEFTN / EFT এর ৯ ডিজিট"><input id="routingNo" maxLength={9} className="input" placeholder="যেমন: 090271234" value={f.routingNo ?? ""} onChange={(e) => set("routingNo", e.target.value)} /></Field>
+              <Field label="অ্যাকাউন্ট নম্বর" name="bankAccountNo"><input id="bankAccountNo" className="input" placeholder="হিসাব নম্বর" value={f.bankAccountNo} onChange={(e) => set("bankAccountNo", e.target.value)} /></Field>
+              <Field label="অ্যাকাউন্টে কর্মচারীর নাম" name="bankAccountName" hint="ব্যাংক হিসাবে যেভাবে লেখা আছে"><input id="bankAccountName" className="input" placeholder={f.name || "অ্যাকাউন্টের নাম"} value={f.bankAccountName ?? ""} onChange={(e) => set("bankAccountName", e.target.value)} /></Field>
+            </>
+          )}
+          {f.paymentMethod && f.paymentMethod !== "BANK" && f.paymentMethod !== "CASH" && (
+            <>
+              <Field label="হিসাব / ওয়ালেট নম্বর" name="bankAccountNo"><input id="bankAccountNo" className="input" placeholder="যেমন: 01700000000" value={f.bankAccountNo} onChange={(e) => set("bankAccountNo", e.target.value)} /></Field>
+              <Field label="অ্যাকাউন্টের নাম" name="bankAccountName"><input id="bankAccountName" className="input" placeholder={f.name || "অ্যাকাউন্টের নাম"} value={f.bankAccountName ?? ""} onChange={(e) => set("bankAccountName", e.target.value)} /></Field>
             </>
           )}
           <Field label="নোট" name="notes" className="sm:col-span-2 lg:col-span-3"><input id="notes" className="input" value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
@@ -573,14 +590,32 @@ const WEEKDAYS = ["রবি", "সোম", "মঙ্গল", "বুধ", "ব
 
 export function PayrollSettingsForm({ action, defaults, known, currency }: {
   action: FormAction;
-  defaults: { workingDaysMode: string; fixedWorkingDays: number; weeklyOffDays: number[]; hoursPerDay: number; overtimeMultiplier: number; lateDaysPerAbsence: number; absenceBasis: string; salaryPayableAccountId: string; advanceAccountId: string };
+  defaults: {
+    workingDaysMode: string;
+    fixedWorkingDays: number;
+    weeklyOffDays: number[];
+    hoursPerDay: number;
+    overtimeMultiplier: number;
+    lateDaysPerAbsence: number;
+    absenceBasis: string;
+    salaryPayableAccountId: string;
+    advanceAccountId: string;
+    disbursementAccountId?: string;
+    isBankApiEnabled?: boolean;
+    bankApiProvider?: string;
+    bankApiEndpointUrl?: string;
+    bankApiClientId?: string;
+    bankApiClientSecret?: string;
+    bankCorporateAccountNo?: string;
+    bankWebhookSecret?: string;
+  };
   known: AccountOption[];
   currency: string;
 }) {
   const [f, setF] = useState(defaults);
   const set = <K extends keyof typeof defaults>(k: K, v: (typeof defaults)[K]) => setF((x) => ({ ...x, [k]: v }));
   return (
-    <ActionForm action={action}>
+    <ActionForm action={action} className="space-y-6">
       <input type="hidden" name="payload" value={JSON.stringify(f)} />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Field label="মাসের কর্মদিবস" name="workingDaysMode" hint="দৈনিক বেতন = মাসিক বেতন ÷ কর্মদিবস">
@@ -620,7 +655,105 @@ export function PayrollSettingsForm({ action, defaults, known, currency }: {
           <label className="label" htmlFor="s-advance">কর্মচারী অগ্রিম/ঋণ লেজার</label>
           <SearchableAccountSelect id="s-advance" scope="all" known={known} value={f.advanceAccountId} onChange={(v) => set("advanceAccountId", v)} currency={currency} />
         </div>
+        <div>
+          <label className="label" htmlFor="s-disbursement">বেতন পরিশোধের ডিফল্ট ব্যাংক হিসাব</label>
+          <SearchableAccountSelect id="s-disbursement" scope="all" known={known} value={f.disbursementAccountId ?? ""} onChange={(v) => set("disbursementAccountId", v)} currency={currency} />
+        </div>
       </div>
+
+      {/* সরাসরি ব্যাংক API ইন্টিগ্রেশন সেটিংস */}
+      <div className="rounded-xl border border-sky-200 bg-sky-50/50 p-4 space-y-4">
+        <div className="flex items-center justify-between border-b border-sky-200 pb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">⚡</span>
+            <div>
+              <h3 className="text-sm font-bold text-ink-900">সরাসরি ব্যাংক API ইন্টিগ্রেশন সেটিংস (Bank API Payout)</h3>
+              <p className="text-xs text-slate-500">সফটওয়্যার থেকে এক ক্লিকে ব্যাংকের মাধ্যমে সরাসরি বাল্ক স্যালারি ট্রান্সফার</p>
+            </div>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer font-semibold text-sm text-brand-900">
+            <input
+              type="checkbox"
+              checked={Boolean(f.isBankApiEnabled)}
+              onChange={(e) => set("isBankApiEnabled", e.target.checked)}
+              className="rounded border-sky-400 text-brand-600 focus:ring-brand-500"
+            />
+            <span>API সক্রিয় করুন</span>
+          </label>
+        </div>
+
+        {f.isBankApiEnabled && (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 pt-1">
+            <Field label="API প্রোভাইডার" name="bankApiProvider">
+              <select
+                id="bankApiProvider"
+                className="input"
+                value={f.bankApiProvider ?? "CUSTOM_BANK_API"}
+                onChange={(e) => set("bankApiProvider", e.target.value)}
+              >
+                <option value="CUSTOM_BANK_API">কাস্টম ব্যাংক কর্পোরেট API (Custom Bank API)</option>
+                <option value="BEFTN_API">বাংলাদেশ ইলেকট্রনিক ফান্ড ট্রান্সফার (BEFTN API)</option>
+                <option value="NPSB_GATEWAY">এনপিএসবি রিয়েল-টাইম গেটওয়ে (NPSB Gateway)</option>
+                <option value="MFS_PAYOUT">মোবাইল ফাইন্যান্সিয়াল সার্ভিস (bKash/Nagad Payout)</option>
+              </select>
+            </Field>
+
+            <Field label="কর্পোরেট ব্যাংক অ্যাকাউন্ট নম্বর" name="bankCorporateAccountNo">
+              <input
+                id="bankCorporateAccountNo"
+                className="input"
+                placeholder="যেমন: 2050123456789"
+                value={f.bankCorporateAccountNo ?? ""}
+                onChange={(e) => set("bankCorporateAccountNo", e.target.value)}
+              />
+            </Field>
+
+            <Field label="API এন্ডপয়েন্ট URL" name="bankApiEndpointUrl">
+              <input
+                id="bankApiEndpointUrl"
+                className="input font-mono text-xs"
+                placeholder="https://api.yourbank.com/v1/corporate/payout"
+                value={f.bankApiEndpointUrl ?? ""}
+                onChange={(e) => set("bankApiEndpointUrl", e.target.value)}
+              />
+            </Field>
+
+            <Field label="ক্লায়েন্ট আইডি / API Key" name="bankApiClientId" hint="এনক্রিপ্ট করে সুরক্ষিত রাখা হয়">
+              <input
+                id="bankApiClientId"
+                type="text"
+                className="input font-mono text-xs"
+                placeholder="client_id_xxxx"
+                value={f.bankApiClientId ?? ""}
+                onChange={(e) => set("bankApiClientId", e.target.value)}
+              />
+            </Field>
+
+            <Field label="ক্লায়েন্ট সিক্রেট / Private Key" name="bankApiClientSecret" hint="এনক্রিপ্ট করে সুরক্ষিত রাখা হয়">
+              <input
+                id="bankApiClientSecret"
+                type="password"
+                className="input font-mono text-xs"
+                placeholder="client_secret_xxxx"
+                value={f.bankApiClientSecret ?? ""}
+                onChange={(e) => set("bankApiClientSecret", e.target.value)}
+              />
+            </Field>
+
+            <Field label="ওয়েবহুক সিক্রেট (Webhook Secret)" name="bankWebhookSecret">
+              <input
+                id="bankWebhookSecret"
+                type="password"
+                className="input font-mono text-xs"
+                placeholder="whsec_xxxx"
+                value={f.bankWebhookSecret ?? ""}
+                onChange={(e) => set("bankWebhookSecret", e.target.value)}
+              />
+            </Field>
+          </div>
+        )}
+      </div>
+
       <SubmitButton>সেটিং সংরক্ষণ করুন</SubmitButton>
     </ActionForm>
   );

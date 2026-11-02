@@ -24,7 +24,7 @@ export default async function PayrollSettingsPage() {
     prisma.department.findMany({ where: { businessId: biz }, orderBy: { name: "asc" }, include: { _count: { select: { employees: true } } } }),
     prisma.payComponent.findMany({ where: { businessId: biz }, orderBy: [{ kind: "asc" }, { sortOrder: "asc" }], include: { account: { select: { name: true } }, liabilityAccount: { select: { name: true } } } }),
   ]);
-  const known = await accountOptions(biz, { id: { in: [s.salaryPayableAccountId, s.advanceAccountId].filter(Boolean) as string[] } }, false, true);
+  const known = await accountOptions(biz, { id: { in: [s.salaryPayableAccountId, s.advanceAccountId, s.disbursementAccountId].filter(Boolean) as string[] } }, false, true);
 
   return (
     <>
@@ -38,6 +38,14 @@ export default async function PayrollSettingsPage() {
           defaults={{
             workingDaysMode: s.workingDaysMode, fixedWorkingDays: s.fixedWorkingDays, weeklyOffDays: intList(s.weeklyOffDays, [5]), hoursPerDay: num(s.hoursPerDay), overtimeMultiplier: num(s.overtimeMultiplier),
             lateDaysPerAbsence: s.lateDaysPerAbsence, absenceBasis: s.absenceBasis, salaryPayableAccountId: s.salaryPayableAccountId ?? "", advanceAccountId: s.advanceAccountId ?? "",
+            disbursementAccountId: s.disbursementAccountId ?? "",
+            isBankApiEnabled: s.isBankApiEnabled,
+            bankApiProvider: s.bankApiProvider ?? "CUSTOM_BANK_API",
+            bankApiEndpointUrl: s.bankApiEndpointUrl ?? "",
+            bankApiClientId: s.bankApiClientId ? "••••••••" : "",
+            bankApiClientSecret: s.bankApiClientSecret ? "••••••••" : "",
+            bankCorporateAccountNo: s.bankCorporateAccountNo ?? "",
+            bankWebhookSecret: s.bankWebhookSecret ? "••••••••" : "",
           }}
         />
       </section>

@@ -186,6 +186,13 @@ export const accountSchema = z.object({
   openingBalance: money.default(0),
   openingSide: z.enum(["DR", "CR"]).default("DR"),
   imageUrl: z.string().optional().nullable(),
+  isApiEnabled: z.boolean().default(false).optional(),
+  apiProvider: z.enum(["CUSTOM_BANK_API", "BEFTN_API", "NPSB_GATEWAY", "MFS_PAYOUT"]).optional().nullable(),
+  apiEndpointUrl: optionalText(300),
+  apiClientId: optionalText(200),
+  apiClientSecret: optionalText(500),
+  corporateAccountNo: optionalText(100),
+  webhookSecret: optionalText(200),
 });
 
 /** A user account group; a sub-group (parentId) takes its parent's nature. */
@@ -604,9 +611,14 @@ export const employeeSchema = z
     basicSalary: money,
     overtimeEligible: z.boolean().default(true),
     overtimeRate: z.union([z.literal(""), z.null(), z.undefined(), money]).transform((v) => (typeof v === "number" && v > 0 ? v : null)),
-    paymentMethod: z.enum(["CASH", "BANK", "MOBILE"]).optional().nullable().transform((v) => v ?? null),
+    paymentMethod: z.enum(["BANK", "CASH", "MFS_BKASH", "MFS_NAGAD", "MOBILE"]).optional().nullable().transform((v) => v ?? null),
     bankName: optionalText(100),
+    branchName: optionalText(100),
+    routingNo: z.string().trim().regex(/^(\d{9})?$/, "রাউটিং নম্বর ৯ ডিজিটের হতে হবে").optional().nullable().transform((v) => v || null),
+    routingNumber: z.string().trim().regex(/^(\d{9})?$/, "রাউটিং নম্বর ৯ ডিজিটের হতে হবে").optional().nullable().transform((v) => v || null),
     bankAccountNo: optionalText(60),
+    bankAccountNumber: optionalText(60),
+    bankAccountName: optionalText(100),
     notes: optionalText(1000),
     components: z
       .array(z.object({ componentId: z.string().min(1, "উপাদান নির্বাচন করুন"), calcType, value: money }))
@@ -624,7 +636,13 @@ export const employeeSchema = z
       if (c.calcType !== "FIXED" && c.value > 1000) ctx.addIssue({ code: "custom", path: ["components", i, "value"], message: "শতাংশ ১০০০ এর বেশি হতে পারে না" });
     });
   });
-export type EmployeeInput = z.infer<typeof employeeSchema>;
+export type EmployeeInput = Omit<z.infer<typeof employeeSchema>, "branchName" | "routingNo" | "routingNumber" | "bankAccountNumber" | "bankAccountName"> & {
+  branchName?: string | null;
+  routingNo?: string | null;
+  routingNumber?: string | null;
+  bankAccountNumber?: string | null;
+  bankAccountName?: string | null;
+};
 
 export const payComponentSchema = z
   .object({
@@ -656,8 +674,29 @@ export const payrollSettingsSchema = z.object({
   absenceBasis: z.enum(["BASIC", "GROSS"]),
   salaryPayableAccountId: optionalId,
   advanceAccountId: optionalId,
+  disbursementAccountId: optionalId,
+  isBankApiEnabled: z.boolean().default(false).optional(),
+  bankApiProvider: z.enum(["CUSTOM_BANK_API", "BEFTN_API", "NPSB_GATEWAY", "MFS_PAYOUT"]).optional().nullable(),
+  bankApiEndpointUrl: optionalText(300),
+  bankApiClientId: optionalText(200),
+  bankApiClientSecret: optionalText(500),
+  bankCorporateAccountNo: optionalText(100),
+  bankWebhookSecret: optionalText(200),
 });
 export type PayrollSettingsFormInput = z.infer<typeof payrollSettingsSchema>;
+
+export const bankDisbursementSchema = z.object({
+  year: z.coerce.number().int().min(2000).max(2100),
+  month: z.coerce.number().int().min(1).max(12),
+  bankAccountId: z.string().min(1, "ব্যাংক অ্যাকাউন্ট নির্বাচন করুন"),
+  date: dateField.optional(),
+  reference: optionalText(100),
+  securityPin: optionalText(100),
+  otpCode: optionalText(20),
+  idempotencyKey: optionalText(100),
+  employeeIds: z.array(z.string()).optional(),
+});
+export type BankDisbursementInput = z.infer<typeof bankDisbursementSchema>;
 
 export const attendanceSchema = z.object({
   date: dateField,

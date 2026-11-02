@@ -7,10 +7,13 @@ import { num, prisma } from "@/lib/db";
 import { parsePeriod, PAYROLL_KIND_LABELS, periodLabel } from "@/lib/payroll";
 import { assertPartiesAllowed } from "../party-scope";
 import {
-  advanceSchema, attendanceSchema, departmentSchema, employeeSchema, payComponentSchema, payrollRunSchema, payrollSettingsSchema, payslipAdjustSchema, salaryPaymentSchema,
+  advanceSchema, attendanceSchema, departmentSchema, employeeSchema, payComponentSchema, payrollRunSchema, payrollSettingsSchema, payslipAdjustSchema, salaryPaymentSchema, bankDisbursementSchema, type BankDisbursementInput,
 } from "@/lib/validation";
 import { assertPermission } from "../auth";
 import { audit } from "../audit";
+import { getClientIp } from "../auth";
+import { issueOtp, otpAvailable } from "../sms/otp";
+import { getBankDisbursementPreview, executeBankDisbursement, type DisbursementPreview, type DisbursementResult, type BankDisbursementExecutionInput } from "../services/bankDisbursement";
 import { guard, parseForm, parseJsonPayload, toResult, UserError, type ActionState } from "../action-utils";
 import { assertEntryDate } from "../entry-date";
 import { flash } from "../flash";
@@ -255,3 +258,125 @@ export async function deleteAdvanceAction(id: string, _prev: ActionState, _fd: F
   if (!r.ok) return toResult(r);
   return done("অগ্রিম/ঋণ বাতিল হয়েছে", "/payroll/advances");
 }
+
+export async function postBankSalaryAdvicePaymentAction(input: {
+  year: number;
+  month: number;
+  bankAccountId: string;
+  reference?: string;
+  date?: string;
+}): Promise<{ ok: boolean; message: string; voucherId?: string | null; voucherNo?: string; alreadyPaid?: boolean }> {
+  try {
+    const ctx = await assertPermission("payroll:pay");
+    await assertPartiesAllowed(ctx, [input.bankAccountId]);
+    const d = input.date ? new Date(`${input.date}T00:00:00.000Z`) : new Date();
+    assertEntryDate(ctx, d);
+    const { postBankSalaryAdvicePayment } = await import("../payroll-bank-advice");
+    const res = await postBankSalaryAdvicePayment(ctx.svc, {
+      year: input.year,
+      month: input.month,
+      bankAccountId: input.bankAccountId,
+      date: d,
+      reference: input.reference,
+    });
+    if (res.voucherId) {
+      await audit({
+        businessId: ctx.business.id,
+        userId: ctx.user.id,
+        action: "CREATE",
+        entity: "SalaryPayment",
+        entityId: res.voucherId,
+        details: { voucherNo: res.voucherNo, amount: res.totalAmount, employees: res.paidCount, type: "BANK_ADVICE" },
+      });
+    }
+    revalidatePath("/payroll", "layout");
+    revalidatePath("/payroll/payments");
+    revalidatePath("/accounts");
+    return res;
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "বেতন পোস্টিং ব্যর্থ হয়েছে" };
+  }
+}
+
+export async function getBankDisbursementPreviewAction(params: {
+  year: number;
+  month: number;
+  bankAccountId: string;
+}): Promise<{ ok: boolean; message?: string; data?: DisbursementPreview }> {
+  try {
+    const ctx = await assertPermission("payroll:view");
+    await assertPartiesAllowed(ctx, [params.bankAccountId]);
+    const data = await getBankDisbursementPreview(ctx.svc, params);
+    return { ok: true, data };
+  } catch (e: any) {
+    return { ok: false, message: e.message || "প্রিভিউ লোড করতে ব্যর্থ হয়েছে" };
+  }
+}
+
+export async function requestDisbursementOtpAction(): Promise<{ ok: boolean; message: string }> {
+  try {
+    const ctx = await assertPermission("payroll:pay");
+    const mobile = ctx.user.mobile;
+    if (!mobile) {
+      return { ok: false, message: "ব্যবহারকারীর কোনো মোবাইল নম্বর যুক্ত নেই" };
+    }
+    if (!otpAvailable()) {
+      return { ok: false, message: "সার্ভারে এসএমএস গেটওয়ে কনফিগার করা নেই। অনুগ্রহ করে পাসওয়ার্ড/পিন ব্যবহার করুন।" };
+    }
+    await issueOtp(prisma, "LOGIN", mobile, {
+      clientIp: await getClientIp(),
+      userId: ctx.user.id,
+    });
+    return { ok: true, message: "আপনার মোবাইলে ৬ অঙ্কের ওটিপি কোড পাঠানো হয়েছে (৫ মিনিট কার্যকর)" };
+  } catch (e: any) {
+    return { ok: false, message: e.message || "ওটিপি পাঠাতে ব্যর্থ হয়েছে" };
+  }
+}
+
+export async function executeBankDisbursementAction(
+  rawInput: BankDisbursementExecutionInput
+): Promise<DisbursementResult> {
+  try {
+    const ctx = await assertPermission("payroll:pay");
+    const input = bankDisbursementSchema.parse(rawInput);
+    await assertPartiesAllowed(ctx, [input.bankAccountId]);
+    if (input.date) {
+      assertEntryDate(ctx, new Date(input.date));
+    }
+    const result = await executeBankDisbursement(ctx.svc, input);
+    if (result.ok && result.voucherId) {
+      await audit({
+        businessId: ctx.business.id,
+        userId: ctx.user.id,
+        action: "CREATE",
+        entity: "BankDisbursementBatch",
+        entityId: result.batchId,
+        details: {
+          voucherNo: result.voucherNo,
+          amount: result.successfulAmount,
+          employees: result.successCount,
+          type: "DIRECT_BANK_API",
+        },
+      });
+    }
+    revalidatePath("/payroll", "layout");
+    revalidatePath("/payroll/payments");
+    revalidatePath("/accounts");
+    return result;
+  } catch (e: any) {
+    return {
+      ok: false,
+      batchId: "",
+      idempotent: false,
+      status: "FAILED",
+      totalEmployees: 0,
+      successCount: 0,
+      failedCount: 0,
+      totalAmount: 0,
+      successfulAmount: 0,
+      message: e.message || "ব্যাংক ফান্ড ট্রান্সফার ব্যর্থ হয়েছে",
+      transfers: [],
+    };
+  }
+}
+

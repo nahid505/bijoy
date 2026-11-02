@@ -6,7 +6,8 @@ import { assertPermission } from "../auth";
 import { hasPermission } from "@/lib/permissions";
 import { audit } from "../audit";
 import { guard, UserError, type ActionState } from "../action-utils";
-import type { VerificationStatus } from "@prisma/client";
+import { dayRange } from "@/lib/format";
+import type { Prisma, VerificationStatus } from "@prisma/client";
 import { lockProducts } from "../services/inventory";
 import { revalueProducts } from "../services/posting";
 
@@ -25,6 +26,14 @@ export async function verifyVoucherAction(input: {
   status: VerificationStatus;
   note?: string | null;
 }): Promise<VerifyActionResult> {
+  if (input.voucherId.startsWith("att:")) {
+    return verifyAttendanceAction({
+      id: input.voucherId,
+      status: input.status,
+      note: input.note,
+    });
+  }
+
   const result = await guard(async () => {
     const { voucherId, status, note } = input;
     const required =
@@ -126,6 +135,33 @@ export async function bulkVerifyVouchersAction(input: {
   status: VerificationStatus;
   note?: string | null;
 }): Promise<ActionState & { count?: number }> {
+  const attIds = (input.voucherIds || []).filter((id) => id.startsWith("att:"));
+  const vIds = (input.voucherIds || []).filter((id) => !id.startsWith("att:"));
+
+  if (attIds.length > 0 && vIds.length === 0) {
+    return bulkVerifyAttendanceAction({
+      ids: attIds,
+      status: input.status,
+      note: input.note,
+    });
+  }
+
+  if (attIds.length > 0 && vIds.length > 0) {
+    const [vRes, attRes] = await Promise.all([
+      bulkVerifyVouchersAction({ voucherIds: vIds, status: input.status, note: input.note }),
+      bulkVerifyAttendanceAction({ ids: attIds, status: input.status, note: input.note }),
+    ]);
+    if (!vRes.ok && !attRes.ok) {
+      return { ok: false, message: vRes.message || attRes.message };
+    }
+    const count = (vRes.count ?? 0) + (attRes.count ?? 0);
+    return {
+      ok: true,
+      message: `${count} টি আইটেম সফলভাবে ${input.status === "VERIFIED" ? "অনুমোদিত" : "বাতিল"} হয়েছে`,
+      count,
+    };
+  }
+
   const result = await guard(async () => {
     const { voucherIds, status, note } = input;
     const required =
@@ -206,3 +242,180 @@ export async function bulkVerifyVouchersAction(input: {
     count: result.data.count,
   };
 }
+
+export async function verifyAttendanceAction(input: {
+  id: string;
+  status: VerificationStatus;
+  note?: string | null;
+}): Promise<VerifyActionResult> {
+  const result = await guard(async () => {
+    const { id, status, note } = input;
+    const required =
+      status === "VERIFIED"
+        ? ["can_verify_transactions", "vouchers:verify", "payroll:attendance", "payroll:process"]
+        : status === "REJECTED"
+        ? ["can_reject_transactions", "vouchers:verify", "payroll:attendance", "payroll:process"]
+        : ["can_unverify_transactions", "vouchers:verify", "payroll:attendance", "payroll:process"];
+    const ctx = await assertPermission(required as any);
+
+    let whereClause: Prisma.AttendanceWhereInput = { businessId: ctx.business.id };
+    if (id.startsWith("att:")) {
+      const datePart = id.slice(4).trim();
+      const range = dayRange(datePart, datePart);
+      whereClause = {
+        businessId: ctx.business.id,
+        date: range,
+      };
+    } else {
+      whereClause = {
+        businessId: ctx.business.id,
+        id,
+      };
+    }
+
+    const now = new Date();
+    const updateResult = await prisma.attendance.updateMany({
+      where: whereClause,
+      data: {
+        verificationStatus: status,
+        verifiedById: status === "UNVERIFIED" ? null : ctx.user.id,
+        verifiedAt: status === "UNVERIFIED" ? null : now,
+        verificationNote: status === "UNVERIFIED" ? null : (note?.trim() || null),
+      },
+    });
+
+    if (updateResult.count === 0) {
+      throw new UserError("কোনো হাজিরার রেকর্ড পাওয়া যায়নি");
+    }
+
+    await audit({
+      businessId: ctx.business.id,
+      userId: ctx.user.id,
+      action: "UPDATE",
+      entity: "Attendance",
+      entityId: id,
+      details: {
+        action: status === "VERIFIED" ? "VERIFY" : status === "REJECTED" ? "REJECT" : "UNVERIFY",
+        id,
+        count: updateResult.count,
+        newStatus: status,
+        note: note?.trim() || null,
+      },
+    });
+
+    return {
+      status,
+      verifiedBy: ctx.user.name,
+      verifiedAt: now.toISOString(),
+      note: note?.trim() || null,
+    };
+  });
+
+  if (!result.ok) {
+    return { ok: false, message: result.message };
+  }
+
+  revalidatePath("/", "layout");
+  revalidatePath("/audit/unverified");
+  revalidatePath("/payroll/attendance");
+  return {
+    ok: true,
+    message:
+      input.status === "VERIFIED"
+        ? "হাজিরা সফলভাবে অনুমোদিত (Verified) হয়েছে"
+        : input.status === "REJECTED"
+        ? "হাজিরা বাতিল (Rejected) করা হয়েছে"
+        : "হাজিরা ভেরিফিকেশন প্রত্যাহার করা হয়েছে",
+    ...result.data,
+  };
+}
+
+export async function bulkVerifyAttendanceAction(input: {
+  ids: string[];
+  status: VerificationStatus;
+  note?: string | null;
+}): Promise<ActionState & { count?: number }> {
+  const result = await guard(async () => {
+    const { ids, status, note } = input;
+    const required =
+      status === "VERIFIED"
+        ? ["can_verify_transactions", "vouchers:verify", "payroll:attendance", "payroll:process"]
+        : status === "REJECTED"
+        ? ["can_reject_transactions", "vouchers:verify", "payroll:attendance", "payroll:process"]
+        : ["can_unverify_transactions", "vouchers:verify", "payroll:attendance", "payroll:process"];
+    const ctx = await assertPermission(required as any);
+    if (!ids || ids.length === 0) {
+      throw new UserError("কোনো হাজিরার রেকর্ড নির্বাচন করা হয়নি");
+    }
+
+    const orConditions: Prisma.AttendanceWhereInput[] = [];
+    const directIds: string[] = [];
+
+    for (const id of ids) {
+      if (id.startsWith("att:")) {
+        const datePart = id.slice(4).trim();
+        const range = dayRange(datePart, datePart);
+        orConditions.push({ date: range });
+      } else {
+        directIds.push(id);
+      }
+    }
+    if (directIds.length > 0) {
+      orConditions.push({ id: { in: directIds } });
+    }
+
+    if (orConditions.length === 0) {
+      throw new UserError("কোনো বৈধ হাজিরার রেকর্ড নির্বাচন করা হয়নি");
+    }
+
+    const now = new Date();
+    const updateResult = await prisma.attendance.updateMany({
+      where: {
+        businessId: ctx.business.id,
+        OR: orConditions,
+      },
+      data: {
+        verificationStatus: status,
+        verifiedById: status === "UNVERIFIED" ? null : ctx.user.id,
+        verifiedAt: status === "UNVERIFIED" ? null : now,
+        verificationNote: status === "UNVERIFIED" ? null : (note?.trim() || null),
+      },
+    });
+
+    await audit({
+      businessId: ctx.business.id,
+      userId: ctx.user.id,
+      action: "UPDATE",
+      entity: "Attendance",
+      entityId: ctx.business.id,
+      details: {
+        action: status === "VERIFIED" ? "BULK_VERIFY" : status === "REJECTED" ? "BULK_REJECT" : "BULK_UNVERIFY",
+        status,
+        count: updateResult.count,
+        ids,
+        note: note?.trim() || null,
+      },
+    });
+
+    return { count: updateResult.count };
+  });
+
+  if (!result.ok) {
+    return { ok: false, message: result.message };
+  }
+
+  revalidatePath("/", "layout");
+  revalidatePath("/audit/unverified");
+  revalidatePath("/payroll/attendance");
+  return {
+    ok: true,
+    message:
+      input.status === "VERIFIED"
+        ? `${result.data.count} টি হাজিরার রেকর্ড সফলভাবে অনুমোদিত (Verified) হয়েছে`
+        : input.status === "REJECTED"
+        ? `${result.data.count} টি হাজিরার রেকর্ড বাতিল (Rejected) করা হয়েছে`
+        : `${result.data.count} টি হাজিরার রেকর্ডের ভেরিফিকেশন প্রত্যাহার করা হয়েছে`,
+    count: result.data.count,
+  };
+}
+

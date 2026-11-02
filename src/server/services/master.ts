@@ -1,7 +1,8 @@
 // Master data connected to accounting: every customer / supplier owns a ledger;
 // opening balances and opening stock are posted as OPENING vouchers.
-import type { AccountKind } from "@prisma/client";
+import type { AccountKind, BankApiProvider } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { encryptSecret } from "../sms/secret";
 import { UserError } from "@/lib/errors";
 import { NATURE_LABELS } from "@/lib/accounting";
 import { canHaveSubgroups, groupDepth, MAX_GROUP_DEPTH, NO_SUBGROUP_KEYS, orderGroupTree } from "@/lib/account-groups";
@@ -205,6 +206,13 @@ export interface AccountInput {
   openingBalance: number;
   openingSide: "DR" | "CR";
   imageUrl?: string | null;
+  isApiEnabled?: boolean;
+  apiProvider?: BankApiProvider | null;
+  apiEndpointUrl?: string | null;
+  apiClientId?: string | null;
+  apiClientSecret?: string | null;
+  corporateAccountNo?: string | null;
+  webhookSecret?: string | null;
 }
 
 export async function saveAccount(ctx: Ctx, input: AccountInput, id?: string) {
@@ -212,12 +220,20 @@ export async function saveAccount(ctx: Ctx, input: AccountInput, id?: string) {
     const group = await tx.accountGroup.findFirst({ where: { id: input.groupId, businessId: ctx.businessId } });
     if (!group) throw new UserError("গ্রুপ পাওয়া যায়নি");
     const kind: AccountKind = group.systemKey === "CASH_IN_HAND" ? "CASH" : group.systemKey === "BANK_ACCOUNTS" ? "BANK" : "GENERAL";
+    const isApi = kind === "BANK" && input.isApiEnabled ? true : false;
     const base = {
       name: input.name,
       code: input.code,
       description: input.description,
       bankName: kind === "BANK" ? input.bankName : null,
       accountNumber: kind === "BANK" ? input.accountNumber : null,
+      isApiEnabled: isApi,
+      apiProvider: isApi ? (input.apiProvider ?? null) : null,
+      apiEndpointUrl: isApi ? (input.apiEndpointUrl ?? null) : null,
+      apiClientId: isApi && input.apiClientId ? (input.apiClientId.startsWith("v1:") ? input.apiClientId : encryptSecret(input.apiClientId)) : null,
+      apiClientSecret: isApi && input.apiClientSecret ? (input.apiClientSecret.startsWith("v1:") ? input.apiClientSecret : encryptSecret(input.apiClientSecret)) : null,
+      corporateAccountNo: isApi ? (input.corporateAccountNo ?? null) : null,
+      webhookSecret: isApi ? (input.webhookSecret ?? null) : null,
       ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
     };
     let accountId: string;

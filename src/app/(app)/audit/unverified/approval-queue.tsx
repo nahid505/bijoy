@@ -166,6 +166,9 @@ export function ApprovalQueue({
 
   const getTypeBadgeClass = (rawType: string, label?: string) => {
     const combined = `${rawType || ""} ${label || ""}`.toLowerCase();
+    if (combined.includes("attendance") || combined.includes("হাজিরা")) {
+      return "bg-cyan-100 text-cyan-800 border-cyan-300";
+    }
     if (combined.includes("depot") || combined.includes("delivery") || combined.includes("ডিপো") || combined.includes("ডিও") || combined.includes("চালান")) {
       return "bg-indigo-100 text-indigo-800 border-indigo-300";
     }
@@ -317,13 +320,24 @@ export function ApprovalQueue({
                     {formatDate(item.date)}
                   </td>
                   <td>
-                    <Link
-                      prefetch={false}
-                      href={`/vouchers/v/${item.id}`}
-                      className="font-mono font-bold text-brand-700 hover:underline text-xs"
-                    >
-                      {item.voucherNo}
-                    </Link>
+                    {item.type === "ATTENDANCE" ? (
+                      <Link
+                        prefetch={false}
+                        href={`/payroll/attendance?date=${item.date.slice(0, 10)}`}
+                        className="font-mono font-bold text-cyan-700 hover:underline text-xs"
+                        title={t("হাজিরা শিট দেখুন")}
+                      >
+                        {item.voucherNo}
+                      </Link>
+                    ) : (
+                      <Link
+                        prefetch={false}
+                        href={`/vouchers/v/${item.id}`}
+                        className="font-mono font-bold text-brand-700 hover:underline text-xs"
+                      >
+                        {item.voucherNo}
+                      </Link>
+                    )}
                   </td>
                   <td>
                     <span
@@ -345,7 +359,7 @@ export function ApprovalQueue({
                     {item.creatorName || t("অ্যাডমিন")}
                   </td>
                   <td className="num font-bold text-slate-900 text-right tabular-nums">
-                    {formatMoney(item.amount, currency)}
+                    {item.amount > 0 ? formatMoney(item.amount, currency) : "—"}
                   </td>
                   <td className="text-center whitespace-nowrap">
                     <div className="inline-flex items-center gap-1.5">
@@ -417,7 +431,7 @@ export function ApprovalQueue({
                 </div>
                 <div className="text-right shrink-0">
                   <span className="text-base font-extrabold text-slate-900 tabular-nums">
-                    {formatMoney(item.amount, currency)}
+                    {item.amount > 0 ? formatMoney(item.amount, currency) : "—"}
                   </span>
                 </div>
               </div>
@@ -425,13 +439,24 @@ export function ApprovalQueue({
               {/* Row 2: Voucher No + Party/Account */}
               <div className="flex items-center justify-between gap-2 text-sm">
                 <div className="flex items-center gap-2 min-w-0">
-                  <Link
-                    prefetch={false}
-                    href={`/vouchers/v/${item.id}`}
-                    className="font-mono font-bold text-brand-700 hover:underline text-xs"
-                  >
-                    {item.voucherNo}
-                  </Link>
+                  {item.type === "ATTENDANCE" ? (
+                    <Link
+                      prefetch={false}
+                      href={`/payroll/attendance?date=${item.date.slice(0, 10)}`}
+                      className="font-mono font-bold text-cyan-700 hover:underline text-xs"
+                      title={t("হাজিরা শিট দেখুন")}
+                    >
+                      {item.voucherNo}
+                    </Link>
+                  ) : (
+                    <Link
+                      prefetch={false}
+                      href={`/vouchers/v/${item.id}`}
+                      className="font-mono font-bold text-brand-700 hover:underline text-xs"
+                    >
+                      {item.voucherNo}
+                    </Link>
+                  )}
                   <span className="text-slate-300">·</span>
                   <span className="font-semibold text-slate-800 truncate text-xs sm:text-sm">
                     {item.partyName || item.cashOrBankName || "—"}

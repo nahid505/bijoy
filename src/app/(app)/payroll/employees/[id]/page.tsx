@@ -61,7 +61,14 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
             <DetailRow label="যোগদান">{formatDate(e.joiningDate)}</DetailRow>
             {e.exitDate && <DetailRow label="অব্যাহতি">{formatDate(e.exitDate)}</DetailRow>}
             <DetailRow label="ঠিকানা">{e.address ?? "—"}</DetailRow>
-            <DetailRow label="বেতন প্রদান">{[{ CASH: "নগদ", BANK: "ব্যাংক", MOBILE: "মোবাইল ব্যাংকিং" }[e.paymentMethod ?? ""] ?? "—", e.bankName, e.bankAccountNo].filter(Boolean).join(" · ")}</DetailRow>
+            <DetailRow label="বেতন প্রদান">{
+              (() => {
+                const methodMap: Record<string, string> = { BANK: "ব্যাংক", CASH: "নগদ", MFS_BKASH: "বিকাশ", MFS_NAGAD: "নগদ ওয়ালেট", MOBILE: "মোবাইল ব্যাংকিং" };
+                const m = methodMap[e.paymentMethod ?? ""] ?? e.paymentMethod ?? "—";
+                const parts = [m, e.bankName, e.branchName ? `শাখা: ${e.branchName}` : null, e.bankAccountNo ? `হিসাব: ${e.bankAccountNo}` : null, e.routingNo ? `রাউটিং: ${e.routingNo}` : null, e.bankAccountName ? `(${e.bankAccountName})` : null];
+                return parts.filter(Boolean).join(" · ");
+              })()
+            }</DetailRow>
             <DetailRow label="ওভারটাইম">{e.overtimeEligible ? (e.overtimeRate ? `${formatMoney(num(e.overtimeRate), cur)} / ঘণ্টা` : "প্রযোজ্য (স্বয়ংক্রিয় হার)") : "প্রযোজ্য নয়"}</DetailRow>
           </dl>
         </section>

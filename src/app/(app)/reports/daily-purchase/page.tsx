@@ -3,7 +3,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { featureForPath } from "@/lib/features";
 import { addDays, formatDate, formatMoney, formatQty, toBnDigits } from "@/lib/format";
-import { AmountInWords } from "@/components/amount-words";
 import { PrintButton } from "@/components/forms";
 import { FilterField, PageHeader, PrintHeader } from "@/components/ui";
 import { requirePermission } from "@/server/auth";
@@ -58,7 +57,7 @@ export default async function DailyPurchasePage({ searchParams }: { searchParams
           </span>
         </form>
 
-        <div className="space-y-6 p-4 print:space-y-5">
+        <div className="space-y-6 p-4 print:space-y-4">
           <PrintHeader business={ctx.business} title="ডেইলি ক্রয় রিপোর্ট" subtitle={formatDate(d.date)} />
           <h2 className="no-print text-base font-semibold text-ink-900">তারিখ: {formatDate(d.date)}</h2>
 
@@ -173,16 +172,9 @@ export default async function DailyPurchasePage({ searchParams }: { searchParams
             </p>
           </section>
 
-          <div className="rounded-lg border border-rule bg-ink-50 p-3 text-sm print:break-inside-avoid print:bg-white">
-            <p>
-              অন্যান্য ক্রয় <b className="tabular-nums">{money(d.otherNet)}</b> + ধান ক্রয় <b className="tabular-nums">{money(t.total)}</b> = <b>দিনের সর্বমোট ক্রয়: <span id="grand-total" className="tabular-nums">{money(d.grandTotal)}</span></b>
-            </p>
-            <p className="mt-1"><b>কথায়:</b> <AmountInWords amount={d.grandTotal} /></p>
-          </div>
-
-          <div className="print-only pt-10">
+          <div className="print-only pt-8 print:pt-6 print:break-inside-avoid">
             <div className="grid grid-cols-3 gap-8 text-center text-xs">
-              {["প্রস্তুতকারী", "হিসাবরক্ষক", "অনুমোদনকারী"].map((s) => <p key={s} className="border-t border-ink-800 pt-1">{s}</p>)}
+              {["প্রস্তুতকারী", "যাচাইকারী", "অনুমোদনকারী"].map((s) => <p key={s} className="border-t border-ink-800 pt-1">{s}</p>)}
             </div>
           </div>
         </div>
