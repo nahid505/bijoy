@@ -100,6 +100,7 @@ export const NAV: NavEntry[] = [
     icon: I.swap,
     children: [
       { href: "/audit/unverified", label: "অনুমোদন কিউ (যাচাই)", permission: ["view_approval_queue", "can_verify_transactions", "vouchers:verify"] },
+      { href: "/intercompany/reconciliation", label: "আন্তঃপ্রতিষ্ঠান সমন্বয়", permission: "vouchers:view" },
       { href: "/vouchers/receipt", label: "রিসিপ্ট", permission: "vouchers:view" },
       { href: "/vouchers/payment", label: "পেমেন্ট", permission: "vouchers:view" },
       { href: "/vouchers/journal", label: "জার্নাল", permission: "vouchers:view" },
@@ -181,6 +182,7 @@ export const NAV: NavEntry[] = [
       { href: "/reports/trial-balance", label: "ট্রায়াল ব্যালেন্স", permission: "reports:view" },
       { href: "/reports/profit-loss", label: "লাভ-ক্ষতি", permission: "reports:view" },
       { href: "/reports/balance-sheet", label: "ব্যালান্স শীট", permission: "reports:view" },
+      { href: "/reports/consolidated", label: "সম্মিলিত গ্রুপ রিপোর্ট", permission: "reports:view" },
       { href: "/reports/cash-flow", label: "নগদ প্রবাহ", permission: "reports:view" },
       { href: "/reports/stock", label: "স্টক রিপোর্ট", permission: "reports:view" },
       { href: "/reports/stock-valuation", label: "স্টক মূল্যায়ন", permission: REPORT_ACCESS.stockValuation },
@@ -243,6 +245,7 @@ export const NAV_LABEL_EN: Record<string, string> = {
   বেতন: "Payroll",
   সার্চ: "Search",
   "উৎপাদন ও ফলন রিপোর্ট": "Production & Yield Report",
+  "সম্মিলিত গ্রুপ রিপোর্ট": "Consolidated Group Financials",
 };
 
 export const MOBILE_TABS = [

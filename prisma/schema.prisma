@@ -132,7 +132,26 @@ enum BankTransferStatus {
   PARTIAL
 }
 
+enum BilateralStatus {
+  NONE
+  PENDING
+  ACCEPTED
+  DISPUTED
+}
+
 // ───────────────────────────── tenancy & access ─────────────────────────────
+
+model CompanyGroup {
+  id          String     @id @default(cuid())
+  name        String
+  code        String?    @unique // e.g. "RAHIM_GROUP"
+  description String?
+  logo        String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  businesses  Business[]
+}
 
 model Business {
   id                   String    @id @default(cuid())
@@ -202,6 +221,17 @@ model Business {
   depotDeliveries     DepotDelivery[]
   bankTransfers       BankTransferLog[]
   disbursementBatches BankDisbursementBatch[]
+
+  // ── Enterprise Group & Inter-Company
+  groupId             String?
+  group               CompanyGroup?           @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  isParent            Boolean                 @default(false)
+  intercompanyCode    String?                 // Unique short code within group, e.g. "MILL", "DEPOT", "TRADING"
+
+  linkedCustomers     Customer[]              @relation("LinkedBusinessCustomer")
+  linkedSuppliers     Supplier[]              @relation("LinkedBusinessSupplier")
+
+  @@index([groupId])
 }
 
 model User {
@@ -435,6 +465,11 @@ model Voucher {
   verifiedBy          User?       @relation("VoucherVerifiedBy", fields: [verifiedById], references: [id])
   verifiedAt          DateTime?
   verificationNote    String?
+  // ── Inter-Company Mirror & Bilateral Tracking
+  isIntercompany      Boolean            @default(false)
+  intercompanyRefId   String?
+  bilateralStatus     BilateralStatus    @default(NONE)
+  disputeReason       String?
   createdAt           DateTime    @default(now())
   updatedAt           DateTime    @updatedAt
 
@@ -459,6 +494,8 @@ model Voucher {
   @@index([businessId, verificationStatus])
   @@index([partyAccountId])
   @@index([returnOfId])
+  @@index([isIntercompany, bilateralStatus])
+  @@index([intercompanyRefId])
 }
 
 /// Settlement of a sales / purchase / return voucher through one or more cash / bank ledgers
@@ -556,16 +593,22 @@ model Customer {
   ownerName     String? // depot dealer: proprietor / owner (name = the shop / business)
   route         String? // depot: dealer's route / area (market dues by route)
   /// depot dealer: kept out of the general customer list / pickers; their trade lives in the DEPOT book
-  isDepotDealer Boolean        @default(false)
-  isActive      Boolean        @default(true)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  smsMessages   SmsMessage[]
-  assignedTo    UserCustomer[]
+  isDepotDealer    Boolean        @default(false)
+  // ── Inter-Company / Sister Concern link
+  isSisterConcern  Boolean        @default(false)
+  linkedBusinessId String?
+  linkedBusiness   Business?      @relation("LinkedBusinessCustomer", fields: [linkedBusinessId], references: [id], onDelete: SetNull)
+  isActive         Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  smsMessages      SmsMessage[]
+  assignedTo       UserCustomer[]
 
   @@index([businessId, name])
   @@index([businessId, mobile])
   @@index([businessId, groupName])
+  @@index([businessId, isSisterConcern])
+  @@index([linkedBusinessId])
 }
 
 model Supplier {
@@ -580,16 +623,22 @@ model Supplier {
   address     String?
   imageUrl    String?
   notes       String?
-  creditDays  Int            @default(0)
-  isActive    Boolean        @default(true)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  batches     ProductBatch[]
-  smsMessages SmsMessage[]
-  assignedTo  UserSupplier[]
+  creditDays       Int            @default(0)
+  // ── Inter-Company / Sister Concern link
+  isSisterConcern  Boolean        @default(false)
+  linkedBusinessId String?
+  linkedBusiness   Business?      @relation("LinkedBusinessSupplier", fields: [linkedBusinessId], references: [id], onDelete: SetNull)
+  isActive         Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  batches          ProductBatch[]
+  smsMessages      SmsMessage[]
+  assignedTo       UserSupplier[]
 
   @@index([businessId, name])
   @@index([businessId, mobile])
+  @@index([businessId, isSisterConcern])
+  @@index([linkedBusinessId])
 }
 
 // ───────────────────────────── inventory ─────────────────────────────

@@ -9,6 +9,8 @@ import { refreshSmsBalanceAction, saveSmsSettingsAction, sendTestSmsAction } fro
 import { availableProviders, platformConfig, PROVIDER_LABELS } from "@/server/sms/providers";
 import { SmsTabs } from "../sms-ui";
 import { intList, strList } from "@/lib/dialect";
+import { getBulkSmsBdRegistrationData } from "@/server/sms/bulksmsbd-bridge";
+import { ProviderFormFields } from "./bulksmsbd-connect-modal";
 
 export const metadata: Metadata = { title: "এসএমএস সেটিং" };
 
@@ -26,6 +28,17 @@ export default async function SmsSettingsPage() {
   const platform = platformConfig();
   const providers = availableProviders().filter((p) => p !== "platform" || platform);
 
+  const business = await prisma.business.findUnique({
+    where: { id: ctx.business.id },
+    select: { name: true, mobile: true, email: true },
+  });
+
+  const registrationData = getBulkSmsBdRegistrationData({
+    name: business?.name ?? ctx.business.name,
+    mobile: business?.mobile ?? ctx.user.mobile ?? null,
+    email: business?.email ?? ctx.user.email ?? null,
+  });
+
   return (
     <>
       <PageHeader title="এসএমএস সেটিং" description="প্রোভাইডার, সেন্ডার আইডি, স্বয়ংক্রিয় এসএমএস ও ব্যালেন্স সতর্কতা" />
@@ -40,17 +53,15 @@ export default async function SmsSettingsPage() {
               </label>
               <fieldset className="grid gap-4 sm:grid-cols-2">
                 <legend className="mb-2 text-sm font-semibold text-ink-800">প্রোভাইডার</legend>
-                <Field label="প্রোভাইডার" name="provider">
-                  <select id="provider" name="provider" defaultValue={s?.provider ?? (platform ? "platform" : "mock")} className="input">
-                    {providers.map((p) => <option key={p} value={p}>{PROVIDER_LABELS[p] ?? p}</option>)}
-                  </select>
-                </Field>
-                <Field label="API কী" name="apiKey" hint={s?.apiKeyHint ? `সংরক্ষিত কী: ${s.apiKeyHint} — পরিবর্তন না করলে খালি রাখুন` : "এনক্রিপ্ট করে সংরক্ষণ হয়; কখনো আর দেখানো হয় না"}>
-                  <input id="apiKey" name="apiKey" type="password" autoComplete="new-password" className="input" placeholder={s?.apiKeyHint ?? ""} />
-                </Field>
-                <Field label="সেন্ডার আইডি / মাস্কিং" name="senderId" hint="প্রোভাইডারে অনুমোদিত নাম বা নম্বর">
-                  <input id="senderId" name="senderId" defaultValue={s?.senderId ?? ""} maxLength={20} className="input" />
-                </Field>
+                <ProviderFormFields
+                  initialProvider={s?.provider ?? (platform ? "platform" : "mock")}
+                  apiKeyHint={s?.apiKeyHint}
+                  initialSenderId={s?.senderId}
+                  providers={providers}
+                  providerLabels={PROVIDER_LABELS}
+                  platform={!!platform}
+                  registrationData={registrationData}
+                />
                 <Field label="কম ব্যালেন্স সতর্কতা" name="lowBalanceThreshold" hint="ব্যালেন্স এর নিচে নামলে নোটিফিকেশন">
                   <input id="lowBalanceThreshold" name="lowBalanceThreshold" type="text" inputMode="decimal" data-numeric min="0" step="1" defaultValue={s ? num(s.lowBalanceThreshold) : 100} className="input-num" />
                 </Field>
@@ -115,7 +126,18 @@ export default async function SmsSettingsPage() {
             <div className="space-y-2 p-4 text-sm">
               <p className="text-2xl font-bold">{s?.balance !== null && s?.balance !== undefined ? formatNumber(num(s.balance)) : "—"}</p>
               {s?.balanceCheckedAt && <p className="text-xs text-slate-500">হালনাগাদ {formatDateTime(s.balanceCheckedAt)}</p>}
-              <ActionButton action={refreshSmsBalanceAction} label="↻ ব্যালেন্স দেখুন" className="btn-secondary btn-sm" />
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <ActionButton action={refreshSmsBalanceAction} label="↻ ব্যালেন্স দেখুন" className="btn-secondary btn-sm" />
+                <a
+                  href="https://bulksmsbd.net/login"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-outline btn-sm inline-flex items-center gap-1.5 text-xs text-sky-700 hover:text-sky-800"
+                >
+                  <span>💳</span>
+                  <span>এসএমএস রিচার্জ করুন</span>
+                </a>
+              </div>
             </div>
           </section>
         </div>

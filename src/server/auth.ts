@@ -31,6 +31,24 @@ export interface BusinessSummary {
   roleName: string;
 }
 
+export interface SisterConcernSummary {
+  id: string;
+  name: string;
+  isParent: boolean;
+  intercompanyCode: string | null;
+  businessType: string | null;
+}
+
+export interface GroupContext {
+  id: string;
+  name: string;
+  code: string | null;
+  isParent: boolean;
+  intercompanyCode: string | null;
+  sisterConcerns: SisterConcernSummary[];
+  canConsolidate: boolean;
+}
+
 export interface AppContext {
   user: CurrentUser;
   business: {
@@ -70,6 +88,8 @@ export interface AppContext {
   businesses: BusinessSummary[];
   /** "শুধু নির্ধারিত কাস্টমার / সরবরাহকারী": the party accounts this member may see (null = all) — src/server/party-scope.ts */
   partyScope: PartyScope;
+  /** group context when part of an Enterprise / Company Group */
+  group: GroupContext | null;
   /** shape expected by services */
   svc: { businessId: string; userId: string };
 }
@@ -98,16 +118,80 @@ export async function currentSessionId(): Promise<string | null> {
 export const getContext = cache(async (): Promise<AppContext | null> => {
   const user = await getCurrentUser();
   if (!user) return null;
-  const memberships = await prisma.membership.findMany({
+  let memberships = await prisma.membership.findMany({
     where: { userId: user.id, isActive: true, business: { isActive: true } },
-    include: { business: true, role: true },
+    include: {
+      business: {
+        include: {
+          group: {
+            include: {
+              businesses: {
+                where: { isActive: true },
+                select: { id: true, name: true, isParent: true, intercompanyCode: true, businessType: true },
+                orderBy: [{ isParent: "desc" }, { name: "asc" }],
+              },
+            },
+          },
+        },
+      },
+      role: true,
+    },
     orderBy: { createdAt: "asc" },
   });
+
+  // Global context for platform Super Admin: access any business in the group or platform
+  if (user.isSuperAdmin && memberships.length === 0) {
+    const allBusinesses = await prisma.business.findMany({
+      where: { isActive: true },
+      include: {
+        roles: { where: { isSystem: true } },
+        group: {
+          include: {
+            businesses: {
+              where: { isActive: true },
+              select: { id: true, name: true, isParent: true, intercompanyCode: true, businessType: true },
+              orderBy: [{ isParent: "desc" }, { name: "asc" }],
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+    if (allBusinesses.length > 0) {
+      memberships = allBusinesses.map((ab) => ({
+        id: `super-${ab.id}`,
+        userId: user.id,
+        businessId: ab.id,
+        business: ab,
+        roleId: ab.roles[0]?.id || "system-owner",
+        role: ab.roles[0] || {
+          id: "system-owner",
+          businessId: ab.id,
+          name: "Super Admin",
+          description: "Platform Operator with Full Access",
+          permissions: ["*"],
+          isSystem: true,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+        isActive: true,
+        createdAt: new Date(),
+      })) as any;
+    }
+  }
+
   if (memberships.length === 0) return null;
   const store = await cookies();
   const wanted = store.get(BUSINESS_COOKIE)?.value;
   const m = memberships.find((x) => x.businessId === wanted) ?? memberships[0];
-  const b = m.business;
+  const b = m.business as typeof m.business & {
+    group?: {
+      id: string;
+      name: string;
+      code: string | null;
+      businesses: { id: string; name: string; isParent: boolean; intercompanyCode: string | null; businessType: string | null }[];
+    } | null;
+  };
   // switched-off features: their own permissions are blocked; without Multi User only the Owner may act
   const access = await featureAccess(b.id);
   const on = access.on;
@@ -120,6 +204,30 @@ export const getContext = cache(async (): Promise<AppContext | null> => {
   // the rice-mill keys open shared screens (paddy slips, milling batches, sales): refused outside a rice-mill business
   const moduleBlocks = riceMillBlocked(strList(b.businessTypes));
   const permissions = eff?.blocked ? billingOnly : !on.has("MULTI_USER") && !isOwner ? [] : [...strList(m.role.permissions), ...[...blockedPermissions(off), ...moduleBlocks].map((x) => `!${x}`)];
+
+  // Group context resolution
+  const groupContext: GroupContext | null = b.group
+    ? {
+        id: b.group.id,
+        name: b.group.name,
+        code: b.group.code,
+        isParent: b.isParent,
+        intercompanyCode: b.intercompanyCode,
+        sisterConcerns: b.group.businesses.map((s) => ({
+          id: s.id,
+          name: s.name,
+          isParent: s.isParent,
+          intercompanyCode: s.intercompanyCode,
+          businessType: s.businessType,
+        })),
+        canConsolidate:
+          user.isSuperAdmin ||
+          (b.isParent && isOwner) ||
+          m.role.name.toUpperCase() === "GROUP_AUDITOR" ||
+          m.role.name.toUpperCase().includes("GROUP AUDITOR"),
+      }
+    : null;
+
   return {
     user,
     business: {
@@ -149,8 +257,11 @@ export const getContext = cache(async (): Promise<AppContext | null> => {
     isOwner,
     entitled: [...access.entitled],
     subscription: eff ? { status: eff.status, blocked: eff.blocked, daysLeft: eff.daysLeft, inGrace: eff.inGrace, accessUntil: eff.accessUntil } : null,
-    businesses: memberships.map((x) => ({ id: x.businessId, name: x.business.name, roleName: x.role.name })),
+    businesses: user.isSuperAdmin
+      ? (await prisma.business.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } })).map((x) => ({ id: x.id, name: x.name, roleName: "Super Admin" }))
+      : memberships.map((x) => ({ id: x.businessId, name: x.business.name, roleName: x.role.name })),
     partyScope,
+    group: groupContext,
     svc: { businessId: b.id, userId: user.id },
   };
 });

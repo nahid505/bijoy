@@ -33,6 +33,28 @@ export default async function ReportsIndex() {
     <>
       <PageHeader title="রিপোর্ট" description="সকল রিপোর্ট সরাসরি হিসাবের জার্নাল এন্ট্রি থেকে তৈরি — তারিখ, খোঁজ, প্রিন্ট/PDF ও এক্সেল এক্সপোর্টসহ" />
       <div className="grid gap-5 lg:grid-cols-2 2xl:grid-cols-4">
+        {ctx.group && (
+          <section className="panel border-primary/40 bg-gradient-to-br from-primary/5 to-transparent">
+            <div className="panel-head flex items-center justify-between">
+              <h2 className="panel-title text-primary">এন্টারপ্রাইজ ও গ্রুপ</h2>
+              <span className="badge badge-info text-xs">{ctx.group.name}</span>
+            </div>
+            <ul className="divide-y divide-rule">
+              <li>
+                <Link prefetch={false} href="/reports/consolidated" className="block px-4 py-3 hover:bg-brand-50/50">
+                  <p className="text-sm font-semibold text-ink-900">সম্মিলিত গ্রুপ রিপোর্ট ও এলিমিনেশন</p>
+                  <p className="text-xs text-slate-500">গ্রুপের সকল সিস্টার কনসার্নের ব্যালেন্স শীট, লাভ-ক্ষতি ও অভ্যন্তরীণ সেলস-বাকি সমন্বয়</p>
+                </Link>
+              </li>
+              <li>
+                <Link prefetch={false} href="/intercompany/reconciliation" className="block px-4 py-3 hover:bg-brand-50/50">
+                  <p className="text-sm font-semibold text-ink-900">আন্তঃপ্রতিষ্ঠান রিকনসিলিয়েশন ড্যাশবোর্ড</p>
+                  <p className="text-xs text-slate-500">সিস্টার কনসার্নগুলোর দ্বিপাক্ষিক লেনদেন ভেরিফিকেশন ও কন্ট্রা হিসাব</p>
+                </Link>
+              </li>
+            </ul>
+          </section>
+        )}
         {sections.map((s) => (
           <section key={s.title} className="panel">
             <div className="panel-head"><h2 className="panel-title">{s.title}</h2></div>

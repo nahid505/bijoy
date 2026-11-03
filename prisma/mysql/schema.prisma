@@ -135,6 +135,13 @@ enum BankTransferStatus {
   PARTIAL
 }
 
+enum BilateralStatus {
+  NONE
+  PENDING
+  ACCEPTED
+  DISPUTED
+}
+
 // ───────────────────────────── tenancy & access ─────────────────────────────
 
 model Business {
@@ -438,6 +445,11 @@ model Voucher {
   verifiedBy          User?              @relation("VoucherVerifiedBy", fields: [verifiedById], references: [id])
   verifiedAt          DateTime?
   verificationNote    String?            @db.Text
+  // ── Inter-Company Mirror & Bilateral Tracking
+  isIntercompany      Boolean            @default(false)
+  intercompanyRefId   String?
+  bilateralStatus     BilateralStatus    @default(NONE)
+  disputeReason       String?            @db.Text
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
 
@@ -462,6 +474,8 @@ model Voucher {
   @@index([businessId, verificationStatus])
   @@index([partyAccountId])
   @@index([returnOfId])
+  @@index([isIntercompany, bilateralStatus])
+  @@index([intercompanyRefId])
 }
 
 /// Settlement of a sales / purchase / return voucher through one or more cash / bank ledgers

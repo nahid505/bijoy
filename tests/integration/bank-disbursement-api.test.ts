@@ -251,7 +251,7 @@ run("Dual-Method Bank Disbursement & Direct API Integration", () => {
     const crEntry = voucher.entries.find((e) => num(e.credit) > 0);
     expect(drEntry?.debit).toEqual(expect.anything());
     expect(crEntry?.accountId).toBe(bankAccountId);
-    expect(num(crEntry?.credit!)).toBe(80000);
+    expect(num(crEntry!.credit)).toBe(80000);
   });
 
   it("ensures idempotency: duplicate execution returns existing result without double-deduction", async () => {

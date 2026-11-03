@@ -14,6 +14,7 @@ import { isBulk, sendManualSms, resolveRecipients, type SmsTarget } from "../sms
 import { availableProviders } from "../sms/providers";
 import { checkSmsBalance, enqueueSms, kickSmsQueue, processSmsMessage } from "../sms/queue";
 import { encryptSecret, secretHint } from "../sms/secret";
+import { loginToBulkSmsBd, verifyBulkSmsBdApiKey } from "../sms/bulksmsbd-bridge";
 
 const settingsSchema = z.object({
   enabled: z.boolean(),
@@ -173,3 +174,105 @@ export async function retrySmsAction(id: string, _prev?: ActionState, _fd?: Form
   revalidatePath("/sms", "layout");
   return result.ok ? { ok: true, message: "আবার পাঠানোর জন্য সারিতে রাখা হয়েছে" } : toResult(result);
 }
+
+/**
+ * BulkSMSBD 1-click connect action:
+ * Either credential login bridge (username + password) or direct API key validation.
+ * Connects, verifies balance, encrypts key, updates settings and enables SMS.
+ */
+export async function autoConnectBulkSmsBdAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const result = await guard(async () => {
+    const ctx = await assertPermission("sms:manage");
+    const mode = String(fd.get("mode") ?? "apiKey");
+
+    let apiKey = "";
+    let senderId: string | null = null;
+    let balance: number | undefined;
+
+    if (mode === "login") {
+      const username = String(fd.get("username") ?? "").trim();
+      const password = String(fd.get("password") ?? "").trim();
+      if (!username || !password) {
+        throw new UserError("ইউজারনেম ও পাসওয়ার্ড প্রদান করুন");
+      }
+      const loginRes = await loginToBulkSmsBd(username, password);
+      if (!loginRes.ok || !loginRes.apiKey) {
+        throw new UserError(loginRes.message || "BulkSMSBD লগইন বা API কী সংগ্রহ ব্যর্থ হয়েছে");
+      }
+      apiKey = loginRes.apiKey;
+      senderId = loginRes.senderId || null;
+      balance = loginRes.balance;
+    } else {
+      apiKey = String(fd.get("apiKey") ?? "").trim();
+      senderId = String(fd.get("senderId") ?? "").trim() || null;
+      if (!apiKey) {
+        throw new UserError("BulkSMSBD API কী দিন", { apiKey: ["API কী আবশ্যক"] });
+      }
+      const verifyRes = await verifyBulkSmsBdApiKey(apiKey);
+      if (!verifyRes.ok) {
+        throw new UserError(verifyRes.message || "API কী সঠিক নয়");
+      }
+      balance = verifyRes.balance;
+    }
+
+    const now = new Date();
+    const data = {
+      provider: "bulksmsbd",
+      enabled: true,
+      apiKeyEnc: encryptSecret(apiKey),
+      apiKeyHint: secretHint(apiKey),
+      ...(senderId ? { senderId } : {}),
+      ...(balance !== undefined ? { balance, balanceCheckedAt: now } : {}),
+    };
+
+    await prisma.smsSettings.upsert({
+      where: { businessId: ctx.business.id },
+      create: {
+        businessId: ctx.business.id,
+        ...data,
+      },
+      update: data,
+    });
+
+    await audit({
+      businessId: ctx.business.id,
+      userId: ctx.user.id,
+      action: "UPDATE",
+      entity: "SmsSettings",
+      entityId: ctx.business.id,
+      details: {
+        provider: "bulksmsbd",
+        autoConnect: true,
+        mode,
+        balance,
+        senderId: senderId ?? undefined,
+        apiKeyHint: secretHint(apiKey),
+      },
+    });
+
+    return {
+      balance,
+      apiKeyHint: secretHint(apiKey),
+      senderId,
+    };
+  });
+
+  revalidatePath("/sms", "layout");
+  revalidatePath("/sms/settings");
+
+  return result.ok
+    ? {
+        ok: true,
+        message:
+          result.data.balance !== undefined
+            ? `BulkSMSBD সফলভাবে কানেক্ট হয়েছে! বর্তমান ব্যালেন্স: ৳ ${result.data.balance.toFixed(2)}`
+            : "BulkSMSBD সফলভাবে কানেক্ট হয়েছে!",
+        data: {
+          balance: String(result.data.balance ?? ""),
+          apiKeyHint: result.data.apiKeyHint,
+          senderId: result.data.senderId || "",
+        },
+      }
+    : toResult(result);
+}
+

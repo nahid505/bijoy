@@ -93,7 +93,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <Link prefetch={false} href="/admin" className="hidden shrink-0 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100 sm:block">Super Admin</Link>
           )}
           <LangToggle />
-          <BusinessSwitcher current={ctx.business.id} businesses={ctx.businesses} />
+          <BusinessSwitcher current={ctx.business.id} businesses={ctx.businesses} group={ctx.group} />
           <Link prefetch={false} href="/account" className="hidden text-right leading-tight hover:opacity-80 sm:block">
             <p className="text-xs font-semibold text-ink-800">{ctx.user.name}</p>
             <p className="text-[11px] text-slate-500">{ctx.roleName}</p>

@@ -15,6 +15,7 @@ import { assertAccounts, assertBookAccounts, assertNotLocked, nextVoucherNo, wri
 import { assertBookProducts, defaultWarehouseId, lockProducts, writeMovements, type MovementInput } from "./inventory";
 import { repostVoucher, revalueProducts } from "./posting";
 import { allocateSaleBatches, ensureInboundBatch, expiryLossAccount, requireBatch, type BatchAllocation } from "./batches";
+import { mirrorSalesToPurchaseProposal } from "./intercompany";
 import type { BookKey } from "@/lib/book";
 import { TRANSFER_SOURCE } from "@/lib/depot";
 
@@ -322,6 +323,18 @@ export async function tradeVoucherTx(tx: Tx, ctx: Ctx, type: TradeType, input: T
     // ── replay stock timeline (costs, negative-stock check), then post this voucher
     await revalueProducts(tx, ctx.businessId, [...productIds, ...removedProducts], { skipRepost: new Set([voucher.id]) });
     await repostVoucher(tx, voucher.id);
+
+    // ── inter-company mirror engine: create draft purchase proposal if sold to sister concern
+    if (type === "SALES" && input.partyAccountId) {
+      const customer = await tx.customer.findUnique({
+        where: { accountId: input.partyAccountId },
+        select: { id: true, isSisterConcern: true, linkedBusinessId: true },
+      });
+      if (customer?.isSisterConcern && customer.linkedBusinessId) {
+        await mirrorSalesToPurchaseProposal(tx, ctx, voucher.id, customer.linkedBusinessId);
+      }
+    }
+
     return voucher;
   }
 }
@@ -507,6 +520,19 @@ export async function deleteVoucher(ctx: Ctx, id: string) {
     if (isPaddyLabourVoucher(v.sourceKey)) throw new UserError(PADDY_LABOUR_MESSAGE);
     await assertNotLocked(tx, ctx.businessId, v.date);
     if (v._count.returns > 0) throw new UserError("এই ইনভয়েসের বিপরীতে ফেরত ভাউচার আছে — আগে সেগুলো মুছুন");
+
+    // Inter-company integrity: refuse deletion if accepted, clean draft if pending
+    if (v.isIntercompany && v.intercompanyRefId) {
+      const paired = await tx.voucher.findUnique({ where: { id: v.intercompanyRefId } });
+      if (paired && paired.bilateralStatus === "ACCEPTED") {
+        throw new UserError("এই আন্তঃপ্রতিষ্ঠান চালানটি ইতোমধ্যে সংশ্লিষ্ট প্রতিষ্ঠানে অনুমোদিত হয়েছে। মুছতে হলে আগে তাদের দিক থেকে বাতিল/সংশোধন করতে হবে।");
+      }
+      if (paired && paired.bilateralStatus === "PENDING") {
+        await tx.voucherItem.deleteMany({ where: { voucherId: paired.id } });
+        await tx.voucher.delete({ where: { id: paired.id } });
+      }
+    }
+
     const products = await clearPostings(tx, v.id);
     await tx.voucher.delete({ where: { id: v.id } });
     // a paddy slip takes its labour payment with it (its entries cascade)

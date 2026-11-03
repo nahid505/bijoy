@@ -28,6 +28,12 @@ const LOGO_TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
 export async function switchBusinessAction(fd: FormData): Promise<boolean> {
   const user = await requireUser();
   const id = String(fd.get("businessId") ?? "");
+  if (user.isSuperAdmin) {
+    const b = await prisma.business.findUnique({ where: { id, isActive: true }, select: { id: true } });
+    if (!b) return false;
+    await setBusinessCookie(id);
+    return true;
+  }
   const m = await prisma.membership.findFirst({ where: { userId: user.id, businessId: id, isActive: true } });
   if (!m) return false;
   await setBusinessCookie(id);
