@@ -10,6 +10,7 @@ import { clearSessionCookie, getClientIp, getCurrentUser, setBusinessCookie, set
 import { flash } from "../flash";
 import { registerAccount } from "../services/registration";
 import { audit } from "../audit";
+import { ciEquals } from "@/lib/dialect";
 import { formToObject, guard, parseForm, UserError, type ActionState } from "../action-utils";
 import { formatDate, formatDateTime, toBnDigits } from "@/lib/format";
 import { beginLoginAttempt, loginSucceeded, reserveAttempt } from "../services/login-guard";
@@ -165,7 +166,7 @@ export async function requestPasswordResetAction(_prev: ActionState, fd: FormDat
     }
 
     const user = await prisma.user.findFirst({
-      where: isEmail ? { email: { equals: email, mode: "insensitive" } } : { mobile: mobile! },
+      where: isEmail ? { email: ciEquals(email as string) } : { mobile: mobile! },
       select: { id: true, name: true, email: true, mobile: true, isActive: true },
     });
 
@@ -246,7 +247,7 @@ export async function resetPasswordAction(_prev: ActionState, fd: FormData): Pro
 
     const user = await prisma.user.findFirst({
       where: isEmail
-        ? { email: { equals: email, mode: "insensitive" } }
+        ? { email: ciEquals(email as string) }
         : { mobile: mobile || rawIdentifier },
     });
 
