@@ -3,6 +3,7 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import { UserError } from "@/lib/errors";
 import { round2, round3, round4 } from "@/lib/calc";
+import { ciEquals } from "@/lib/dialect";
 import { nextVoucherNo, systemAccounts, writeEntries, type Ctx, type Tx } from "./accounting";
 import { lockProducts, writeMovements, type MovementInput } from "./inventory";
 import { repostVoucher, revalueProducts } from "./posting";
@@ -190,7 +191,7 @@ export async function mapOrCreateBuyerProduct(
   const existingByName = await tx.product.findFirst({
     where: {
       businessId: buyerBusinessId,
-      name: { equals: sourceProduct.name, mode: "insensitive" },
+      name: ciEquals(sourceProduct.name),
       isActive: true,
     },
     include: { unit: true },
@@ -200,7 +201,7 @@ export async function mapOrCreateBuyerProduct(
   // 3. Find matching unit by name in buyer's business, or fallback to default
   let buyerUnit = sourceProduct.unit?.name
     ? await tx.unit.findFirst({
-        where: { businessId: buyerBusinessId, name: { equals: sourceProduct.unit.name, mode: "insensitive" } },
+        where: { businessId: buyerBusinessId, name: ciEquals(sourceProduct.unit.name) },
       })
     : null;
 
