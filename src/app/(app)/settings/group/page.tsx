@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui";
 import { requirePermission } from "@/server/auth";
 import { prisma } from "@/lib/db";
+import { strList } from "@/lib/dialect";
 import {
   listSisterConcerns,
   getConsolidatedGroupOverview,
@@ -95,7 +96,7 @@ export default async function SettingsGroupPage() {
         }}
         groupData={groupData}
         overview={overview}
-        roles={roles}
+        roles={roles.map((r) => ({ ...r, permissions: strList(r.permissions) }))}
         members={members}
         partners={partners}
         existingGroups={existingGroups}

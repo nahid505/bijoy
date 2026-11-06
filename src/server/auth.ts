@@ -183,7 +183,7 @@ export const getContext = cache(async (): Promise<AppContext | null> => {
               businessId: gb.id,
               name: gm.role.name,
               description: gm.role.description || "Group Central Role",
-              permissions: gm.role.permissions,
+              permissions: strList(gm.role.permissions),
               isSystem: false,
               createdAt: gm.createdAt,
               updatedAt: gm.updatedAt,
