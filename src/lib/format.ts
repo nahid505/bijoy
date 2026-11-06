@@ -74,6 +74,14 @@ export function formatDate(value: Date | string | null | undefined): string {
   return `${toBnDigits(Number(p.day))} ${BN_MONTHS[Number(p.month) - 1]} ${toBnDigits(p.year)}`;
 }
 
+/** Date -> "০৫/১১/২০২৬" (dd/mm/yyyy, Bangla digits, Bangladesh calendar day) */
+export function formatDateSlash(value: Date | string | null | undefined): string {
+  const d = parseDate(value);
+  if (!d) return "—";
+  const p = dateParts(d);
+  return `${toBnDigits(p.day)}/${toBnDigits(p.month)}/${toBnDigits(p.year)}`;
+}
+
 export function formatDateTime(value: Date | string | null | undefined): string {
   const d = parseDate(value);
   if (!d) return "—";

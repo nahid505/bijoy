@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Fragment } from "react";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { addDays, formatDate, formatMoney, toBnDigits } from "@/lib/format";
+import { addDays, formatDateSlash, formatMoney, toBnDigits } from "@/lib/format";
 import { PrintButton } from "@/components/forms";
 import { FilterField, PageHeader, PrintHeader } from "@/components/ui";
 import { requirePermission } from "@/server/auth";
@@ -26,6 +26,8 @@ export default async function DailyCashPage({ searchParams }: { searchParams: Se
     cashLineDetail(l, (n) => (Math.abs(n) < 0.005 ? money(0) : `${money(Math.abs(n))} ${t(n > 0 ? "ডেবিট" : "ক্রেডিট")}`), t("বর্তমান জের:"));
   const q = (date: string) => `/reports/daily-cash?date=${date}${d.scope !== "cash" ? `&scope=${encodeURIComponent(d.scope)}` : ""}`;
   const exportHref = `/api/reports/daily-cash?date=${d.date}&scope=${encodeURIComponent(d.scope)}`;
+  // the date in the heading follows the selected day: "… ----নগদ ক্যাশ----- তারিখ : ০৫/১১/২০২৬"
+  const heading = `ডেইলী জমা খরচ হিসাব  ----নগদ ক্যাশ----- তারিখ : ${formatDateSlash(d.date)}`;
   // both sides get the same number of body rows, so the totals line up like a cash khata
   const bodyRows = Math.max(d.receipts.length + 1, d.payments.length, 6);
 
@@ -66,9 +68,9 @@ export default async function DailyCashPage({ searchParams }: { searchParams: Se
         </form>
 
         <div className="p-4">
-          <PrintHeader business={ctx.business} title="ডেইলী জমা-খরচ হিসাব" subtitle={`${formatDate(d.date)} — ${d.scopeLabel}`} />
+          <PrintHeader business={ctx.business} title="ডেইলী জমা-খরচ হিসাব" heading={heading} />
           <div className="no-print mb-3 flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="text-base font-semibold text-ink-900">তারিখ: {formatDate(d.date)}</h2>
+            <h2 className="text-base font-semibold text-ink-900">{heading}</h2>
             <p className="text-xs text-slate-500">{d.scopeLabel}{d.accounts.length > 1 ? ` — ${d.accounts.map((a) => a.name).join(", ")}` : ""}</p>
           </div>
           {d.accounts.length === 0 && <p className="mb-3 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">কোনো নগদ হিসাব নেই</p>}
@@ -131,6 +133,8 @@ export default async function DailyCashPage({ searchParams }: { searchParams: Se
 
 // a ruled khata: every cell of every row (the empty filler rows too) has its own light rule; on paper a shade darker
 const CELL = "border border-slate-300 px-1.5 py-1 align-top print:border-slate-400";
+// on paper the amounts are larger and bold so the printout reads clearly
+const AMOUNT_PRINT = "print:text-[17px] print:font-bold";
 
 /**
  * বিবরণ of one ledger:
@@ -143,7 +147,7 @@ function Particulars({ l, detail }: { l: CashLine; detail: (l: CashLine) => stri
   const note = l.narration?.trim();
   return (
     <>
-      <span className="block font-medium text-gray-800 print:text-black">
+      <span className="block font-medium text-gray-800 print:text-[16px] print:font-bold print:text-black">
         <Link prefetch={false} href={`/vouchers/v/${l.voucherId}`} className="text-inherit hover:underline print:no-underline">{l.particulars}</Link>
         {l.address && <>, <span data-keep-lang>{l.address}</span></>}
         {l.enteredBy && <span className="font-normal text-slate-600 print:text-black"> (<span data-keep-lang>{l.enteredBy}</span>)</span>}
@@ -189,7 +193,7 @@ function CashBook({
       <Fragment key={key}>
         <td data-side={ds} className={`${CELL} ${first} text-center tabular-nums ${c.cls ?? ""}`}>{c.no}</td>
         <td data-side={ds} className={`cash-particulars ${CELL} break-words ${c.cls ?? ""}`}>{c.text}</td>
-        <td data-side={ds} className={`${CELL} whitespace-nowrap text-right tabular-nums ${c.cls ?? ""}`}>{c.amount}</td>
+        <td data-side={ds} className={`${CELL} whitespace-nowrap text-right tabular-nums ${AMOUNT_PRINT} ${c.cls ?? ""}`}>{c.amount}</td>
       </Fragment>
     );
   };
@@ -205,10 +209,10 @@ function CashBook({
       <colgroup>
         <col className="w-10 print:w-[8mm]" />
         <col />
-        <col className="w-32 print:w-[27mm]" />
+        <col className="w-32 print:w-[34mm]" />
         <col className="w-10 print:w-[8mm]" />
         <col />
-        <col className="w-32 print:w-[27mm]" />
+        <col className="w-32 print:w-[34mm]" />
       </colgroup>
       <thead>
         <tr>
@@ -240,9 +244,9 @@ function CashBook({
         {foot.map(([ll, lv, rl, rv], i) => (
           <tr key={i} className={i === 2 ? "font-bold" : "font-semibold"}>
             <td data-side="pay" colSpan={2} className={`${CELL} text-right ${i === 2 ? top : ""}`}>{ll}</td>
-            <td data-side="pay" className={`${CELL} whitespace-nowrap text-right tabular-nums ${i === 1 ? "text-brand-800" : ""} ${i === 2 ? top : ""}`}>{lv === null ? "" : money(lv)}</td>
+            <td data-side="pay" className={`${CELL} whitespace-nowrap text-right tabular-nums ${AMOUNT_PRINT} ${i === 1 ? "text-brand-800" : ""} ${i === 2 ? top : ""}`}>{lv === null ? "" : money(lv)}</td>
             <td data-side="receipt" colSpan={2} className={`${CELL} ${mid} text-right ${i === 2 ? top : ""}`}>{rl || " "}</td>
-            <td data-side="receipt" className={`${CELL} whitespace-nowrap text-right tabular-nums ${i === 2 ? top : ""}`}>{rv === null ? "" : money(rv)}</td>
+            <td data-side="receipt" className={`${CELL} whitespace-nowrap text-right tabular-nums ${AMOUNT_PRINT} ${i === 2 ? top : ""}`}>{rv === null ? "" : money(rv)}</td>
           </tr>
         ))}
       </tfoot>

@@ -157,7 +157,7 @@ export async function DetailRow({ label, children }: { label: string; children: 
 }
 
 /** Business letterhead shown on printed / PDF documents. */
-export async function PrintHeader({ business, title, subtitle }: { business: { name: string; address: string | null; mobile: string | null; logo: string | null; binNumber?: string | null }; title: string; subtitle?: string }) {
+export async function PrintHeader({ business, title, subtitle, heading }: { business: { name: string; address: string | null; mobile: string | null; logo: string | null; binNumber?: string | null }; title: string; subtitle?: string; heading?: string }) {
   const t = await getT();
   return (
     <div className="print-only mb-4 border-b-2 border-ink-800 pb-2">
@@ -171,7 +171,12 @@ export async function PrintHeader({ business, title, subtitle }: { business: { n
           <p className="text-[10px]">{[business.address, business.mobile, business.binNumber ? `BIN: ${business.binNumber}` : null].filter(Boolean).join(" · ")}</p>
         </div>
       </div>
-      <p className="mt-2 text-sm font-semibold">{t(title)}{subtitle ? ` — ${t(subtitle)}` : ""}</p>
+      {heading ? (
+        // a report with its own fixed, centred heading line (used verbatim, not translated)
+        <p className="mt-2 text-center text-xl font-bold tracking-wide">{heading}</p>
+      ) : (
+        <p className="mt-2 text-sm font-semibold">{t(title)}{subtitle ? ` — ${t(subtitle)}` : ""}</p>
+      )}
     </div>
   );
 }
