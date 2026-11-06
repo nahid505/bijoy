@@ -29,7 +29,7 @@ function quickActions(ctx: AppContext) {
     { href: "/vouchers/payment/new", label: "সরবরাহকারীকে পরিশোধ", icon: "💸", ok: can(ctx, "vouchers:create") },
     { href: "/customers/new", label: "কাস্টমার যোগ", icon: "👤", ok: can(ctx, "customers:manage") },
     { href: "/products/new", label: "পণ্য যোগ", icon: "🏷", ok: can(ctx, "inventory:manage") },
-    { href: "/vouchers/payment/new?mode=expense", label: "খরচ", icon: "🧮", ok: can(ctx, "vouchers:create") },
+    { href: "/vouchers/payment/new?mode=expense", label: "খরচ", icon: "🧮", ok: can(ctx, ["expense:create", "vouchers:create"]) },
   ].filter((q) => q.ok);
 }
 

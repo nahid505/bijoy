@@ -81,6 +81,46 @@ export const PERMISSION_GROUPS = [
     ],
   },
   {
+    label: "খরচ ও ব্যয় ব্যবস্থাপনা",
+    permissions: [
+      {
+        key: "expense:view",
+        label: "খরচের তালিকা ও ভাউচার দেখা",
+        hint: "সকল সাধারণ ও ডিপো খরচের খতিয়ান দেখা",
+      },
+      {
+        key: "expense:create",
+        label: "নতুন খরচ এন্ট্রি তৈরি",
+        hint: "দৈনিক খরচ, পরিবহন বা মজুরি ভাউচার তৈরি",
+      },
+      {
+        key: "expense:edit",
+        label: "খরচ ভাউচার সম্পাদনা",
+        hint: "অনুমোদনের পূর্বে খরচের ভুল সংশোধন",
+      },
+      {
+        key: "expense:delete",
+        label: "খরচ ভাউচার বাতিল/মুছে ফেলা",
+        hint: "অপ্রয়োজনীয় বা ভুল খরচ ভাউচার ডিলিট করা",
+      },
+      {
+        key: "expense:approve",
+        label: "খরচ অনুমোদন (Expense Approval)",
+        hint: "ম্যানেজার বা এডমিন কর্তৃক খরচ চূড়ান্ত অনুমোদন",
+      },
+      {
+        key: "expense:category_manage",
+        label: "খরচের খাত/ক্যাটাগরি তৈরি ও নিয়ন্ত্রণ",
+        hint: "নতুন খরচের হেড বা খতিয়ান তৈরি",
+      },
+      {
+        key: "expense:max_limit_override",
+        label: "সর্বোচ্চ সীমার অতিরিক্ত খরচ এন্ট্রি",
+        hint: "নির্ধারিত লিমিটের বেশি অঙ্কের খরচ এন্ট্রি করার বিশেষ ক্ষমতা",
+      },
+    ],
+  },
+  {
     label: "সাধারণ অনুমতি (লেনদেন)",
     permissions: [
       {
@@ -270,3 +310,16 @@ export const RICE_MILL_PERMISSIONS: Permission[] = PERMISSION_GROUPS.flatMap((g)
 
 /** The depot permission group's keys (business type DEPOT only). */
 export const DEPOT_PERMISSIONS: Permission[] = PERMISSION_GROUPS.flatMap((g) => ("depotOnly" in g && g.depotOnly ? g.permissions.map((p) => p.key) : []));
+
+/** The expense management permissions. */
+export const EXPENSE_PERMISSIONS: Permission[] = PERMISSION_GROUPS.find((g) => g.label === "খরচ ও ব্যয় ব্যবস্থাপনা")?.permissions.map((p) => p.key) ?? [];
+
+export const EXPENSE_ACCESS = {
+  view: ["expense:view", "reports:view", "vouchers:view"] as readonly Permission[],
+  create: ["expense:create", "vouchers:create"] as readonly Permission[],
+  edit: ["expense:edit", "vouchers:edit"] as readonly Permission[],
+  delete: ["expense:delete", "vouchers:delete"] as readonly Permission[],
+  approve: ["expense:approve", "can_verify_transactions", "vouchers:verify"] as readonly Permission[],
+  categoryManage: ["expense:category_manage", "accounts:manage"] as readonly Permission[],
+  maxLimitOverride: ["expense:max_limit_override"] as readonly Permission[],
+} as const satisfies Record<string, readonly Permission[]>;

@@ -6,7 +6,7 @@ import { formatDate, formatMoney, toBnDigits, toDateInput } from "@/lib/format";
 import { EmptyState, FilterBar, FilterField, PageHeader, StatCard, TableWrap } from "@/components/ui";
 import { getT } from "@/server/i18n";
 import { ActionButton } from "@/components/forms";
-import { can, requirePermission } from "@/server/auth";
+import { can, requireContext, requirePermission } from "@/server/auth";
 import { canChangeEntryDate } from "@/server/entry-date";
 import { readParams, type SearchParams } from "@/server/params";
 import { reportPeriod } from "@/server/period";
@@ -19,7 +19,20 @@ import { DepotFundForm } from "./fund-form";
 export const metadata: Metadata = { title: "ডিপো খরচ" };
 
 export default async function DepotExpensesPage({ searchParams }: { searchParams: SearchParams }) {
-  const ctx = await requirePermission(DEPOT_ACCESS.expense);
+  const ctx = await requireContext();
+  if (!can(ctx, DEPOT_ACCESS.expense)) {
+    return (
+      <div className="card mx-auto mt-16 max-w-lg p-10 text-center">
+        <p className="text-5xl">💸</p>
+        <p className="mt-3 font-mono text-sm font-bold tracking-wide text-credit">403 — Forbidden</p>
+        <h1 className="mt-4 text-xl font-bold text-slate-800">প্রবেশাধিকার নেই</h1>
+        <p className="mt-2 text-sm text-slate-500">এই খরচ এন্ট্রি বা দেখার আপনার অনুমতি নেই</p>
+        <div className="mt-6 flex justify-center gap-2">
+          <Link prefetch={false} href="/dashboard" className="btn-primary">ড্যাশবোর্ডে ফিরুন</Link>
+        </div>
+      </div>
+    );
+  }
   if (!isDepot(ctx.business.businessType)) return <DepotOnlyNotice canManage={can(ctx, "business:manage")} />;
   const p = await readParams(searchParams);
   const { from, to, range } = reportPeriod(p, ctx.business.fiscalYearStartMonth);

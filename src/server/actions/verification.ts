@@ -38,7 +38,7 @@ export async function verifyVoucherAction(input: {
     const { voucherId, status, note } = input;
     const required =
       status === "VERIFIED"
-        ? ["can_verify_transactions", "depot_delivery_verify", "vouchers:verify"]
+        ? ["can_verify_transactions", "depot_delivery_verify", "vouchers:verify", "expense:approve"]
         : status === "REJECTED"
         ? ["can_reject_transactions", "vouchers:verify"]
         : ["can_unverify_transactions", "vouchers:verify"];
@@ -50,15 +50,23 @@ export async function verifyVoucherAction(input: {
         id: true,
         voucherNo: true,
         type: true,
+        sourceKey: true,
         verificationStatus: true,
         depotDelivery: { select: { id: true } },
+        entries: { select: { account: { select: { nature: true } } } },
       },
     });
     if (!v) throw new UserError("ভাউচার পাওয়া যায়নি");
 
     const isDepot = v.type === "DEPOT_DELIVERY" || Boolean(v.depotDelivery);
-    if (status === "VERIFIED" && !isDepot && !hasPermission(ctx.permissions, ["can_verify_transactions", "vouchers:verify"])) {
-      throw new UserError("শুধু ডিপো ডেলিভারি চালান অনুমোদনের অনুমতি রয়েছে");
+    const isExpense = v.type === "PAYMENT" || v.sourceKey?.startsWith("depot-expense:") || v.entries?.some((e) => e.account.nature === "EXPENSE");
+    if (status === "VERIFIED") {
+      if (!isDepot && !isExpense && !hasPermission(ctx.permissions, ["can_verify_transactions", "vouchers:verify"])) {
+        throw new UserError("শুধু ডিপো ডেলিভারি চালান অনুমোদনের অনুমতি রয়েছে");
+      }
+      if (isExpense && !hasPermission(ctx.permissions, ["expense:approve", "can_verify_transactions", "vouchers:verify"])) {
+        throw new UserError("এই খরচ এন্ট্রি বা দেখার আপনার অনুমতি নেই");
+      }
     }
 
     const touchesStock = v.verificationStatus === "REJECTED" || status === "REJECTED";

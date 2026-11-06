@@ -19,6 +19,8 @@ export interface PartyDefaults {
   route?: string | null;
   ownerName?: string | null;
   imageUrl?: string | null;
+  isSisterConcern?: boolean;
+  linkedBusinessId?: string | null;
 }
 
 export function PartyForm({
@@ -29,6 +31,7 @@ export function PartyForm({
   kind = "CUSTOMER",
   showRoute = false,
   dealer = false,
+  sisterConcerns = [],
 }: {
   action: FormAction;
   defaults?: PartyDefaults;
@@ -39,9 +42,15 @@ export function PartyForm({
   showRoute?: boolean;
   /** depot dealer: the shop / business name and the proprietor, two fields */
   dealer?: boolean;
+  /** sister concern businesses in the same company group */
+  sisterConcerns?: { id: string; name: string; intercompanyCode?: string | null }[];
 }) {
   const t = useT();
   const [partyName, setPartyName] = useState(defaults.name ?? "");
+  const [isSisterConcern, setIsSisterConcern] = useState<boolean>(Boolean(defaults.isSisterConcern));
+  const [linkedBusinessId, setLinkedBusinessId] = useState<string>(
+    defaults.linkedBusinessId ?? (sisterConcerns[0]?.id ?? "")
+  );
   const [previewUrl, setPreviewUrl] = useState<string | null>(defaults.imageUrl ?? null);
   const [base64Value, setBase64Value] = useState<string>("");
   const [isRemoved, setIsRemoved] = useState<boolean>(false);
@@ -286,6 +295,57 @@ export function PartyForm({
             className="input-num"
           />
         </Field>
+
+        {/* Inter-Company Sister Concern Link section */}
+        {sisterConcerns && sisterConcerns.length > 0 && (
+          <div className="sm:col-span-2 rounded-xl border border-indigo-200 bg-indigo-50/70 p-4 shadow-xs">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <span className="text-sm font-bold text-indigo-950 flex items-center gap-1.5">
+                  <span className="text-base">🏢</span>
+                  {t("এই")} {kind === "CUSTOMER" ? t("কাস্টমার") : t("সরবরাহকারী")} {t("কি কোনো সিস্টার কনসার্ন?")}
+                </span>
+                <p className="text-xs text-indigo-700/90 mt-0.5">
+                  {t("গ্রুপের অন্তর্ভুক্ত সিস্টার কনসার্ন হলে স্বয়ংক্রিয় আন্তঃপ্রতিষ্ঠান চালানের ড্রাফট ও মিরর তৈরি হবে")}
+                </p>
+              </div>
+              <label className="relative inline-flex cursor-pointer items-center shrink-0">
+                <input
+                  type="checkbox"
+                  name="isSisterConcern"
+                  value="true"
+                  checked={isSisterConcern}
+                  onChange={(e) => setIsSisterConcern(e.target.checked)}
+                  className="peer sr-only"
+                />
+                <div className="h-6 w-11 rounded-full bg-slate-300 peer-checked:bg-indigo-600 transition-colors after:absolute after:top-[2px] after:left-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full"></div>
+              </label>
+            </div>
+
+            {isSisterConcern && (
+              <div className="mt-3.5 pt-3 border-t border-indigo-100">
+                <label className="block text-xs font-semibold text-indigo-900 mb-1.5">
+                  {t("সিস্টার কনসার্ন প্রতিষ্ঠান নির্বাচন করুন *")}
+                </label>
+                <select
+                  name="linkedBusinessId"
+                  value={linkedBusinessId}
+                  onChange={(e) => setLinkedBusinessId(e.target.value)}
+                  className="input bg-white text-xs font-semibold"
+                  required={isSisterConcern}
+                >
+                  <option value="">{t("-- প্রতিষ্ঠান বেছে নিন --")}</option>
+                  {sisterConcerns.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} {s.intercompanyCode ? `(${s.intercompanyCode})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        )}
+
         <Field label="ঠিকানা" name="address" className="sm:col-span-2">
           <textarea
             id="address"

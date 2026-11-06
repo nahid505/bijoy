@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { VOUCHER_TYPES, voucherTypeFromSlug } from "@/lib/accounting";
 import { PageHeader } from "@/components/ui";
@@ -33,14 +34,28 @@ export default async function NewVoucherPage({ params, searchParams }: { params:
     redirect("/dashboard");
   }
   const ctx = await requireContext();
-  // general vouchers only — depot stock in / collection / company payment have their own depot pages (depot book)
-  // general-book access (a rice-mill sales key also opens the sales invoice in a rice-mill business)
-  if (!can(ctx, voucherAccess(type, "create", ctx.business.businessType, "GENERAL"))) {
+  const p = await readParams(searchParams);
+  const isExpenseMode = type === "PAYMENT" && p.mode === "expense";
+
+  if (isExpenseMode) {
+    if (!can(ctx, ["expense:create", "vouchers:create"])) {
+      return (
+        <div className="card mx-auto mt-16 max-w-lg p-10 text-center">
+          <p className="text-5xl">💸</p>
+          <p className="mt-3 font-mono text-sm font-bold tracking-wide text-credit">403 — Forbidden</p>
+          <h1 className="mt-4 text-xl font-bold text-slate-800">প্রবেশাধিকার নেই</h1>
+          <p className="mt-2 text-sm text-slate-500">এই খরচ এন্ট্রি বা দেখার আপনার অনুমতি নেই</p>
+          <div className="mt-6 flex justify-center gap-2">
+            <Link prefetch={false} href="/dashboard" className="btn-primary">ড্যাশবোর্ডে ফিরুন</Link>
+          </div>
+        </div>
+      );
+    }
+  } else if (!can(ctx, voucherAccess(type, "create", ctx.business.businessType, "GENERAL"))) {
     const depotPage = DEPOT_NEW[type];
     if (depotPage && isDepot(ctx.business.businessType) && can(ctx, voucherAccess(type, "create", ctx.business.businessType, "DEPOT"))) redirect(depotPage);
     redirect("/forbidden");
   }
-  const p = await readParams(searchParams);
   const meta = VOUCHER_TYPES[type];
   return (
     <>

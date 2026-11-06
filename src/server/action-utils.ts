@@ -7,6 +7,9 @@ import { fieldErrors } from "@/lib/validation";
 import { ForbiddenError } from "./auth";
 import { normalizeNumericInput } from "@/lib/digits";
 
+import { withTenantContext, TenantIsolationError } from "@/lib/tenant-isolation";
+import { getContext } from "./auth";
+
 export { UserError };
 
 export type ActionState = {
@@ -21,12 +24,21 @@ export type GuardResult<T> = { ok: true; data: T } | { ok: false; message: strin
 
 /**
  * Runs an action body and converts known failures into a form-friendly result.
+ * Enforces active tenant context (withTenantContext) whenever a signed-in business context is present.
  * NOTE: call redirect() AFTER guard(), never inside it.
  */
 export async function guard<T>(fn: () => Promise<T>): Promise<GuardResult<T>> {
   try {
-    return { ok: true, data: await fn() };
+    const ctx = await getContext();
+    const runner = ctx?.business?.id
+      ? () => withTenantContext(ctx.business.id, fn)
+      : fn;
+    return { ok: true, data: await runner() };
   } catch (err) {
+    if (err instanceof TenantIsolationError) {
+      console.error("[TenantIsolation]", err.message);
+      return { ok: false, message: "নিরাপত্তা নীতি লঙ্ঘন: অননুমোদিত প্রতিষ্ঠান ডেটা অ্যাক্সেস নিষিদ্ধ" };
+    }
     if (err instanceof ZodError) return { ok: false, message: "ফর্মের তথ্য সঠিক নয়", errors: fieldErrors(err) };
     if (err instanceof UserError) return { ok: false, message: err.message, ...(err.fields ? { errors: err.fields } : {}) };
     if (err instanceof ForbiddenError || err instanceof InvalidEntryError || err instanceof UnbalancedVoucherError) {

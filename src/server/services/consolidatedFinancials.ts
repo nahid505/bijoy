@@ -1,7 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/db";
-import { round2 } from "@/lib/calc";
+import { round2, round3 } from "@/lib/calc";
 import { naturalBalance, type Nature } from "@/lib/accounting";
 import { accountMovements, balancesBefore, listAccounts, type AccountRow, type DateRange } from "./ledger";
 import { listSisterConcerns } from "./company-group";
@@ -13,6 +13,8 @@ export interface EntityColumn {
   name: string;
   intercompanyCode: string | null;
   isParent: boolean;
+  ownershipPercentage?: number;
+  intercompanyCreditLimit?: number | null;
 }
 
 export type GroupCoaCategory =
@@ -233,13 +235,34 @@ export interface ConsolidatedStatementLine {
 }
 
 export interface IntercompanyEliminationDetail {
-  type: "SALES_PURCHASE" | "RECEIVABLE_PAYABLE";
+  type: "SALES_PURCHASE" | "RECEIVABLE_PAYABLE" | "UNREALIZED_INVENTORY_PROFIT";
   sellerOrCreditor: { id: string; name: string };
   buyerOrDebtor: { id: string; name: string };
   amount: number;
   drAccount: string;
   crAccount: string;
   description: string;
+}
+
+export interface CashFlowLine {
+  label: string;
+  section: "OPERATING" | "INVESTING" | "FINANCING";
+  entityValues: Record<string, number>;
+  rawTotal: number;
+  elimination: number;
+  consolidated: number;
+}
+
+export interface ConsolidatedCashFlowResult {
+  operatingLines: CashFlowLine[];
+  investingLines: CashFlowLine[];
+  financingLines: CashFlowLine[];
+  netOperatingCash: { entityValues: Record<string, number>; rawTotal: number; elimination: number; consolidated: number };
+  netInvestingCash: { entityValues: Record<string, number>; rawTotal: number; elimination: number; consolidated: number };
+  netFinancingCash: { entityValues: Record<string, number>; rawTotal: number; elimination: number; consolidated: number };
+  beginningCash: { entityValues: Record<string, number>; rawTotal: number; elimination: number; consolidated: number };
+  netChangeInCash: { entityValues: Record<string, number>; rawTotal: number; elimination: number; consolidated: number };
+  endingCash: { entityValues: Record<string, number>; rawTotal: number; elimination: number; consolidated: number };
 }
 
 export interface ConsolidatedFinancialsResult {
@@ -275,6 +298,27 @@ export interface ConsolidatedFinancialsResult {
     isBalanced: boolean;
   };
   eliminations: IntercompanyEliminationDetail[];
+  nciBreakdown?: {
+    totalEquity: number;
+    parentEquity: number;
+    nciEquity: number;
+    netProfit: number;
+    parentProfit: number;
+    nciProfit: number;
+    subsidiaries: Array<{
+      id: string;
+      name: string;
+      ownershipPercentage: number;
+      minorityPercentage: number;
+      equity: number;
+      parentEquityShare: number;
+      nciEquityShare: number;
+      netProfit: number;
+      parentProfitShare: number;
+      nciProfitShare: number;
+    }>;
+  };
+  cashFlow?: ConsolidatedCashFlowResult;
 }
 
 /**
@@ -379,19 +423,33 @@ export async function getConsolidatedFinancials(
   const group = sisterData.group;
 
   if (sisterData.inGroup && sisterData.sisterConcerns.length > 0) {
-    entities = sisterData.sisterConcerns.map((s) => ({
-      id: s.id,
-      name: s.name,
-      intercompanyCode: s.intercompanyCode,
-      isParent: s.isParent,
+    const businesses = await prisma.business.findMany({
+      where: { id: { in: sisterData.sisterConcerns.map((s) => s.id) } },
+      select: { id: true, name: true, intercompanyCode: true, isParent: true, ownershipPercentage: true, intercompanyCreditLimit: true },
+      orderBy: [{ isParent: "desc" }, { name: "asc" }],
+    });
+    entities = businesses.map((b) => ({
+      id: b.id,
+      name: b.name,
+      intercompanyCode: b.intercompanyCode,
+      isParent: b.isParent,
+      ownershipPercentage: Number(b.ownershipPercentage ?? 100),
+      intercompanyCreditLimit: b.intercompanyCreditLimit ? Number(b.intercompanyCreditLimit) : null,
     }));
   } else {
     // Single business fallback
     const single = await prisma.business.findUniqueOrThrow({
       where: { id: businessId },
-      select: { id: true, name: true, intercompanyCode: true, isParent: true },
+      select: { id: true, name: true, intercompanyCode: true, isParent: true, ownershipPercentage: true, intercompanyCreditLimit: true },
     });
-    entities = [{ id: single.id, name: single.name, intercompanyCode: single.intercompanyCode, isParent: single.isParent }];
+    entities = [{
+      id: single.id,
+      name: single.name,
+      intercompanyCode: single.intercompanyCode,
+      isParent: single.isParent,
+      ownershipPercentage: Number(single.ownershipPercentage ?? 100),
+      intercompanyCreditLimit: single.intercompanyCreditLimit ? Number(single.intercompanyCreditLimit) : null,
+    }];
   }
 
   const entityIds = entities.map((e) => e.id);
@@ -499,6 +557,11 @@ export async function getConsolidatedFinancials(
     },
     include: {
       business: { select: { id: true, name: true } },
+      items: {
+        include: {
+          product: { select: { id: true, name: true, code: true } },
+        },
+      },
       partyAccount: {
         select: {
           customer: { select: { linkedBusiness: { select: { id: true, name: true } } } },
@@ -551,6 +614,53 @@ export async function getConsolidatedFinancials(
     });
   }
 
+  // C) Intercompany Unrealized Profit in Ending Inventory Elimination (IFRS 10 / IAS 2)
+  let totalUnrealizedInventoryProfit = 0;
+
+  for (const v of intercompanyVouchers) {
+    const seller = v.business;
+    const buyer = v.partyAccount?.customer?.linkedBusiness;
+    if (buyer && entityIds.includes(buyer.id)) {
+      for (const item of v.items) {
+        const itemQty = Number(item.baseQuantity || item.quantity);
+        const itemAmount = Number(item.amount);
+        const itemCost = Number(item.costAmount);
+
+        if (itemQty > 0 && itemAmount > itemCost && itemCost > 0) {
+          const margin = (itemAmount - itemCost) / itemAmount;
+
+          const buyerProduct = await prisma.product.findFirst({
+            where: {
+              businessId: buyer.id,
+              name: item.product.name,
+              isActive: true,
+            },
+            select: { id: true, stock: true },
+          });
+
+          if (buyerProduct && Number(buyerProduct.stock) > 0) {
+            const unsoldQty = round3(Math.min(Number(buyerProduct.stock), itemQty));
+            const unsoldTransferValue = round2(unsoldQty * (itemAmount / itemQty));
+            const unrealized = round2(unsoldTransferValue * margin);
+
+            if (unrealized > 0) {
+              totalUnrealizedInventoryProfit = round2(totalUnrealizedInventoryProfit + unrealized);
+              eliminations.push({
+                type: "UNREALIZED_INVENTORY_PROFIT",
+                sellerOrCreditor: seller,
+                buyerOrDebtor: buyer,
+                amount: unrealized,
+                drAccount: "চলতি মেয়াদের নিট লাভ (Current Period Profit)",
+                crAccount: "মজুদ পণ্য (Consolidated Inventory)",
+                description: `অবিক্রীত সমাপ্তি মজুদে অভ্যন্তরীণ অপ্রাপ্ত মুনাফা সমন্বয় (${item.product.name}, অবিক্রীত: ${unsoldQty})`,
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
   // 5. Construct Statement Lines with Multi-Column & Consolidated Totals
   const buildLine = (
     cat: GroupCoaCategory,
@@ -595,7 +705,15 @@ export async function getConsolidatedFinancials(
   ].filter((l) => l.rawTotal !== 0 || l.consolidatedTotal !== 0);
 
   const cogsLines = [
-    buildLine("COST_OF_SALES", pnlMap, 0, totalIntercompanySalesElimination, totalIntercompanySalesElimination > 0 ? "ইন্টার-কোম্পানি পারচেজ বাদ" : null),
+    buildLine(
+      "COST_OF_SALES",
+      pnlMap,
+      totalUnrealizedInventoryProfit,
+      totalIntercompanySalesElimination,
+      totalIntercompanySalesElimination > 0 || totalUnrealizedInventoryProfit > 0
+        ? "ইন্টার-কোম্পানি পারচেজ বাদ ও অবিক্রীত মজুদের অপ্রাপ্ত মুনাফা সমন্বয়"
+        : null
+    ),
     buildLine("INTERCOMPANY_PURCHASES", pnlMap, 0, 0),
   ].filter((l) => l.rawTotal !== 0 || l.consolidatedTotal !== 0);
 
@@ -649,7 +767,13 @@ export async function getConsolidatedFinancials(
     buildLine("CASH_BANK", balanceSheetMap),
     buildLine("RECEIVABLES", balanceSheetMap),
     buildLine("INTERCOMPANY_DUE_FROM", balanceSheetMap, 0, intercompanyBalanceElimination, intercompanyBalanceElimination > 0 ? "পারস্পরিক দেনা-পাওনা সমন্বয়" : null),
-    buildLine("INVENTORY", balanceSheetMap),
+    buildLine(
+      "INVENTORY",
+      balanceSheetMap,
+      0,
+      totalUnrealizedInventoryProfit,
+      totalUnrealizedInventoryProfit > 0 ? "অভ্যন্তরীণ অবিক্রীত মজুদের অপ্রাপ্ত মুনাফা বাদ (IFRS 10)" : null
+    ),
     buildLine("OTHER_CURRENT_ASSETS", balanceSheetMap),
     buildLine("FIXED_ASSETS", balanceSheetMap),
   ].filter((l) => l.rawTotal !== 0 || l.consolidatedTotal !== 0);
@@ -664,7 +788,13 @@ export async function getConsolidatedFinancials(
   const equityLines = [
     buildLine("CAPITAL", balanceSheetMap),
     buildLine("RETAINED_EARNINGS", balanceSheetMap),
-    buildLine("CURRENT_PERIOD_PROFIT", balanceSheetMap),
+    buildLine(
+      "CURRENT_PERIOD_PROFIT",
+      balanceSheetMap,
+      totalUnrealizedInventoryProfit,
+      0,
+      totalUnrealizedInventoryProfit > 0 ? "অভ্যন্তরীণ অবিক্রীত মজুদের মুনাফা সমন্বয়" : null
+    ),
   ].filter((l) => l.rawTotal !== 0 || l.consolidatedTotal !== 0);
 
   const totalAssets = sumTotals(assetLines);
@@ -691,9 +821,14 @@ export async function getConsolidatedFinancials(
       let elimCr = 0;
 
       if (cat === "SALES_REVENUE" || cat === "INTERCOMPANY_SALES") elimDr = totalIntercompanySalesElimination;
-      if (cat === "COST_OF_SALES" || cat === "INTERCOMPANY_PURCHASES") elimCr = totalIntercompanySalesElimination;
+      if (cat === "COST_OF_SALES" || cat === "INTERCOMPANY_PURCHASES") {
+        elimCr = totalIntercompanySalesElimination;
+        elimDr += totalUnrealizedInventoryProfit;
+      }
       if (cat === "INTERCOMPANY_DUE_TO" || cat === "PAYABLES") elimDr += intercompanyBalanceElimination;
       if (cat === "INTERCOMPANY_DUE_FROM" || cat === "RECEIVABLES") elimCr += intercompanyBalanceElimination;
+      if (cat === "INVENTORY") elimCr += totalUnrealizedInventoryProfit;
+      if (cat === "CURRENT_PERIOD_PROFIT" || cat === "RETAINED_EARNINGS") elimDr += totalUnrealizedInventoryProfit;
 
       return buildLine(cat, tbMap, elimDr, elimCr);
     })
@@ -705,6 +840,58 @@ export async function getConsolidatedFinancials(
   const totalDebit = sumTotals(tbDebitLines);
   const totalCredit = sumTotals(tbCreditLines);
   const isTbBalanced = Math.abs(totalDebit.consolidated - totalCredit.consolidated) < 0.05;
+
+  // ── Non-Controlling Interest (NCI) Breakdown (IFRS 10)
+  const subsidiariesNci = entities
+    .filter((e) => !e.isParent)
+    .map((sub) => {
+      const ownPct = sub.ownershipPercentage ?? 100;
+      const minPct = round2(100 - ownPct);
+      const subEquity = round2(
+        (balanceSheetMap.get("CAPITAL")![sub.id] || 0) +
+        (balanceSheetMap.get("RETAINED_EARNINGS")![sub.id] || 0) +
+        (balanceSheetMap.get("CURRENT_PERIOD_PROFIT")![sub.id] || 0)
+      );
+      const subProfit = entityNetProfits[sub.id] || 0;
+
+      const nciEquityShare = round2(subEquity * (minPct / 100));
+      const parentEquityShare = round2(subEquity * (ownPct / 100));
+      const nciProfitShare = round2(subProfit * (minPct / 100));
+      const parentProfitShare = round2(subProfit * (ownPct / 100));
+
+      return {
+        id: sub.id,
+        name: sub.name,
+        ownershipPercentage: ownPct,
+        minorityPercentage: minPct,
+        equity: subEquity,
+        parentEquityShare,
+        nciEquityShare,
+        netProfit: subProfit,
+        parentProfitShare,
+        nciProfitShare,
+      };
+    });
+
+  const totalNciEquity = round2(subsidiariesNci.reduce((s, x) => s + x.nciEquityShare, 0));
+  const totalNciProfit = round2(subsidiariesNci.reduce((s, x) => s + x.nciProfitShare, 0));
+  const totalConsolidatedEquity = totalEquity.consolidated;
+  const parentConsolidatedEquity = round2(totalConsolidatedEquity - totalNciEquity);
+  const totalConsolidatedProfit = netProfit.consolidated;
+  const parentConsolidatedProfit = round2(totalConsolidatedProfit - totalNciProfit);
+
+  const nciBreakdown = {
+    totalEquity: totalConsolidatedEquity,
+    parentEquity: parentConsolidatedEquity,
+    nciEquity: totalNciEquity,
+    netProfit: totalConsolidatedProfit,
+    parentProfit: parentConsolidatedProfit,
+    nciProfit: totalNciProfit,
+    subsidiaries: subsidiariesNci,
+  };
+
+  // ── Consolidated Cash Flow
+  const cashFlow = await getConsolidatedCashFlow(entities, dateRange, book);
 
   return {
     group,
@@ -739,6 +926,200 @@ export async function getConsolidatedFinancials(
       isBalanced: isTbBalanced,
     },
     eliminations,
+    nciBreakdown,
+    cashFlow,
+  };
+}
+
+/**
+ * Consolidated Cash Flow Engine (Direct Method across Group with Internal Eliminations)
+ */
+export async function getConsolidatedCashFlow(
+  entities: EntityColumn[],
+  dateRange: DateRange,
+  book: BookFilter = "GENERAL"
+): Promise<ConsolidatedCashFlowResult> {
+  const opBuckets = new Map<string, { label: string; entityValues: Record<string, number>; eliminations: number }>();
+  const invBuckets = new Map<string, { label: string; entityValues: Record<string, number>; eliminations: number }>();
+  const finBuckets = new Map<string, { label: string; entityValues: Record<string, number>; eliminations: number }>();
+
+  const beginningCashValues: Record<string, number> = {};
+  const endingCashValues: Record<string, number> = {};
+
+  for (const ent of entities) {
+    beginningCashValues[ent.id] = 0;
+    endingCashValues[ent.id] = 0;
+
+    const cashAccounts = await prisma.account.findMany({
+      where: { businessId: ent.id, kind: { in: ["CASH", "BANK"] } },
+      select: { id: true },
+    });
+    const cashIds = cashAccounts.map((a) => a.id);
+
+    if (cashIds.length > 0) {
+      const [openMap, closeMap] = await Promise.all([
+        balancesBefore(ent.id, dateRange.gte, cashIds, book),
+        balancesBefore(ent.id, dateRange.lt, cashIds, book),
+      ]);
+      beginningCashValues[ent.id] = round2([...openMap.values()].reduce((s, v) => s + v, 0));
+      endingCashValues[ent.id] = round2([...closeMap.values()].reduce((s, v) => s + v, 0));
+
+      const cashEntries = await prisma.journalEntry.findMany({
+        where: {
+          businessId: ent.id,
+          book: book === "GENERAL" ? "GENERAL" : undefined,
+          date: { gte: dateRange.gte, lt: dateRange.lt },
+          accountId: { in: cashIds },
+          voucher: { verificationStatus: { not: "REJECTED" } },
+        },
+        include: {
+          voucher: {
+            select: { id: true, isIntercompany: true, type: true },
+          },
+        },
+      });
+
+      const voucherIds = [...new Set(cashEntries.map((e) => e.voucherId))];
+      const counterEntries = voucherIds.length
+        ? await prisma.journalEntry.findMany({
+            where: {
+              voucherId: { in: voucherIds },
+              accountId: { notIn: cashIds },
+            },
+            include: {
+              account: {
+                select: {
+                  kind: true,
+                  name: true,
+                  group: { select: { id: true, name: true, systemKey: true } },
+                },
+              },
+            },
+          })
+        : [];
+
+      for (const e of cashEntries) {
+        const netCash = round2(Number(e.debit) - Number(e.credit));
+        if (netCash === 0) continue;
+
+        const isInternal = Boolean(e.voucher.isIntercompany);
+        const counters = counterEntries.filter((c) => c.voucherId === e.voucherId);
+        let section: "OPERATING" | "INVESTING" | "FINANCING" = "OPERATING";
+        let label = "বিবিধ পরিচালন নগদ";
+
+        if (isInternal) {
+          section = "FINANCING";
+          label = "আন্তঃপ্রতিষ্ঠান তহবিল স্থানান্তর ও অভ্যন্তরীণ ঋণ";
+        } else if (counters.length > 0) {
+          const sysKey = counters[0].account.group?.systemKey;
+          if (sysKey === "FIXED_ASSETS") {
+            section = "INVESTING";
+            label = "স্থায়ী সম্পদ ক্রয় / বিক্রয় (CapEx)";
+          } else if (sysKey === "SECURED_LOANS" || sysKey === "UNSECURED_LOANS") {
+            section = "FINANCING";
+            label = "ব্যাংক ও আর্থিক ঋণ গ্রহণ / পরিশোধ";
+          } else if (sysKey === "CAPITAL") {
+            section = "FINANCING";
+            label = "মালিকের মূলধন বৃদ্ধি / উত্তোলন";
+          } else {
+            section = "OPERATING";
+            if (counters[0].account.kind === "CUSTOMER") label = "গ্রাহক/দেনাদার থেকে আদায়";
+            else if (counters[0].account.kind === "SUPPLIER") label = "সরবরাহকারী/পাওনাদারকে পরিশোধ";
+            else label = counters[0].account.group?.name || "পরিচালন ব্যয় ও অন্যান্য";
+          }
+        }
+
+        const map = section === "OPERATING" ? opBuckets : section === "INVESTING" ? invBuckets : finBuckets;
+        if (!map.has(label)) {
+          map.set(label, { label, entityValues: Object.fromEntries(entities.map((x) => [x.id, 0])), eliminations: 0 });
+        }
+        const b = map.get(label)!;
+        b.entityValues[ent.id] = round2(b.entityValues[ent.id] + netCash);
+        if (isInternal) {
+          b.eliminations = round2(b.eliminations - netCash);
+        }
+      }
+    }
+  }
+
+  const mapToLines = (
+    map: Map<string, { label: string; entityValues: Record<string, number>; eliminations: number }>,
+    section: "OPERATING" | "INVESTING" | "FINANCING"
+  ): CashFlowLine[] => {
+    return [...map.values()].map((item) => {
+      const rawTotal = round2(Object.values(item.entityValues).reduce((s, v) => s + v, 0));
+      const consolidated = round2(rawTotal + item.eliminations);
+      return {
+        label: item.label,
+        section,
+        entityValues: item.entityValues,
+        rawTotal,
+        elimination: item.eliminations,
+        consolidated,
+      };
+    });
+  };
+
+  const operatingLines = mapToLines(opBuckets, "OPERATING");
+  const investingLines = mapToLines(invBuckets, "INVESTING");
+  const financingLines = mapToLines(finBuckets, "FINANCING");
+
+  const sumCf = (lines: CashFlowLine[]) => {
+    const entityValues: Record<string, number> = Object.fromEntries(entities.map((e) => [e.id, 0]));
+    for (const l of lines) {
+      for (const ent of entities) {
+        entityValues[ent.id] = round2(entityValues[ent.id] + (l.entityValues[ent.id] || 0));
+      }
+    }
+    const rawTotal = round2(lines.reduce((s, l) => s + l.rawTotal, 0));
+    const elimination = round2(lines.reduce((s, l) => s + l.elimination, 0));
+    const consolidated = round2(lines.reduce((s, l) => s + l.consolidated, 0));
+    return { entityValues, rawTotal, elimination, consolidated };
+  };
+
+  const netOperatingCash = sumCf(operatingLines);
+  const netInvestingCash = sumCf(investingLines);
+  const netFinancingCash = sumCf(financingLines);
+
+  const rawBeginning = round2(Object.values(beginningCashValues).reduce((s, v) => s + v, 0));
+  const rawEnding = round2(Object.values(endingCashValues).reduce((s, v) => s + v, 0));
+
+  const netChangeInCash = {
+    entityValues: Object.fromEntries(
+      entities.map((e) => [
+        e.id,
+        round2(netOperatingCash.entityValues[e.id] + netInvestingCash.entityValues[e.id] + netFinancingCash.entityValues[e.id]),
+      ])
+    ),
+    rawTotal: round2(netOperatingCash.rawTotal + netInvestingCash.rawTotal + netFinancingCash.rawTotal),
+    elimination: round2(netOperatingCash.elimination + netInvestingCash.elimination + netFinancingCash.elimination),
+    consolidated: round2(netOperatingCash.consolidated + netInvestingCash.consolidated + netFinancingCash.consolidated),
+  };
+
+  const beginningCash = {
+    entityValues: beginningCashValues,
+    rawTotal: rawBeginning,
+    elimination: 0,
+    consolidated: rawBeginning,
+  };
+
+  const endingCash = {
+    entityValues: endingCashValues,
+    rawTotal: rawEnding,
+    elimination: 0,
+    consolidated: rawEnding,
+  };
+
+  return {
+    operatingLines,
+    investingLines,
+    financingLines,
+    netOperatingCash,
+    netInvestingCash,
+    netFinancingCash,
+    beginningCash,
+    netChangeInCash,
+    endingCash,
   };
 }
 
@@ -886,7 +1267,11 @@ export async function exportConsolidatedFinancialsToXlsx(
 
   for (const el of report.eliminations) {
     wsElim.addRow([
-      el.type === "SALES_PURCHASE" ? "বিক্রয়-ক্রয় সমন্বয়" : "দেনা-পাওনা কন্ট্রা",
+      el.type === "SALES_PURCHASE"
+        ? "বিক্রয়-ক্রয় সমন্বয়"
+        : el.type === "UNREALIZED_INVENTORY_PROFIT"
+        ? "মজুদ অপ্রাপ্ত মুনাফা বাদ (IFRS 10)"
+        : "দেনা-পাওনা কন্ট্রা",
       el.sellerOrCreditor.name,
       el.buyerOrDebtor.name,
       el.amount,
@@ -894,6 +1279,69 @@ export async function exportConsolidatedFinancialsToXlsx(
       el.crAccount,
       el.description,
     ]);
+  }
+
+  // ── Sheet 4: Consolidated Cash Flow
+  if (report.cashFlow) {
+    const wsCf = wb.addWorksheet("নগদ প্রবাহ (Cash Flow)");
+    addHeader(wsCf, "কনসোলিডেটেড নগদ প্রবাহ বিবরণী (Consolidated Cash Flow)");
+
+    const addCfSection = (title: string, lines: CashFlowLine[]) => {
+      const secRow = wsCf.addRow([title]);
+      secRow.font = { bold: true, size: 11, color: { argb: "FF0369A1" } };
+      for (const l of lines) {
+        wsCf.addRow([
+          l.label,
+          ...report.entities.map((e) => l.entityValues[e.id] || 0),
+          l.rawTotal,
+          null,
+          l.elimination ? l.elimination : null,
+          l.consolidated,
+        ]);
+      }
+    };
+
+    addCfSection("১. পরিচালন কার্যক্রম (Operating Activities)", report.cashFlow.operatingLines);
+    wsCf.addRow([
+      "পরিচালন কার্যক্রম থেকে নিট নগদ (Net Operating Cash)",
+      ...report.entities.map((e) => report.cashFlow!.netOperatingCash.entityValues[e.id] || 0),
+      report.cashFlow.netOperatingCash.rawTotal,
+      null,
+      report.cashFlow.netOperatingCash.elimination,
+      report.cashFlow.netOperatingCash.consolidated,
+    ]).font = { bold: true };
+
+    wsCf.addRow([]);
+    addCfSection("২. বিনিয়োগ কার্যক্রম (Investing Activities)", report.cashFlow.investingLines);
+    wsCf.addRow([
+      "বিনিয়োগ কার্যক্রম থেকে নিট নগদ (Net Investing Cash)",
+      ...report.entities.map((e) => report.cashFlow!.netInvestingCash.entityValues[e.id] || 0),
+      report.cashFlow.netInvestingCash.rawTotal,
+      null,
+      report.cashFlow.netInvestingCash.elimination,
+      report.cashFlow.netInvestingCash.consolidated,
+    ]).font = { bold: true };
+
+    wsCf.addRow([]);
+    addCfSection("৩. অর্থায়ন কার্যক্রম (Financing Activities)", report.cashFlow.financingLines);
+    wsCf.addRow([
+      "অর্থায়ন কার্যক্রম থেকে নিট নগদ (Net Financing Cash)",
+      ...report.entities.map((e) => report.cashFlow!.netFinancingCash.entityValues[e.id] || 0),
+      report.cashFlow.netFinancingCash.rawTotal,
+      null,
+      report.cashFlow.netFinancingCash.elimination,
+      report.cashFlow.netFinancingCash.consolidated,
+    ]).font = { bold: true };
+
+    wsCf.addRow([]);
+    wsCf.addRow([
+      "সমাপনী নগদ ও ব্যাংক তহবিল (Ending Cash & Bank)",
+      ...report.entities.map((e) => report.cashFlow!.endingCash.entityValues[e.id] || 0),
+      report.cashFlow.endingCash.rawTotal,
+      null,
+      null,
+      report.cashFlow.endingCash.consolidated,
+    ]).font = { bold: true };
   }
 
   const buffer = await wb.xlsx.writeBuffer();

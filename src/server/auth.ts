@@ -139,6 +139,63 @@ export const getContext = cache(async (): Promise<AppContext | null> => {
     orderBy: { createdAt: "asc" },
   });
 
+  // Central Group IAM: if user holds a Group Role, grant access to all businesses in that group
+  const groupMemberships = await prisma.groupMembership.findMany({
+    where: { userId: user.id, isActive: true },
+    include: {
+      role: true,
+      group: {
+        include: {
+          businesses: {
+            where: { isActive: true },
+            include: {
+              roles: { where: { isSystem: true } },
+              group: {
+                include: {
+                  businesses: {
+                    where: { isActive: true },
+                    select: { id: true, name: true, isParent: true, intercompanyCode: true, businessType: true },
+                    orderBy: [{ isParent: "desc" }, { name: "asc" }],
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (groupMemberships.length > 0) {
+    const existingBusinessIds = new Set(memberships.map((m) => m.businessId));
+    for (const gm of groupMemberships) {
+      for (const gb of gm.group.businesses) {
+        if (!existingBusinessIds.has(gb.id)) {
+          existingBusinessIds.add(gb.id);
+          memberships.push({
+            id: `group-${gm.id}-${gb.id}`,
+            userId: user.id,
+            businessId: gb.id,
+            business: gb,
+            roleId: `group-role-${gm.role.id}`,
+            role: {
+              id: `group-role-${gm.role.id}`,
+              businessId: gb.id,
+              name: gm.role.name,
+              description: gm.role.description || "Group Central Role",
+              permissions: gm.role.permissions,
+              isSystem: false,
+              createdAt: gm.createdAt,
+              updatedAt: gm.updatedAt,
+            },
+            isActive: true,
+            createdAt: gm.createdAt,
+          } as any);
+        }
+      }
+    }
+  }
+
   // Global context for platform Super Admin: access any business in the group or platform
   if (user.isSuperAdmin && memberships.length === 0) {
     const allBusinesses = await prisma.business.findMany({
@@ -224,7 +281,9 @@ export const getContext = cache(async (): Promise<AppContext | null> => {
           user.isSuperAdmin ||
           (b.isParent && isOwner) ||
           m.role.name.toUpperCase() === "GROUP_AUDITOR" ||
-          m.role.name.toUpperCase().includes("GROUP AUDITOR"),
+          m.role.name.toUpperCase().includes("GROUP AUDITOR") ||
+          m.role.name.toUpperCase().includes("GROUP_CFO") ||
+          groupMemberships.some((gm) => gm.groupId === b.group?.id),
       }
     : null;
 

@@ -101,6 +101,7 @@ export const NAV: NavEntry[] = [
     children: [
       { href: "/audit/unverified", label: "অনুমোদন কিউ (যাচাই)", permission: ["view_approval_queue", "can_verify_transactions", "vouchers:verify"] },
       { href: "/intercompany/reconciliation", label: "আন্তঃপ্রতিষ্ঠান সমন্বয়", permission: "vouchers:view" },
+      { href: "/intercompany/fund-transfer", label: "তহবিল স্থানান্তর ও ঋণ", permission: "vouchers:view" },
       { href: "/vouchers/receipt", label: "রিসিপ্ট", permission: "vouchers:view" },
       { href: "/vouchers/payment", label: "পেমেন্ট", permission: "vouchers:view" },
       { href: "/vouchers/journal", label: "জার্নাল", permission: "vouchers:view" },
@@ -139,7 +140,7 @@ export const NAV: NavEntry[] = [
       { href: "/notifications", label: "নোটিফিকেশন", permission: "inventory:view" },
     ],
   },
-  { key: "expenses", label: "খরচ", icon: I.swap, href: "/expenses", permission: "vouchers:view" },
+  { key: "expenses", label: "খরচ", icon: I.swap, href: "/expenses", permission: ["expense:view", "vouchers:view", "reports:view"] },
   {
     key: "production",
     label: "উৎপাদন ব্যবস্থাপনা",
@@ -192,7 +193,7 @@ export const NAV: NavEntry[] = [
       { href: "/reports/sales", label: "বিক্রয় রিপোর্ট", permission: "reports:view" },
       { href: "/reports/purchases", label: "ক্রয় রিপোর্ট", permission: "reports:view" },
       { href: "/reports/collection", label: "আদায় রিপোর্ট", permission: "reports:view" },
-      { href: "/reports/expenses", label: "খরচ রিপোর্ট", permission: "reports:view" },
+      { href: "/reports/expenses", label: "খরচ রিপোর্ট", permission: ["expense:view", "reports:view"] },
       { href: "/reports/income-expense", label: "আয়-ব্যয় রিপোর্ট", permission: "reports:view" },
       { href: "/reports/integrity", label: "হিসাব যাচাই", permission: "reports:view" },
     ],
@@ -221,6 +222,7 @@ export const NAV: NavEntry[] = [
   },
   { key: "billing", label: "সাবস্ক্রিপশন", icon: I.receipt, href: "/billing", permission: "billing:view" },
   { key: "business", label: "ব্যবসা সেটিং", icon: I.store, href: "/business", permission: "business:manage" },
+  { key: "group", label: "কোম্পানি গ্রুপ", icon: I.store, href: "/settings/group", permission: "business:manage" },
   { key: "account", label: "অ্যাকাউন্ট সেটিং", icon: I.gear, href: "/account" },
   { key: "backup", label: "ব্যাকআপ", icon: I.db, href: "/backup", permission: "backup:manage" },
 ];
@@ -246,6 +248,7 @@ export const NAV_LABEL_EN: Record<string, string> = {
   সার্চ: "Search",
   "উৎপাদন ও ফলন রিপোর্ট": "Production & Yield Report",
   "সম্মিলিত গ্রুপ রিপোর্ট": "Consolidated Group Financials",
+  "কোম্পানি গ্রুপ": "Company Group",
 };
 
 export const MOBILE_TABS = [

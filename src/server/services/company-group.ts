@@ -13,6 +13,8 @@ export interface AssignBusinessToGroupInput {
   groupId: string;
   isParent?: boolean;
   intercompanyCode?: string | null;
+  ownershipPercentage?: number;
+  intercompanyCreditLimit?: number | null;
 }
 
 export interface LinkPartnerInput {
@@ -87,6 +89,8 @@ export async function assignBusinessToGroup(input: AssignBusinessToGroupInput) {
       groupId: input.groupId,
       isParent: input.isParent ?? false,
       intercompanyCode: input.intercompanyCode?.trim() || null,
+      ...(input.ownershipPercentage !== undefined ? { ownershipPercentage: input.ownershipPercentage } : {}),
+      ...(input.intercompanyCreditLimit !== undefined ? { intercompanyCreditLimit: input.intercompanyCreditLimit } : {}),
     },
   });
 }
@@ -269,3 +273,128 @@ export async function getConsolidatedGroupOverview(groupId: string) {
     entities: group.businesses,
   };
 }
+
+// ───────────────────────────── Group IAM (Central Roles & Memberships) ─────────────────────────────
+
+export interface CreateGroupRoleInput {
+  groupId: string;
+  name: string;
+  description?: string | null;
+  permissions: string[];
+}
+
+export interface AssignUserToGroupInput {
+  userId: string;
+  groupId: string;
+  roleId: string;
+}
+
+/**
+ * Creates or updates a centralized Group Role (e.g. GROUP_CFO, GROUP_AUDITOR).
+ */
+export async function createGroupRole(input: CreateGroupRoleInput) {
+  const name = input.name.trim();
+  if (!name) throw new UserError("গ্রুপ রোলের নাম প্রদান করুন");
+
+  const group = await prisma.companyGroup.findUnique({
+    where: { id: input.groupId },
+  });
+  if (!group) throw new UserError("কোম্পানি গ্রুপ পাওয়া যায়নি");
+
+  return prisma.groupRole.upsert({
+    where: {
+      groupId_name: { groupId: input.groupId, name },
+    },
+    create: {
+      groupId: input.groupId,
+      name,
+      description: input.description?.trim() || null,
+      permissions: input.permissions,
+    },
+    update: {
+      description: input.description?.trim() || null,
+      permissions: input.permissions,
+    },
+  });
+}
+
+/**
+ * Assigns a user to a Group Role, giving them centralized cross-entity access.
+ */
+export async function assignUserToGroup(input: AssignUserToGroupInput) {
+  const user = await prisma.user.findUnique({
+    where: { id: input.userId },
+  });
+  if (!user) throw new UserError("ব্যবহারকারী পাওয়া যায়নি");
+
+  const group = await prisma.companyGroup.findUnique({
+    where: { id: input.groupId },
+  });
+  if (!group) throw new UserError("কোম্পানি গ্রুপ পাওয়া যায়নি");
+
+  const role = await prisma.groupRole.findUnique({
+    where: { id: input.roleId },
+  });
+  if (!role || role.groupId !== input.groupId) {
+    throw new UserError("গ্রুপ রোল পাওয়া যায়নি বা এই গ্রুপের অন্তর্ভুক্ত নয়");
+  }
+
+  return prisma.groupMembership.upsert({
+    where: {
+      userId_groupId: { userId: input.userId, groupId: input.groupId },
+    },
+    create: {
+      userId: input.userId,
+      groupId: input.groupId,
+      roleId: input.roleId,
+      isActive: true,
+    },
+    update: {
+      roleId: input.roleId,
+      isActive: true,
+    },
+    include: {
+      role: true,
+      user: { select: { id: true, name: true, email: true, mobile: true } },
+    },
+  });
+}
+
+/**
+ * Revokes a user's centralized Group Membership.
+ */
+export async function removeUserFromGroup(input: { userId: string; groupId: string }) {
+  return prisma.groupMembership.deleteMany({
+    where: { userId: input.userId, groupId: input.groupId },
+  });
+}
+
+/**
+ * Lists all centralized roles configured for a group.
+ */
+export async function listGroupRoles(groupId: string) {
+  return prisma.groupRole.findMany({
+    where: { groupId },
+    orderBy: { name: "asc" },
+    include: {
+      _count: { select: { memberships: true } },
+    },
+  });
+}
+
+/**
+ * Lists all active users holding a Group Role.
+ */
+export async function listGroupMembers(groupId: string) {
+  return prisma.groupMembership.findMany({
+    where: { groupId, isActive: true },
+    include: {
+      role: true,
+      user: {
+        select: { id: true, name: true, email: true, mobile: true, isActive: true },
+      },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+}
+

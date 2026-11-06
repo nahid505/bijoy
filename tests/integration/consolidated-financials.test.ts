@@ -305,13 +305,13 @@ run("Consolidated Financials Engine & Automated Intercompany Elimination", () =>
 
     // Entity A had 40,000 external COGS + 24,000 intercompany COGS = 64,000 raw COGS
     expect(report.profitAndLoss.costOfSales.rawTotal).toBe(64000);
-    // Elimination must be -30,000 (Cr elimination)
-    expect(report.profitAndLoss.costOfSales.elimination).toBe(-30000);
-    // Consolidated COGS must be 34,000
-    expect(report.profitAndLoss.costOfSales.consolidated).toBe(34000);
+    // Net elimination is -24,000 (-30,000 Cr purchase elimination + 6,000 Dr unrealized inventory profit per IFRS 10)
+    expect(report.profitAndLoss.costOfSales.elimination).toBe(-24000);
+    // Consolidated COGS must be 40,000 (true external cost of goods sold)
+    expect(report.profitAndLoss.costOfSales.consolidated).toBe(40000);
 
-    // Consolidated Gross Profit = 50,000 - 34,000 = 16,000
-    expect(report.profitAndLoss.grossProfit.consolidated).toBe(16000);
+    // Consolidated Gross Profit = 50,000 - 40,000 = 10,000 (genuine realized external profit)
+    expect(report.profitAndLoss.grossProfit.consolidated).toBe(10000);
 
     // 8. Verify Intercompany Due-To / Due-From Contra Elimination (Balance Sheet)
     const dueFromLine = report.balanceSheet.assets.find((l) => l.category === "INTERCOMPANY_DUE_FROM");
@@ -326,6 +326,11 @@ run("Consolidated Financials Engine & Automated Intercompany Elimination", () =>
     expect(dueToLine!.eliminationDr).toBe(30000);
     expect(dueToLine!.consolidatedTotal).toBe(0); // Intercompany payables eliminated to 0!
 
+    // Verify Unrealized Inventory Profit eliminated from ending inventory (IFRS 10)
+    const inventoryLine = report.balanceSheet.assets.find((l) => l.category === "INVENTORY");
+    expect(inventoryLine).toBeDefined();
+    expect(inventoryLine!.eliminationCr).toBe(6000);
+
     // 9. Verify Balance Sheet Equality
     expect(report.balanceSheet.isBalanced).toBe(true);
     expect(
@@ -333,7 +338,7 @@ run("Consolidated Financials Engine & Automated Intercompany Elimination", () =>
     ).toBeLessThan(0.05);
 
     // 10. Verify Elimination Audit Trail
-    expect(report.eliminations.length).toBeGreaterThanOrEqual(2);
+    expect(report.eliminations.length).toBeGreaterThanOrEqual(3);
     const salesElim = report.eliminations.find((e) => e.type === "SALES_PURCHASE");
     expect(salesElim).toBeDefined();
     expect(salesElim!.amount).toBe(30000);
@@ -342,7 +347,17 @@ run("Consolidated Financials Engine & Automated Intercompany Elimination", () =>
     expect(contraElim).toBeDefined();
     expect(contraElim!.amount).toBe(30000);
 
-    // 11. Verify Multi-Sheet Excel Export Generation
+    const unrealizedElim = report.eliminations.find((e) => e.type === "UNREALIZED_INVENTORY_PROFIT");
+    expect(unrealizedElim).toBeDefined();
+    expect(unrealizedElim!.amount).toBe(6000);
+
+    // 11. Verify Consolidated Cash Flow Statement & NCI Breakdown
+    expect(report.cashFlow).toBeDefined();
+    expect(report.cashFlow!.operatingLines.length).toBeGreaterThan(0);
+    expect(report.nciBreakdown).toBeDefined();
+    expect(report.nciBreakdown!.subsidiaries.length).toBeGreaterThan(0);
+
+    // 12. Verify Multi-Sheet Excel Export Generation
     const xlsxBuffer = await exportConsolidatedFinancialsToXlsx(report, "৳");
     expect(xlsxBuffer).toBeDefined();
     expect(xlsxBuffer.length).toBeGreaterThan(1000);

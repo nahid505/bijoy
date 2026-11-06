@@ -70,8 +70,11 @@ export const DEPOT_ACCESS = {
   paymentView: ["depot:company_payment", "vouchers:view"],
   /** depot stock adjustment: its own key only — without it the page and the menu are closed */
   stockAdjust: ["depot:stock_adjust"],
-  /** depot expenses (paid from ডিপো ক্যাশ): its own key only */
-  expense: ["depot:expense_manage"],
+  /** depot expenses (paid from ডিপো ক্যাশ): coordinated with expense management permissions */
+  expense: ["expense:view", "depot:expense_manage"],
+  expenseCreate: ["expense:create", "depot:expense_manage"],
+  expenseEdit: ["expense:edit", "depot:expense_manage"],
+  expenseDelete: ["expense:delete", "depot:expense_manage"],
   /** fund transfer main cash / bank ⇄ ডিপো ক্যাশ: moves general cash, so a general voucher permission */
   fund: ["vouchers:create"],
 } as const satisfies Record<string, readonly Permission[]>;

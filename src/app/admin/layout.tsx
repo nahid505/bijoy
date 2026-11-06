@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 const LINKS = [
   { href: "/admin", label: "ড্যাশবোর্ড" },
   { href: "/admin/companies", label: "কোম্পানি" },
+  { href: "/admin/groups", label: "কোম্পানি গ্রুপ" },
   { href: "/admin/users", label: "ব্যবহারকারী" },
   { href: "/admin/plans", label: "প্ল্যান" },
   { href: "/admin/features", label: "ফিচার" },

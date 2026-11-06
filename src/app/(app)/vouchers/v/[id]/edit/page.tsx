@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { isPayrollVoucher } from "@/server/services/voucher";
@@ -34,7 +35,29 @@ export default async function EditVoucherPage({ params }: { params: Promise<{ id
   if (v.type === "PRODUCTION") redirect(`/production/${v.id}/edit`);
   if (v.paddyPurchase) redirect(`/purchases/paddy/${v.id}/edit`); // weighbridge slip: edited with its own form
   if (v.depotDelivery || v.type === "DEPOT_DELIVERY") redirect(`/depot/deliveries/${v.id}/edit`); // depot challan: its own form
-  const ctx = await requirePermission(voucherPermission(v.type, "edit"));
+
+  const isExpenseVoucher = v.type === "PAYMENT" && (await prisma.journalEntry.count({
+    where: { voucherId: v.id, businessId: base.business.id, account: { nature: "EXPENSE" } },
+  })) > 0;
+
+  if (isExpenseVoucher) {
+    if (!can(base, ["expense:edit", "vouchers:edit"])) {
+      return (
+        <div className="card mx-auto mt-16 max-w-lg p-10 text-center">
+          <p className="text-5xl">💸</p>
+          <p className="mt-3 font-mono text-sm font-bold tracking-wide text-credit">403 — Forbidden</p>
+          <h1 className="mt-4 text-xl font-bold text-slate-800">প্রবেশাধিকার নেই</h1>
+          <p className="mt-2 text-sm text-slate-500">এই খরচ এন্ট্রি বা দেখার আপনার অনুমতি নেই</p>
+          <div className="mt-6 flex justify-center gap-2">
+            <Link prefetch={false} href={`/vouchers/v/${v.id}`} className="btn-primary">ফিরে যান</Link>
+          </div>
+        </div>
+      );
+    }
+  } else {
+    if (!can(base, voucherPermission(v.type, "edit"))) redirect("/forbidden");
+  }
+  const ctx = base;
   if (!(await canSeeVoucher(ctx, v.id))) redirect("/forbidden");
   const meta = VOUCHER_TYPES[v.type];
   return (

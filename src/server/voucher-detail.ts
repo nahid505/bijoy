@@ -11,7 +11,7 @@ export async function loadVoucher(businessId: string, id: string) {
       createdBy: { select: { id: true, name: true } },
       updatedBy: { select: { id: true, name: true } },
       verifiedBy: { select: { id: true, name: true } },
-      entries: { orderBy: { lineNo: "asc" }, include: { account: { select: { id: true, name: true, group: { select: { name: true } } } } } },
+      entries: { orderBy: { lineNo: "asc" }, include: { account: { select: { id: true, name: true, nature: true, group: { select: { name: true } } } } } },
       items: {
         orderBy: { lineNo: "asc" },
         include: {

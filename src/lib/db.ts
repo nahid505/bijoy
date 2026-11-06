@@ -1,6 +1,7 @@
 import "server-only";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { dbProvider } from "./dialect";
+import { createTenantIsolationExtension } from "./tenant-isolation";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
@@ -21,7 +22,7 @@ export function withPoolDefaults(url: string | undefined): string | undefined {
   }
 }
 
-export const prisma =
+const baseClient =
   globalForPrisma.prisma ??
   new PrismaClient({
     datasourceUrl: withPoolDefaults(process.env.DATABASE_URL),
@@ -30,7 +31,9 @@ export const prisma =
     ...(dbProvider(process.env.DATABASE_URL) === "mysql" ? { transactionOptions: { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted } } : {}),
   });
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = baseClient;
+
+export const prisma = baseClient.$extends(createTenantIsolationExtension()) as unknown as PrismaClient;
 
 /** Prisma Decimal | number | null -> number */
 export function num(value: unknown): number {

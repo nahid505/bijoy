@@ -14,6 +14,7 @@ import { toBnDigits } from "@/lib/format";
 import type { RegistrationInput } from "@/lib/validation";
 import { createBusiness } from "./bootstrap";
 import { reserveAttempt } from "./login-guard";
+import { withBypassTenantCheck } from "@/lib/tenant-isolation";
 
 const HOUR = 60 * 60_000;
 
@@ -55,17 +56,19 @@ export async function registerAccount(db: PrismaClient, input: RegistrationInput
 
   const passwordHash = await bcrypt.hash(input.password, 12);
   try {
-    return await db.$transaction(
-      async (tx) => {
-        const user = await tx.user.create({ data: { name: input.ownerName, mobile: input.mobile, email: input.email, passwordHash } });
-        const business = await createBusiness(tx, { name: input.businessName, ownerUserId: user.id, mobile: input.mobile, address: input.address, planCode: input.plan }); // business types: chosen later in settings
-        if (input.email) await tx.business.update({ where: { id: business.id }, data: { email: input.email } });
-        await tx.auditLog.create({
-          data: { businessId: business.id, userId: user.id, action: "CREATE", entity: "Registration", entityId: business.id, ipAddress: meta.clientIp, details: { business: input.businessName, mobile: input.mobile, plan: input.plan } },
-        });
-        return { user: { id: user.id, name: user.name, mobile: user.mobile, email: user.email }, business: { id: business.id, name: business.name } };
-      },
-      { timeout: 60_000, maxWait: 10_000 },
+    return await withBypassTenantCheck(async () =>
+      db.$transaction(
+        async (tx) => {
+          const user = await tx.user.create({ data: { name: input.ownerName, mobile: input.mobile, email: input.email, passwordHash } });
+          const business = await createBusiness(tx, { name: input.businessName, ownerUserId: user.id, mobile: input.mobile, address: input.address, planCode: input.plan }); // business types: chosen later in settings
+          if (input.email) await tx.business.update({ where: { id: business.id }, data: { email: input.email } });
+          await tx.auditLog.create({
+            data: { businessId: business.id, userId: user.id, action: "CREATE", entity: "Registration", entityId: business.id, ipAddress: meta.clientIp, details: { business: input.businessName, mobile: input.mobile, plan: input.plan } },
+          });
+          return { user: { id: user.id, name: user.name, mobile: user.mobile, email: user.email }, business: { id: business.id, name: business.name } };
+        },
+        { timeout: 60_000, maxWait: 10_000 },
+      )
     );
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {

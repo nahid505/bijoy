@@ -180,7 +180,7 @@ export const EXTRA_REPORTS: ReportDef[] = [
     title: "খরচ রিপোর্ট",
     description: "খাতভিত্তিক পরিচালন খরচের বিস্তারিত",
     filters: ["range", "q"],
-    permission: "reports:view",
+    permission: ["expense:view", "reports:view"],
     async run(ctx, p) {
       const { from, to, range } = reportPeriod(p, ctx.business.fiscalYearStartMonth);
       const cur = ctx.business.currencySymbol;

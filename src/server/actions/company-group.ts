@@ -12,6 +12,9 @@ import {
   linkSisterConcernPartner,
   listSisterConcerns,
   getConsolidatedGroupOverview,
+  createGroupRole,
+  assignUserToGroup,
+  removeUserFromGroup,
 } from "../services/company-group";
 import { z } from "zod";
 
@@ -27,6 +30,8 @@ const assignGroupSchema = z.object({
   groupId: z.string().trim().min(1, "গ্রুপ নির্বাচন করুন"),
   isParent: z.boolean().default(false),
   intercompanyCode: z.string().trim().max(20).optional(),
+  ownershipPercentage: z.coerce.number().min(0).max(100).default(100),
+  intercompanyCreditLimit: z.preprocess((v) => (v === "" || v === undefined || v === null ? null : Number(v)), z.number().min(0).nullable().optional()),
 });
 
 const linkPartnerSchema = z.object({
@@ -92,6 +97,8 @@ export async function assignBusinessToGroupAction(_prev: ActionState, fd: FormDa
       groupId: String(fd.get("groupId") ?? ""),
       isParent: fd.get("isParent") === "on" || fd.get("isParent") === "true",
       intercompanyCode: String(fd.get("intercompanyCode") ?? "") || undefined,
+      ownershipPercentage: fd.get("ownershipPercentage") ? Number(fd.get("ownershipPercentage")) : 100,
+      intercompanyCreditLimit: fd.get("intercompanyCreditLimit") ? Number(fd.get("intercompanyCreditLimit")) : null,
     });
 
     const updated = await assignBusinessToGroup(input);
@@ -221,3 +228,80 @@ export async function unlinkSisterConcernPartnerAction(
   revalidatePath("/suppliers");
   return result.ok ? { ok: true, message: "সিস্টার কনসার্ন লিঙ্ক বাতিল করা হয়েছে" } : toResult(result);
 }
+
+// ───────────────────────────── Group IAM Actions ─────────────────────────────
+
+const createGroupRoleSchema = z.object({
+  groupId: z.string().trim().min(1, "গ্রুপ নির্বাচন করুন"),
+  name: z.string().trim().min(2, "রোলের নাম লিখুন"),
+  description: z.string().trim().optional(),
+  permissions: z.array(z.string()).default(["*"]),
+});
+
+const assignGroupUserSchema = z.object({
+  groupId: z.string().trim().min(1, "গ্রুপ নির্বাচন করুন"),
+  userId: z.string().trim().min(1, "ব্যবহারকারী নির্বাচন করুন"),
+  roleId: z.string().trim().min(1, "রোল নির্বাচন করুন"),
+});
+
+export async function createGroupRoleAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const result = await guard(async () => {
+    const user = await requireUser();
+    const ctx = await getContext();
+    if (!user.isSuperAdmin && (!ctx || !ctx.isOwner || !ctx.group?.isParent)) {
+      throw new UserError("শুধুমাত্র সুপার এডমিন বা প্যারেন্ট প্রতিষ্ঠানের মালিক গ্রুপ রোল তৈরি করতে পারেন");
+    }
+
+    const permsRaw = String(fd.get("permissions") ?? "");
+    const permissions = permsRaw ? permsRaw.split(",").map((p) => p.trim()).filter(Boolean) : ["*"];
+
+    const input = createGroupRoleSchema.parse({
+      groupId: String(fd.get("groupId") ?? ""),
+      name: String(fd.get("name") ?? ""),
+      description: String(fd.get("description") ?? "") || undefined,
+      permissions,
+    });
+
+    const role = await createGroupRole(input);
+    return role;
+  });
+
+  return result.ok ? { ok: true, message: "গ্রুপ রোল সফলভাবে তৈরি হয়েছে" } : toResult(result);
+}
+
+export async function assignUserToGroupAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const result = await guard(async () => {
+    const user = await requireUser();
+    const ctx = await getContext();
+    if (!user.isSuperAdmin && (!ctx || !ctx.isOwner || !ctx.group?.isParent)) {
+      throw new UserError("শুধুমাত্র সুপার এডমিন বা প্যারেন্ট প্রতিষ্ঠানের মালিক গ্রুপ মেম্বার যুক্ত করতে পারেন");
+    }
+
+    const roleId = String(fd.get("roleId") ?? fd.get("groupRoleId") ?? "");
+    const input = assignGroupUserSchema.parse({
+      groupId: String(fd.get("groupId") ?? ""),
+      userId: String(fd.get("userId") ?? ""),
+      roleId,
+    });
+
+    const membership = await assignUserToGroup(input);
+    return membership;
+  });
+
+  return result.ok ? { ok: true, message: "গ্রুপ সেন্ট্রাল ইউজার সফলভাবে নিযুক্ত করা হয়েছে" } : toResult(result);
+}
+
+export async function removeUserFromGroupAction(userId: string, groupId: string, _prev?: ActionState): Promise<ActionState> {
+  const result = await guard(async () => {
+    const user = await requireUser();
+    const ctx = await getContext();
+    if (!user.isSuperAdmin && (!ctx || !ctx.isOwner || !ctx.group?.isParent)) {
+      throw new UserError("শুধুমাত্র সুপার এডমিন বা প্যারেন্ট প্রতিষ্ঠানের মালিক গ্রুপ মেম্বারশিপ বাতিল করতে পারেন");
+    }
+
+    await removeUserFromGroup({ userId, groupId });
+  });
+
+  return result.ok ? { ok: true, message: "গ্রুপ মেম্বারশিপ সফলভাবে বাতিল করা হয়েছে" } : toResult(result);
+}
+

@@ -15,7 +15,7 @@ import { assertAccounts, assertBookAccounts, assertNotLocked, nextVoucherNo, wri
 import { assertBookProducts, defaultWarehouseId, lockProducts, writeMovements, type MovementInput } from "./inventory";
 import { repostVoucher, revalueProducts } from "./posting";
 import { allocateSaleBatches, ensureInboundBatch, expiryLossAccount, requireBatch, type BatchAllocation } from "./batches";
-import { mirrorSalesToPurchaseProposal } from "./intercompany";
+import { mirrorSalesToPurchaseProposal, mirrorPurchaseReturnToSalesReturnProposal } from "./intercompany";
 import type { BookKey } from "@/lib/book";
 import { TRANSFER_SOURCE } from "@/lib/depot";
 
@@ -332,6 +332,14 @@ export async function tradeVoucherTx(tx: Tx, ctx: Ctx, type: TradeType, input: T
       });
       if (customer?.isSisterConcern && customer.linkedBusinessId) {
         await mirrorSalesToPurchaseProposal(tx, ctx, voucher.id, customer.linkedBusinessId);
+      }
+    } else if (type === "PURCHASE_RETURN" && input.partyAccountId) {
+      const supplier = await tx.supplier.findUnique({
+        where: { accountId: input.partyAccountId },
+        select: { id: true, isSisterConcern: true, linkedBusinessId: true },
+      });
+      if (supplier?.isSisterConcern && supplier.linkedBusinessId) {
+        await mirrorPurchaseReturnToSalesReturnProposal(tx, ctx, voucher.id, supplier.linkedBusinessId);
       }
     }
 

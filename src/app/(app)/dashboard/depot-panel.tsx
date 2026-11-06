@@ -57,7 +57,7 @@ export async function DepotPanel({ ctx, side }: { ctx: AppContext; side?: React.
     { href: "/depot/deliveries/new", label: t("ডেলিভারি চালান তৈরি"), icon: "🚚", ok: can(ctx, DEPOT_ACCESS.deliveryCreate), primary: true },
     { href: "/depot/collections/new", label: t("মার্কেট কালেকশন"), icon: "💵", ok: can(ctx, DEPOT_ACCESS.collection) },
     { href: "/depot/commission", label: t("কোম্পানি কমিশন হিসাব"), icon: "🧮", ok: can(ctx, DEPOT_ACCESS.commission) },
-    { href: "/depot/expenses/new", label: t("ডিপো খরচ এন্ট্রি"), icon: "🧾", ok: can(ctx, DEPOT_ACCESS.expense) },
+    { href: "/depot/expenses/new", label: t("ডিপো খরচ এন্ট্রি"), icon: "🧾", ok: can(ctx, DEPOT_ACCESS.expenseCreate) },
   ].filter((q) => q.ok);
   const cards: DashCard[] = [
     { icon: "🚚", label: t("আজকের ডেলিভারি"), value: t("{n} টি চালান", { n: toBnDigits(today?.count ?? 0) }), hint: t("ডিও রিলিজ {do} · মার্কেট সেলস {market} · মোট পরিমাণ {qty}", { do: toBnDigits(today?.doCount ?? 0), market: toBnDigits(today?.marketCount ?? 0), qty: formatQty(today?.quantity ?? 0) }), href: "/depot/deliveries", ok: can(ctx, DEPOT_ACCESS.view), tone: "text-ink-900" },

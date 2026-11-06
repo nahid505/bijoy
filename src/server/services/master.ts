@@ -41,6 +41,7 @@ async function hasActivity(tx: Tx, businessId: string, accountId: string) {
 export async function saveParty(ctx: Ctx, kind: PartyKind, input: PartyInput, id?: string, opts: { dealer?: boolean } = {}) {
   return prisma.$transaction(async (tx) => {
     const cfg = PARTY[kind];
+    const isSister = Boolean(input.isSisterConcern && input.linkedBusinessId);
     const base = {
       name: input.name,
       mobile: input.mobile,
@@ -49,6 +50,8 @@ export async function saveParty(ctx: Ctx, kind: PartyKind, input: PartyInput, id
       notes: input.notes,
       creditDays: input.creditDays,
       ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
+      ...(input.isSisterConcern !== undefined ? { isSisterConcern: isSister } : {}),
+      ...(input.linkedBusinessId !== undefined ? { linkedBusinessId: isSister ? input.linkedBusinessId : null } : {}),
     };
     const data = kind === "CUSTOMER" ? { ...base, creditLimit: input.creditLimit, groupName: input.groupName ?? null, ...(input.route !== undefined ? { route: input.route } : {}), ...(input.ownerName !== undefined ? { ownerName: input.ownerName } : {}) } : base;
     /** the ledger of a dealer reads "shop (owner)", so vouchers, statements and pickers show both names */

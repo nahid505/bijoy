@@ -39,7 +39,14 @@ async function saveVoucher(type: EditableType, id: string | null, fd: FormData, 
     if (newBook === "DEPOT" && !isDepot(base.business.businessType)) throw new UserError("ডিপো হিসাব শুধু ডিপো ব্যবসায়");
     // an edit keeps the voucher's own book; the depot permissions open depot-book vouchers only
     const existing = id
-      ? await prisma.voucher.findFirst({ where: { id, businessId: base.business.id }, select: { book: true, verificationStatus: true } })
+      ? await prisma.voucher.findFirst({
+          where: { id, businessId: base.business.id },
+          select: {
+            book: true,
+            verificationStatus: true,
+            entries: { select: { account: { select: { nature: true } } } },
+          },
+        })
       : null;
     if (existing && existing.verificationStatus !== "UNVERIFIED" && !can(base, ["can_unverify_transactions", "vouchers:verify"])) {
       throw new UserError(
@@ -49,7 +56,50 @@ async function saveVoucher(type: EditableType, id: string | null, fd: FormData, 
       );
     }
     const book: BookKey = existing?.book ?? newBook ?? "GENERAL";
-    const ctx = await assertPermission(voucherAccess(type, id ? "edit" : "create", base.business.businessType, book));
+
+    // Expense permission & limit check
+    let isExpense = type === "PAYMENT" && (fd.get("mode") === "expense" || existing?.entries.some((e) => e.account.nature === "EXPENSE"));
+    if (type === "PAYMENT" && !isExpense) {
+      try {
+        const rawPayload = fd.get("payload");
+        if (typeof rawPayload === "string") {
+          const parsed = JSON.parse(rawPayload);
+          const lineAccountIds: string[] = (parsed.lines ?? []).map((l: any) => l.accountId).filter(Boolean);
+          if (lineAccountIds.length > 0) {
+            const expCount = await prisma.account.count({
+              where: { id: { in: lineAccountIds }, businessId: base.business.id, nature: "EXPENSE" },
+            });
+            if (expCount > 0) isExpense = true;
+          }
+        }
+      } catch {
+        // payload parse handled downstream
+      }
+    }
+
+    if (isExpense) {
+      const required = id ? ["expense:edit", "vouchers:edit"] : ["expense:create", "vouchers:create"];
+      if (!can(base, required as any)) {
+        throw new UserError("এই খরচ এন্ট্রি বা দেখার আপনার অনুমতি নেই");
+      }
+      try {
+        const rawPayload = fd.get("payload");
+        if (typeof rawPayload === "string") {
+          const parsed = JSON.parse(rawPayload);
+          const totalAmount = (parsed.lines ?? []).reduce((sum: number, l: any) => sum + (Number(l.amount) || 0), 0);
+          if (totalAmount > 50000 && !can(base, "expense:max_limit_override") && !base.isOwner) {
+            throw new UserError("এই অঙ্কের অতিরিক্ত খরচ এন্ট্রি করার অনুমতি নেই (expense:max_limit_override প্রয়োজন)");
+          }
+        }
+      } catch (err: any) {
+        if (err instanceof UserError) throw err;
+      }
+    }
+
+    const requiredPerm = isExpense
+      ? (id ? ["expense:edit", "vouchers:edit"] : ["expense:create", "vouchers:create"])
+      : voucherAccess(type, id ? "edit" : "create", base.business.businessType, book);
+    const ctx = await assertPermission(requiredPerm as any);
     await assertVoucherAllowed(ctx, id); // assigned-only roles: only their parties' vouchers
     const before = id ? await voucherSnapshot(ctx.business.id, id) : null;
     const editId = id ?? undefined;
@@ -151,7 +201,15 @@ export async function deleteVoucherAction(id: string, _prev: ActionState, _fd: F
   const result = await guard(async () => {
     const base = await getContext();
     if (!base) throw new ForbiddenError();
-    const v = await prisma.voucher.findFirst({ where: { id, businessId: base.business.id }, select: { type: true, book: true, verificationStatus: true } });
+    const v = await prisma.voucher.findFirst({
+      where: { id, businessId: base.business.id },
+      select: {
+        type: true,
+        book: true,
+        verificationStatus: true,
+        entries: { select: { account: { select: { nature: true } } } },
+      },
+    });
     if (!v || v.type === "OPENING") throw new UserError("ভাউচার পাওয়া যায়নি");
     if (v.verificationStatus !== "UNVERIFIED" && !can(base, ["can_unverify_transactions", "vouchers:verify"])) {
       throw new UserError(
@@ -160,7 +218,14 @@ export async function deleteVoucherAction(id: string, _prev: ActionState, _fd: F
           : "লেনদেনটি প্রত্যাখ্যাত (Rejected) অবস্থায় লক করা — ডিলিট করতে ভেরিফিকেশন প্রত্যাহার বা অনুমোদনের প্রয়োজন"
       );
     }
-    const ctx = await assertPermission(voucherAccess(v.type, "delete", base.business.businessType, v.book));
+    const isExpense = v.type === "PAYMENT" && v.entries.some((e) => e.account.nature === "EXPENSE");
+    const required = isExpense
+      ? ["expense:delete", "vouchers:delete"]
+      : voucherAccess(v.type, "delete", base.business.businessType, v.book);
+    if (!can(base, required as any)) {
+      throw new UserError(isExpense ? "এই খরচ এন্ট্রি বা দেখার আপনার অনুমতি নেই" : "ভাউচার মুছে ফেলার অনুমতি নেই");
+    }
+    const ctx = await assertPermission(required as any);
     await assertVoucherAllowed(ctx, id);
     const before = await voucherSnapshot(ctx.business.id, id); // full posting snapshot kept in the audit log
     const party = await prisma.voucher.findFirst({ where: { id, businessId: ctx.business.id }, select: { partyAccountId: true, date: true } });

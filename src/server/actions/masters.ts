@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { accountGroupSchema, accountSchema, nameSchema, partySchema, productSchema, unitSchema, warehouseSchema } from "@/lib/validation";
-import { assertPermission } from "../auth";
+import { assertPermission, can, ForbiddenError, getContext } from "../auth";
 import { audit } from "../audit";
 import { formToObject, guard, parseForm, safeReturnPath, toResult, UserError, type ActionState } from "../action-utils";
 import { flash } from "../flash";
@@ -96,8 +96,24 @@ export async function togglePartyAction(pageKind: PartyPageKind, id: string, act
 
 export async function saveAccountAction(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const result = await guard(async () => {
-    const ctx = await assertPermission("accounts:manage");
+    const base = await getContext();
+    if (!base) throw new ForbiddenError();
     const input = parseForm(accountSchema, fd);
+    const canManageAll = can(base, "accounts:manage");
+    const canManageExpense = can(base, "expense:category_manage");
+    if (!canManageAll && !canManageExpense) {
+      throw new UserError("এই কাজের অনুমতি আপনার নেই");
+    }
+    if (!canManageAll && canManageExpense) {
+      const group = await prisma.accountGroup.findFirst({
+        where: { id: input.groupId, businessId: base.business.id },
+        select: { nature: true },
+      });
+      if (!group || group.nature !== "EXPENSE") {
+        throw new UserError("শুধুমাত্র খরচের খাত বা ক্যাটাগরি তৈরি ও নিয়ন্ত্রণের অনুমতি আপনার রয়েছে");
+      }
+    }
+    const ctx = await assertPermission(canManageAll ? "accounts:manage" : "expense:category_manage");
     const uploadedImage = await saveLedgerImageUpload(fd);
     if (uploadedImage !== undefined) {
       input.imageUrl = uploadedImage;

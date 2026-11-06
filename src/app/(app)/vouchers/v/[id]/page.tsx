@@ -41,10 +41,30 @@ export default async function VoucherDetailPage({ params }: { params: Promise<{ 
     }
     redirect("/dashboard");
   }
-  if (!can(ctx, voucherAccess(v.type, "view", ctx.business.businessType, v.book)) && !(v.type === "OPENING" && can(ctx, "accounts:view"))) redirect("/forbidden");
+  const isExpenseVoucher = v.type === "PAYMENT" && v.entries.some((e) => e.account.nature === "EXPENSE");
+  const canViewVoucher = can(ctx, voucherAccess(v.type, "view", ctx.business.businessType, v.book)) ||
+    (v.type === "OPENING" && can(ctx, "accounts:view")) ||
+    (isExpenseVoucher && can(ctx, "expense:view"));
+
+  if (!canViewVoucher) {
+    if (isExpenseVoucher) {
+      return (
+        <div className="card mx-auto mt-16 max-w-lg p-10 text-center">
+          <p className="text-5xl">💸</p>
+          <p className="mt-3 font-mono text-sm font-bold tracking-wide text-credit">403 — Forbidden</p>
+          <h1 className="mt-4 text-xl font-bold text-slate-800">প্রবেশাধিকার নেই</h1>
+          <p className="mt-2 text-sm text-slate-500">এই খরচ এন্ট্রি বা দেখার আপনার অনুমতি নেই</p>
+          <div className="mt-6 flex justify-center gap-2">
+            <Link prefetch={false} href="/dashboard" className="btn-primary">ড্যাশবোর্ডে ফিরুন</Link>
+          </div>
+        </div>
+      );
+    }
+    redirect("/forbidden");
+  }
   if (!(await canSeeVoucher(ctx, v.id))) redirect("/forbidden"); // assigned-only roles: another party's voucher
   // opened through a depot permission only (depot-only role): the voucher, without the ledger postings
-  const full = can(ctx, voucherPermission(v.type, "view")) || v.type === "OPENING";
+  const full = can(ctx, voucherPermission(v.type, "view")) || v.type === "OPENING" || (isExpenseVoucher && can(ctx, "expense:view"));
   const depotOnly = !full;
   // a depot-book voucher (src/lib/book.ts) lives under the depot menu, never in the general lists
   const depotBook = v.book === "DEPOT" || depotOnly;
@@ -186,8 +206,8 @@ export default async function VoucherDetailPage({ params }: { params: Promise<{ 
               </span>
             ) : (
               <>
-                {!v.depotDelivery && editable && can(ctx, voucherAccess(v.type, "edit", ctx.business.businessType, v.book)) && <Link prefetch={false} href={v.type === "PRODUCTION" ? `/production/${v.id}/edit` : v.paddyPurchase ? `/purchases/paddy/${v.id}/edit` : `/vouchers/v/${v.id}/edit`} className="btn-secondary">{t("সম্পাদনা")}</Link>}
-                {editable && can(ctx, voucherAccess(v.type, "delete", ctx.business.businessType, v.book)) && (
+                {!v.depotDelivery && editable && (can(ctx, voucherAccess(v.type, "edit", ctx.business.businessType, v.book)) || (isExpenseVoucher && can(ctx, "expense:edit"))) && <Link prefetch={false} href={v.type === "PRODUCTION" ? `/production/${v.id}/edit` : v.paddyPurchase ? `/purchases/paddy/${v.id}/edit` : `/vouchers/v/${v.id}/edit`} className="btn-secondary">{t("সম্পাদনা")}</Link>}
+                {editable && (can(ctx, voucherAccess(v.type, "delete", ctx.business.businessType, v.book)) || (isExpenseVoucher && can(ctx, "expense:delete"))) && (
                   <ActionButton action={deleteVoucherAction.bind(null, v.id)} label={t("মুছুন")} className="btn-danger" confirmText={t("ভাউচারটি মুছে ফেললে সংশ্লিষ্ট সব জার্নাল এন্ট্রি ও স্টক মুভমেন্ট বাতিল হবে। নিশ্চিত?")} />
                 )}
               </>

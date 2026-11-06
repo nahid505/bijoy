@@ -167,12 +167,16 @@ export const partySchema = z.object({
   route: optionalText(80), // depot: dealer's route / area
   ownerName: optionalText(150), // depot dealer: proprietor / owner (name = the shop / business)
   imageUrl: z.string().optional().nullable(),
+  isSisterConcern: z.preprocess((val) => val === true || val === "true" || val === "on" || val === "1", z.boolean()).default(false),
+  linkedBusinessId: z.string().trim().optional().nullable(),
 });
-export type PartyInput = Omit<z.infer<typeof partySchema>, "groupName" | "route" | "ownerName"> & {
+export type PartyInput = Omit<z.infer<typeof partySchema>, "groupName" | "route" | "ownerName" | "isSisterConcern" | "linkedBusinessId"> & {
   groupName?: string | null;
   route?: string | null;
   ownerName?: string | null;
   imageUrl?: string | null;
+  isSisterConcern?: boolean;
+  linkedBusinessId?: string | null;
 };
 
 export const accountSchema = z.object({

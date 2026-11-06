@@ -13,6 +13,7 @@ import { revokeAllSessions } from "../services/sessions";
 import { audit } from "../audit";
 import { formToObject, guard, parseForm, toResult, UserError, type ActionState } from "../action-utils";
 import { createBusiness, setBusinessTypes } from "../services/bootstrap";
+import { withBypassTenantCheck } from "@/lib/tenant-isolation";
 import { assertOwner } from "../business-owner";
 import { isRestricted, saveAssignments } from "../party-scope";
 import { assertUserSlot } from "../services/subscriptions";
@@ -28,6 +29,7 @@ const LOGO_TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
 export async function switchBusinessAction(fd: FormData): Promise<boolean> {
   const user = await requireUser();
   const id = String(fd.get("businessId") ?? "");
+  if (!id) return false;
   if (user.isSuperAdmin) {
     const b = await prisma.business.findUnique({ where: { id, isActive: true }, select: { id: true } });
     if (!b) return false;
@@ -35,7 +37,14 @@ export async function switchBusinessAction(fd: FormData): Promise<boolean> {
     return true;
   }
   const m = await prisma.membership.findFirst({ where: { userId: user.id, businessId: id, isActive: true } });
-  if (!m) return false;
+  const hasGroupAccess = await prisma.groupMembership.findFirst({
+    where: {
+      userId: user.id,
+      isActive: true,
+      group: { businesses: { some: { id, isActive: true } } },
+    },
+  });
+  if (!m && !hasGroupAccess) return false;
   await setBusinessCookie(id);
   return true;
 }
@@ -48,7 +57,9 @@ export async function createBusinessAction(_prev: ActionState, fd: FormData): Pr
     // Users who already belong to a business need business:manage there to open another one.
     if (ctx && !ctx.permissions.includes("*") && !ctx.permissions.includes("business:manage")) throw new UserError("নতুন ব্যবসা খোলার অনুমতি নেই");
     const input = parseForm(newBusinessSchema, fd);
-    const business = await prisma.$transaction((tx) => createBusiness(tx, { ...input, ownerUserId: user.id }), { timeout: 30_000 });
+    const business = await withBypassTenantCheck(() =>
+      prisma.$transaction((tx) => createBusiness(tx, { ...input, ownerUserId: user.id }), { timeout: 30_000 })
+    );
     await audit({ businessId: business.id, userId: user.id, action: "CREATE", entity: "Business", entityId: business.id, details: { name: input.name } });
     return business.id;
   });

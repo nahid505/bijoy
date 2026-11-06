@@ -527,6 +527,37 @@ export function ReconciliationClient({
                 </div>
               </div>
 
+              {/* Intercompany Exposure & Credit Limit Banner */}
+              {contraData.exposure && contraData.exposure.limit > 0 && (
+                <div
+                  className={`p-3 rounded-lg border flex flex-wrap items-center justify-between gap-2 text-xs ${
+                    contraData.exposure.isOverLimit
+                      ? "bg-red-50 border-red-200 text-red-900 font-semibold"
+                      : "bg-sky-50 border-sky-200 text-sky-900"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">{contraData.exposure.isOverLimit ? "⚠️" : "🛡️"}</span>
+                    <div>
+                      <span className="font-bold">{t("আন্তঃপ্রতিষ্ঠান ক্রেডিট লিমিট ও এক্সপোজার")}: </span>
+                      <span>
+                        বর্তমান বাকি {currency} {formatMoney(contraData.exposure.currentDue)} / অনুমোদিত সীমা {currency} {formatMoney(contraData.exposure.limit)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-white/80 border border-slate-200">
+                      ব্যবহার: {toBnDigits(contraData.exposure.utilizationPct)}%
+                    </span>
+                    {contraData.exposure.isOverLimit && (
+                      <span className="font-bold bg-red-600 text-white px-2 py-0.5 rounded text-[10px]">
+                        {t("সীমা অতিক্রান্ত!")}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Dual Ledger Summaries */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Entity A Side */}

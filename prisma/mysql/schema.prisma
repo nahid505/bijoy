@@ -144,6 +144,52 @@ enum BilateralStatus {
 
 // ───────────────────────────── tenancy & access ─────────────────────────────
 
+model CompanyGroup {
+  id          String   @id @default(cuid())
+  name        String   @db.Text
+  code        String?  @unique // e.g. "RAHIM_GROUP"
+  description String?  @db.Text
+  logo        String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  businesses  Business[]
+  roles       GroupRole[]
+  memberships GroupMembership[]
+}
+
+model GroupRole {
+  id          String            @id @default(cuid())
+  groupId     String
+  group       CompanyGroup      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name        String // e.g. "GROUP_CFO", "GROUP_AUDITOR", "GROUP_ADMIN"
+  description String?           @db.Text
+  permissions Json // permissions granted across all businesses in the group
+  memberships GroupMembership[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@unique([groupId, name])
+  @@index([groupId])
+}
+
+model GroupMembership {
+  id        String       @id @default(cuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  groupId   String
+  group     CompanyGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  roleId    String
+  role      GroupRole    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@unique([userId, groupId])
+  @@index([groupId])
+  @@index([userId])
+}
+
 model Business {
   id                   String    @id @default(cuid())
   name                 String    @db.Text
@@ -212,6 +258,22 @@ model Business {
   depotDeliveries     DepotDelivery[]
   bankTransfers       BankTransferLog[]
   disbursementBatches BankDisbursementBatch[]
+  voucherItems        VoucherItem[]
+  voucherPayments     VoucherPayment[]
+  payslipLines        PayslipLine[]
+
+  // ── Enterprise Group & Inter-Company
+  groupId                 String?
+  group                   CompanyGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  isParent                Boolean       @default(false)
+  intercompanyCode        String?       @db.Text // Unique short code within group, e.g. "MILL", "DEPOT", "TRADING"
+  ownershipPercentage     Decimal       @default(100.0) @db.Decimal(5, 2) // % owned by parent (for NCI calculation)
+  intercompanyCreditLimit Decimal?      @db.Decimal(14, 2) // max allowable exposure from sister concerns
+
+  linkedCustomers Customer[] @relation("LinkedBusinessCustomer")
+  linkedSuppliers Supplier[] @relation("LinkedBusinessSupplier")
+
+  @@index([groupId])
 }
 
 model User {
@@ -245,6 +307,7 @@ model User {
   attendancesVerified          Attendance[]            @relation("AttendanceVerifiedBy")
   bankTransfersInitiated       BankTransferLog[]       @relation("BankTransfersInitiated")
   disbursementBatchesInitiated BankDisbursementBatch[] @relation("DisbursementBatchesInitiated")
+  groupMemberships             GroupMembership[]
 }
 
 // Permissions are string keys (see src/lib/permissions.ts); "*" = everything.
@@ -481,15 +544,18 @@ model Voucher {
 /// Settlement of a sales / purchase / return voucher through one or more cash / bank ledgers
 /// (split payments: cash + bKash + bank …).
 model VoucherPayment {
-  id        String  @id @default(cuid())
-  voucherId String
-  voucher   Voucher @relation(fields: [voucherId], references: [id], onDelete: Cascade)
-  accountId String
-  account   Account @relation(fields: [accountId], references: [id])
-  amount    Decimal @db.Decimal(14, 2)
-  reference String? @db.Text
-  lineNo    Int     @default(0)
+  id         String    @id @default(cuid())
+  businessId String?
+  business   Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  voucherId  String
+  voucher    Voucher   @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  accountId  String
+  account    Account   @relation(fields: [accountId], references: [id])
+  amount     Decimal   @db.Decimal(14, 2)
+  reference  String?   @db.Text
+  lineNo     Int       @default(0)
 
+  @@index([businessId, id])
   @@index([voucherId])
   @@index([accountId])
 }
@@ -519,6 +585,8 @@ model JournalEntry {
 /// Inventory line of a sales / purchase / return / stock-journal voucher.
 model VoucherItem {
   id             String          @id @default(cuid())
+  businessId     String?
+  business       Business?       @relation(fields: [businessId], references: [id], onDelete: Cascade)
   voucherId      String
   voucher        Voucher         @relation(fields: [voucherId], references: [id], onDelete: Cascade)
   productId      String
@@ -548,6 +616,7 @@ model VoucherItem {
   stockMovements StockMovement[]
   lineNo         Int             @default(0)
 
+  @@index([businessId, id])
   @@index([voucherId])
   @@index([productId])
   @@index([batchId])
@@ -556,57 +625,69 @@ model VoucherItem {
 // ───────────────────────────── parties ─────────────────────────────
 
 model Customer {
-  id            String         @id @default(cuid())
-  businessId    String
-  business      Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  accountId     String         @unique
-  account       Account        @relation(fields: [accountId], references: [id])
-  name          String
-  mobile        String?
-  email         String?        @db.VarChar(255)
-  address       String?        @db.Text
-  imageUrl      String?        @db.Text
-  notes         String?        @db.Text
-  creditLimit   Decimal        @default(0) @db.Decimal(14, 2) // 0 = no limit
-  creditDays    Int            @default(0) // payment terms: invoice due = date + creditDays
-  groupName     String? // customer group (e.g. "পাইকারি", "এলাকা: মিরপুর") — used for group SMS
-  ownerName     String?        @db.Text // depot dealer: proprietor / owner (name = the shop / business)
-  route         String?        @db.Text // depot: dealer's route / area (market dues by route)
+  id               String         @id @default(cuid())
+  businessId       String
+  business         Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  accountId        String         @unique
+  account          Account        @relation(fields: [accountId], references: [id])
+  name             String
+  mobile           String?
+  email            String?        @db.VarChar(255)
+  address          String?        @db.Text
+  imageUrl         String?        @db.Text
+  notes            String?        @db.Text
+  creditLimit      Decimal        @default(0) @db.Decimal(14, 2) // 0 = no limit
+  creditDays       Int            @default(0) // payment terms: invoice due = date + creditDays
+  groupName        String? // customer group (e.g. "পাইকারি", "এলাকা: মিরপুর") — used for group SMS
+  ownerName        String?        @db.Text // depot dealer: proprietor / owner (name = the shop / business)
+  route            String?        @db.Text // depot: dealer's route / area (market dues by route)
   /// depot dealer: kept out of the general customer list / pickers; their trade lives in the DEPOT book
-  isDepotDealer Boolean        @default(false)
-  isActive      Boolean        @default(true)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  smsMessages   SmsMessage[]
-  assignedTo    UserCustomer[]
+  isDepotDealer    Boolean        @default(false)
+  // ── Inter-Company / Sister Concern link
+  isSisterConcern  Boolean        @default(false)
+  linkedBusinessId String?
+  linkedBusiness   Business?      @relation("LinkedBusinessCustomer", fields: [linkedBusinessId], references: [id], onDelete: SetNull)
+  isActive         Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  smsMessages      SmsMessage[]
+  assignedTo       UserCustomer[]
 
   @@index([businessId, name])
   @@index([businessId, mobile])
   @@index([businessId, groupName])
+  @@index([businessId, isSisterConcern])
+  @@index([linkedBusinessId])
 }
 
 model Supplier {
-  id          String         @id @default(cuid())
-  businessId  String
-  business    Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  accountId   String         @unique
-  account     Account        @relation(fields: [accountId], references: [id])
-  name        String
-  mobile      String?
-  email       String?        @db.VarChar(255)
-  address     String?        @db.Text
-  imageUrl    String?        @db.Text
-  notes       String?        @db.Text
-  creditDays  Int            @default(0)
-  isActive    Boolean        @default(true)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  batches     ProductBatch[]
-  smsMessages SmsMessage[]
-  assignedTo  UserSupplier[]
+  id               String         @id @default(cuid())
+  businessId       String
+  business         Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  accountId        String         @unique
+  account          Account        @relation(fields: [accountId], references: [id])
+  name             String
+  mobile           String?
+  email            String?        @db.VarChar(255)
+  address          String?        @db.Text
+  imageUrl         String?        @db.Text
+  notes            String?        @db.Text
+  creditDays       Int            @default(0)
+  // ── Inter-Company / Sister Concern link
+  isSisterConcern  Boolean        @default(false)
+  linkedBusinessId String?
+  linkedBusiness   Business?      @relation("LinkedBusinessSupplier", fields: [linkedBusinessId], references: [id], onDelete: SetNull)
+  isActive         Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  batches          ProductBatch[]
+  smsMessages      SmsMessage[]
+  assignedTo       UserSupplier[]
 
   @@index([businessId, name])
   @@index([businessId, mobile])
+  @@index([businessId, isSisterConcern])
+  @@index([linkedBusinessId])
 }
 
 // ───────────────────────────── inventory ─────────────────────────────
@@ -1285,6 +1366,8 @@ model Payslip {
 
 model PayslipLine {
   id                 String           @id @default(cuid())
+  businessId         String?
+  business           Business?        @relation(fields: [businessId], references: [id], onDelete: Cascade)
   payslipId          String
   payslip            Payslip          @relation(fields: [payslipId], references: [id], onDelete: Cascade)
   componentId        String?
@@ -1302,6 +1385,7 @@ model PayslipLine {
   note               String?          @db.Text
   sortOrder          Int              @default(0)
 
+  @@index([businessId, id])
   @@index([payslipId])
   @@index([advanceId])
   @@index([componentId])

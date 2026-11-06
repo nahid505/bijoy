@@ -5,6 +5,7 @@ import { toDateInput } from "@/lib/format";
 import { getContext } from "@/server/auth";
 import { findReport, reportOpenFor } from "@/server/reports/registry";
 import { toCsv, toXlsx } from "@/server/reports/export";
+import { withTenantContext } from "@/lib/tenant-isolation";
 
 export const dynamic = "force-dynamic";
 
@@ -19,19 +20,21 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
   const gate = featureForPath(`/reports/${slug}`);
   if (gate && !ctx.features.includes(gate)) return NextResponse.json({ error: "feature disabled", feature: gate }, { status: 403 });
 
-  const query = Object.fromEntries(req.nextUrl.searchParams.entries());
-  const report = await def.run(ctx, query);
-  const name = `${slug}-${toDateInput()}`;
-  if (query.format === "xlsx") {
-    return new NextResponse(new Uint8Array(await toXlsx(report, ctx.business.name)), {
-      headers: {
-        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="${name}.xlsx"`,
-        "Cache-Control": "no-store",
-      },
+  return withTenantContext(ctx.business.id, async () => {
+    const query = Object.fromEntries(req.nextUrl.searchParams.entries());
+    const report = await def.run(ctx, query);
+    const name = `${slug}-${toDateInput()}`;
+    if (query.format === "xlsx") {
+      return new NextResponse(new Uint8Array(await toXlsx(report, ctx.business.name)), {
+        headers: {
+          "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "Content-Disposition": `attachment; filename="${name}.xlsx"`,
+          "Cache-Control": "no-store",
+        },
+      });
+    }
+    return new NextResponse(toCsv(report), {
+      headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="${name}.csv"`, "Cache-Control": "no-store" },
     });
-  }
-  return new NextResponse(toCsv(report), {
-    headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="${name}.csv"`, "Cache-Control": "no-store" },
   });
 }

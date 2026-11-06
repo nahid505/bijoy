@@ -2,6 +2,51 @@
 -- Equivalent to all PostgreSQL migrations up to 20261005300000_saas_inventory_payment_status.
 
 -- CreateTable
+CREATE TABLE `CompanyGroup` (
+    `id` VARCHAR(191) NOT NULL,
+    `name` TEXT NOT NULL,
+    `code` VARCHAR(191) NULL,
+    `description` TEXT NULL,
+    `logo` TEXT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `CompanyGroup_code_key`(`code`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `GroupRole` (
+    `id` VARCHAR(191) NOT NULL,
+    `groupId` VARCHAR(191) NOT NULL,
+    `name` VARCHAR(191) NOT NULL,
+    `description` TEXT NULL,
+    `permissions` JSON NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    INDEX `GroupRole_groupId_idx`(`groupId`),
+    UNIQUE INDEX `GroupRole_groupId_name_key`(`groupId`, `name`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `GroupMembership` (
+    `id` VARCHAR(191) NOT NULL,
+    `userId` VARCHAR(191) NOT NULL,
+    `groupId` VARCHAR(191) NOT NULL,
+    `roleId` VARCHAR(191) NOT NULL,
+    `isActive` BOOLEAN NOT NULL DEFAULT true,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    INDEX `GroupMembership_groupId_idx`(`groupId`),
+    INDEX `GroupMembership_userId_idx`(`userId`),
+    UNIQUE INDEX `GroupMembership_userId_groupId_key`(`userId`, `groupId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
 CREATE TABLE `Business` (
     `id` VARCHAR(191) NOT NULL,
     `name` TEXT NOT NULL,
@@ -28,7 +73,13 @@ CREATE TABLE `Business` (
     `isActive` BOOLEAN NOT NULL DEFAULT true,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
+    `groupId` VARCHAR(191) NULL,
+    `isParent` BOOLEAN NOT NULL DEFAULT false,
+    `intercompanyCode` TEXT NULL,
+    `ownershipPercentage` DECIMAL(5, 2) NOT NULL DEFAULT 100.0,
+    `intercompanyCreditLimit` DECIMAL(14, 2) NULL,
 
+    INDEX `Business_groupId_idx`(`groupId`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -159,6 +210,13 @@ CREATE TABLE `Account` (
     `imageUrl` TEXT NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
+    `isApiEnabled` BOOLEAN NOT NULL DEFAULT false,
+    `apiProvider` ENUM('CUSTOM_BANK_API', 'BEFTN_API', 'NPSB_GATEWAY', 'MFS_PAYOUT') NULL,
+    `apiEndpointUrl` TEXT NULL,
+    `apiClientId` TEXT NULL,
+    `apiClientSecret` TEXT NULL,
+    `corporateAccountNo` TEXT NULL,
+    `webhookSecret` TEXT NULL,
 
     INDEX `Account_businessId_kind_idx`(`businessId`, `kind`),
     INDEX `Account_businessId_groupId_idx`(`businessId`, `groupId`),
@@ -196,6 +254,10 @@ CREATE TABLE `Voucher` (
     `verifiedById` VARCHAR(191) NULL,
     `verifiedAt` DATETIME(3) NULL,
     `verificationNote` TEXT NULL,
+    `isIntercompany` BOOLEAN NOT NULL DEFAULT false,
+    `intercompanyRefId` VARCHAR(191) NULL,
+    `bilateralStatus` ENUM('NONE', 'PENDING', 'ACCEPTED', 'DISPUTED') NOT NULL DEFAULT 'NONE',
+    `disputeReason` TEXT NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
 
@@ -204,6 +266,8 @@ CREATE TABLE `Voucher` (
     INDEX `Voucher_businessId_verificationStatus_idx`(`businessId`, `verificationStatus`),
     INDEX `Voucher_partyAccountId_idx`(`partyAccountId`),
     INDEX `Voucher_returnOfId_idx`(`returnOfId`),
+    INDEX `Voucher_isIntercompany_bilateralStatus_idx`(`isIntercompany`, `bilateralStatus`),
+    INDEX `Voucher_intercompanyRefId_idx`(`intercompanyRefId`),
     UNIQUE INDEX `Voucher_businessId_voucherNo_key`(`businessId`, `voucherNo`),
     UNIQUE INDEX `Voucher_businessId_sourceKey_key`(`businessId`, `sourceKey`),
     PRIMARY KEY (`id`)
@@ -212,12 +276,14 @@ CREATE TABLE `Voucher` (
 -- CreateTable
 CREATE TABLE `VoucherPayment` (
     `id` VARCHAR(191) NOT NULL,
+    `businessId` VARCHAR(191) NULL,
     `voucherId` VARCHAR(191) NOT NULL,
     `accountId` VARCHAR(191) NOT NULL,
     `amount` DECIMAL(14, 2) NOT NULL,
     `reference` TEXT NULL,
     `lineNo` INTEGER NOT NULL DEFAULT 0,
 
+    INDEX `VoucherPayment_businessId_id_idx`(`businessId`, `id`),
     INDEX `VoucherPayment_voucherId_idx`(`voucherId`),
     INDEX `VoucherPayment_accountId_idx`(`accountId`),
     PRIMARY KEY (`id`)
@@ -246,6 +312,7 @@ CREATE TABLE `JournalEntry` (
 -- CreateTable
 CREATE TABLE `VoucherItem` (
     `id` VARCHAR(191) NOT NULL,
+    `businessId` VARCHAR(191) NULL,
     `voucherId` VARCHAR(191) NOT NULL,
     `productId` VARCHAR(191) NOT NULL,
     `warehouseId` VARCHAR(191) NULL,
@@ -267,6 +334,7 @@ CREATE TABLE `VoucherItem` (
     `batchId` VARCHAR(191) NULL,
     `lineNo` INTEGER NOT NULL DEFAULT 0,
 
+    INDEX `VoucherItem_businessId_id_idx`(`businessId`, `id`),
     INDEX `VoucherItem_voucherId_idx`(`voucherId`),
     INDEX `VoucherItem_productId_idx`(`productId`),
     INDEX `VoucherItem_batchId_idx`(`batchId`),
@@ -290,6 +358,8 @@ CREATE TABLE `Customer` (
     `ownerName` TEXT NULL,
     `route` TEXT NULL,
     `isDepotDealer` BOOLEAN NOT NULL DEFAULT false,
+    `isSisterConcern` BOOLEAN NOT NULL DEFAULT false,
+    `linkedBusinessId` VARCHAR(191) NULL,
     `isActive` BOOLEAN NOT NULL DEFAULT true,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
@@ -298,6 +368,8 @@ CREATE TABLE `Customer` (
     INDEX `Customer_businessId_name_idx`(`businessId`, `name`),
     INDEX `Customer_businessId_mobile_idx`(`businessId`, `mobile`),
     INDEX `Customer_businessId_groupName_idx`(`businessId`, `groupName`),
+    INDEX `Customer_businessId_isSisterConcern_idx`(`businessId`, `isSisterConcern`),
+    INDEX `Customer_linkedBusinessId_idx`(`linkedBusinessId`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -313,6 +385,8 @@ CREATE TABLE `Supplier` (
     `imageUrl` TEXT NULL,
     `notes` TEXT NULL,
     `creditDays` INTEGER NOT NULL DEFAULT 0,
+    `isSisterConcern` BOOLEAN NOT NULL DEFAULT false,
+    `linkedBusinessId` VARCHAR(191) NULL,
     `isActive` BOOLEAN NOT NULL DEFAULT true,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
@@ -320,6 +394,8 @@ CREATE TABLE `Supplier` (
     UNIQUE INDEX `Supplier_accountId_key`(`accountId`),
     INDEX `Supplier_businessId_name_idx`(`businessId`, `name`),
     INDEX `Supplier_businessId_mobile_idx`(`businessId`, `mobile`),
+    INDEX `Supplier_businessId_isSisterConcern_idx`(`businessId`, `isSisterConcern`),
+    INDEX `Supplier_linkedBusinessId_idx`(`linkedBusinessId`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -666,6 +742,14 @@ CREATE TABLE `PayrollSettings` (
     `absenceBasis` VARCHAR(191) NOT NULL DEFAULT 'BASIC',
     `salaryPayableAccountId` VARCHAR(191) NULL,
     `advanceAccountId` VARCHAR(191) NULL,
+    `disbursementAccountId` VARCHAR(191) NULL,
+    `isBankApiEnabled` BOOLEAN NOT NULL DEFAULT false,
+    `bankApiProvider` ENUM('CUSTOM_BANK_API', 'BEFTN_API', 'NPSB_GATEWAY', 'MFS_PAYOUT') NULL,
+    `bankApiEndpointUrl` TEXT NULL,
+    `bankApiClientId` TEXT NULL,
+    `bankApiClientSecret` TEXT NULL,
+    `bankCorporateAccountNo` TEXT NULL,
+    `bankWebhookSecret` TEXT NULL,
     `updatedAt` DATETIME(3) NOT NULL,
 
     PRIMARY KEY (`businessId`)
@@ -704,7 +788,12 @@ CREATE TABLE `Employee` (
     `overtimeRate` DECIMAL(14, 2) NULL,
     `paymentMethod` TEXT NULL,
     `bankName` TEXT NULL,
+    `branchName` TEXT NULL,
+    `routingNo` TEXT NULL,
+    `routingNumber` TEXT NULL,
     `bankAccountNo` TEXT NULL,
+    `bankAccountNumber` TEXT NULL,
+    `bankAccountName` TEXT NULL,
     `notes` TEXT NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
@@ -783,8 +872,13 @@ CREATE TABLE `Attendance` (
     `note` TEXT NULL,
     `updatedById` TEXT NULL,
     `updatedAt` DATETIME(3) NOT NULL,
+    `verificationStatus` ENUM('UNVERIFIED', 'VERIFIED', 'REJECTED') NOT NULL DEFAULT 'UNVERIFIED',
+    `verifiedById` VARCHAR(191) NULL,
+    `verifiedAt` DATETIME(3) NULL,
+    `verificationNote` TEXT NULL,
 
     INDEX `Attendance_businessId_date_idx`(`businessId`, `date`),
+    INDEX `Attendance_businessId_verificationStatus_idx`(`businessId`, `verificationStatus`),
     UNIQUE INDEX `Attendance_employeeId_date_key`(`employeeId`, `date`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -861,6 +955,7 @@ CREATE TABLE `Payslip` (
 -- CreateTable
 CREATE TABLE `PayslipLine` (
     `id` VARCHAR(191) NOT NULL,
+    `businessId` VARCHAR(191) NULL,
     `payslipId` VARCHAR(191) NOT NULL,
     `componentId` VARCHAR(191) NULL,
     `advanceId` VARCHAR(191) NULL,
@@ -873,6 +968,7 @@ CREATE TABLE `PayslipLine` (
     `note` TEXT NULL,
     `sortOrder` INTEGER NOT NULL DEFAULT 0,
 
+    INDEX `PayslipLine_businessId_id_idx`(`businessId`, `id`),
     INDEX `PayslipLine_payslipId_idx`(`payslipId`),
     INDEX `PayslipLine_advanceId_idx`(`advanceId`),
     INDEX `PayslipLine_componentId_idx`(`componentId`),
@@ -914,6 +1010,67 @@ CREATE TABLE `SalaryPayment` (
     INDEX `SalaryPayment_businessId_date_idx`(`businessId`, `date`),
     INDEX `SalaryPayment_voucherId_idx`(`voucherId`),
     INDEX `SalaryPayment_payslipId_idx`(`payslipId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `BankDisbursementBatch` (
+    `id` VARCHAR(191) NOT NULL,
+    `businessId` VARCHAR(191) NOT NULL,
+    `year` INTEGER NOT NULL,
+    `month` INTEGER NOT NULL,
+    `accountId` VARCHAR(191) NOT NULL,
+    `provider` ENUM('CUSTOM_BANK_API', 'BEFTN_API', 'NPSB_GATEWAY', 'MFS_PAYOUT') NOT NULL,
+    `totalAmount` DECIMAL(14, 2) NOT NULL,
+    `totalEmployees` INTEGER NOT NULL,
+    `successCount` INTEGER NOT NULL DEFAULT 0,
+    `failedCount` INTEGER NOT NULL DEFAULT 0,
+    `status` ENUM('PENDING', 'SUCCESS', 'FAILED', 'PARTIAL') NOT NULL DEFAULT 'PENDING',
+    `idempotencyKey` VARCHAR(191) NOT NULL,
+    `voucherId` VARCHAR(191) NULL,
+    `initiatedById` VARCHAR(191) NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `BankDisbursementBatch_idempotencyKey_key`(`idempotencyKey`),
+    INDEX `BankDisbursementBatch_businessId_year_month_idx`(`businessId`, `year`, `month`),
+    INDEX `BankDisbursementBatch_idempotencyKey_idx`(`idempotencyKey`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `BankTransferLog` (
+    `id` VARCHAR(191) NOT NULL,
+    `businessId` VARCHAR(191) NOT NULL,
+    `batchId` VARCHAR(191) NOT NULL,
+    `employeeId` VARCHAR(191) NOT NULL,
+    `payslipId` VARCHAR(191) NOT NULL,
+    `accountId` VARCHAR(191) NOT NULL,
+    `amount` DECIMAL(14, 2) NOT NULL,
+    `beneficiaryName` TEXT NOT NULL,
+    `bankName` TEXT NULL,
+    `branchName` TEXT NULL,
+    `accountNumber` TEXT NOT NULL,
+    `routingNumber` TEXT NULL,
+    `paymentMethod` TEXT NULL,
+    `idempotencyKey` VARCHAR(191) NOT NULL,
+    `bankTxId` TEXT NULL,
+    `utrNumber` TEXT NULL,
+    `status` ENUM('PENDING', 'SUCCESS', 'FAILED', 'PARTIAL') NOT NULL DEFAULT 'PENDING',
+    `errorMessage` TEXT NULL,
+    `responsePayload` JSON NULL,
+    `voucherId` VARCHAR(191) NULL,
+    `initiatedById` VARCHAR(191) NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `BankTransferLog_idempotencyKey_key`(`idempotencyKey`),
+    INDEX `BankTransferLog_businessId_createdAt_idx`(`businessId`, `createdAt`),
+    INDEX `BankTransferLog_businessId_status_idx`(`businessId`, `status`),
+    INDEX `BankTransferLog_batchId_idx`(`batchId`),
+    INDEX `BankTransferLog_payslipId_idx`(`payslipId`),
+    INDEX `BankTransferLog_employeeId_idx`(`employeeId`),
+    INDEX `BankTransferLog_idempotencyKey_idx`(`idempotencyKey`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -1234,6 +1391,21 @@ CREATE TABLE `PaddyPurchase` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- AddForeignKey
+ALTER TABLE `GroupRole` ADD CONSTRAINT `GroupRole_groupId_fkey` FOREIGN KEY (`groupId`) REFERENCES `CompanyGroup`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `GroupMembership` ADD CONSTRAINT `GroupMembership_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `GroupMembership` ADD CONSTRAINT `GroupMembership_groupId_fkey` FOREIGN KEY (`groupId`) REFERENCES `CompanyGroup`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `GroupMembership` ADD CONSTRAINT `GroupMembership_roleId_fkey` FOREIGN KEY (`roleId`) REFERENCES `GroupRole`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `Business` ADD CONSTRAINT `Business_groupId_fkey` FOREIGN KEY (`groupId`) REFERENCES `CompanyGroup`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE `Role` ADD CONSTRAINT `Role_businessId_fkey` FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -1312,6 +1484,9 @@ ALTER TABLE `Voucher` ADD CONSTRAINT `Voucher_updatedById_fkey` FOREIGN KEY (`up
 ALTER TABLE `Voucher` ADD CONSTRAINT `Voucher_verifiedById_fkey` FOREIGN KEY (`verifiedById`) REFERENCES `User`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE `VoucherPayment` ADD CONSTRAINT `VoucherPayment_businessId_fkey` FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE `VoucherPayment` ADD CONSTRAINT `VoucherPayment_voucherId_fkey` FOREIGN KEY (`voucherId`) REFERENCES `Voucher`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -1325,6 +1500,9 @@ ALTER TABLE `JournalEntry` ADD CONSTRAINT `JournalEntry_voucherId_fkey` FOREIGN 
 
 -- AddForeignKey
 ALTER TABLE `JournalEntry` ADD CONSTRAINT `JournalEntry_accountId_fkey` FOREIGN KEY (`accountId`) REFERENCES `Account`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `VoucherItem` ADD CONSTRAINT `VoucherItem_businessId_fkey` FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `VoucherItem` ADD CONSTRAINT `VoucherItem_voucherId_fkey` FOREIGN KEY (`voucherId`) REFERENCES `Voucher`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
@@ -1348,10 +1526,16 @@ ALTER TABLE `Customer` ADD CONSTRAINT `Customer_businessId_fkey` FOREIGN KEY (`b
 ALTER TABLE `Customer` ADD CONSTRAINT `Customer_accountId_fkey` FOREIGN KEY (`accountId`) REFERENCES `Account`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE `Customer` ADD CONSTRAINT `Customer_linkedBusinessId_fkey` FOREIGN KEY (`linkedBusinessId`) REFERENCES `Business`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE `Supplier` ADD CONSTRAINT `Supplier_businessId_fkey` FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `Supplier` ADD CONSTRAINT `Supplier_accountId_fkey` FOREIGN KEY (`accountId`) REFERENCES `Account`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `Supplier` ADD CONSTRAINT `Supplier_linkedBusinessId_fkey` FOREIGN KEY (`linkedBusinessId`) REFERENCES `Business`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `Category` ADD CONSTRAINT `Category_businessId_fkey` FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
@@ -1474,6 +1658,9 @@ ALTER TABLE `PayrollSettings` ADD CONSTRAINT `PayrollSettings_salaryPayableAccou
 ALTER TABLE `PayrollSettings` ADD CONSTRAINT `PayrollSettings_advanceAccountId_fkey` FOREIGN KEY (`advanceAccountId`) REFERENCES `Account`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE `PayrollSettings` ADD CONSTRAINT `PayrollSettings_disbursementAccountId_fkey` FOREIGN KEY (`disbursementAccountId`) REFERENCES `Account`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE `Department` ADD CONSTRAINT `Department_businessId_fkey` FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -1504,6 +1691,9 @@ ALTER TABLE `SalaryRevision` ADD CONSTRAINT `SalaryRevision_employeeId_fkey` FOR
 ALTER TABLE `Attendance` ADD CONSTRAINT `Attendance_employeeId_fkey` FOREIGN KEY (`employeeId`) REFERENCES `Employee`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE `Attendance` ADD CONSTRAINT `Attendance_verifiedById_fkey` FOREIGN KEY (`verifiedById`) REFERENCES `User`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE `PayrollRun` ADD CONSTRAINT `PayrollRun_businessId_fkey` FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -1514,6 +1704,9 @@ ALTER TABLE `Payslip` ADD CONSTRAINT `Payslip_runId_fkey` FOREIGN KEY (`runId`) 
 
 -- AddForeignKey
 ALTER TABLE `Payslip` ADD CONSTRAINT `Payslip_employeeId_fkey` FOREIGN KEY (`employeeId`) REFERENCES `Employee`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `PayslipLine` ADD CONSTRAINT `PayslipLine_businessId_fkey` FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `PayslipLine` ADD CONSTRAINT `PayslipLine_payslipId_fkey` FOREIGN KEY (`payslipId`) REFERENCES `Payslip`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
@@ -1544,6 +1737,39 @@ ALTER TABLE `SalaryPayment` ADD CONSTRAINT `SalaryPayment_payslipId_fkey` FOREIG
 
 -- AddForeignKey
 ALTER TABLE `SalaryPayment` ADD CONSTRAINT `SalaryPayment_voucherId_fkey` FOREIGN KEY (`voucherId`) REFERENCES `Voucher`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `BankDisbursementBatch` ADD CONSTRAINT `BankDisbursementBatch_businessId_fkey` FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `BankDisbursementBatch` ADD CONSTRAINT `BankDisbursementBatch_accountId_fkey` FOREIGN KEY (`accountId`) REFERENCES `Account`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `BankDisbursementBatch` ADD CONSTRAINT `BankDisbursementBatch_voucherId_fkey` FOREIGN KEY (`voucherId`) REFERENCES `Voucher`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `BankDisbursementBatch` ADD CONSTRAINT `BankDisbursementBatch_initiatedById_fkey` FOREIGN KEY (`initiatedById`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `BankTransferLog` ADD CONSTRAINT `BankTransferLog_businessId_fkey` FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `BankTransferLog` ADD CONSTRAINT `BankTransferLog_batchId_fkey` FOREIGN KEY (`batchId`) REFERENCES `BankDisbursementBatch`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `BankTransferLog` ADD CONSTRAINT `BankTransferLog_employeeId_fkey` FOREIGN KEY (`employeeId`) REFERENCES `Employee`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `BankTransferLog` ADD CONSTRAINT `BankTransferLog_payslipId_fkey` FOREIGN KEY (`payslipId`) REFERENCES `Payslip`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `BankTransferLog` ADD CONSTRAINT `BankTransferLog_accountId_fkey` FOREIGN KEY (`accountId`) REFERENCES `Account`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `BankTransferLog` ADD CONSTRAINT `BankTransferLog_voucherId_fkey` FOREIGN KEY (`voucherId`) REFERENCES `Voucher`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `BankTransferLog` ADD CONSTRAINT `BankTransferLog_initiatedById_fkey` FOREIGN KEY (`initiatedById`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `BusinessFeature` ADD CONSTRAINT `BusinessFeature_businessId_fkey` FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
@@ -1672,6 +1898,7 @@ INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permissio
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_accounting_edit_vouchers_edit', 'ACCOUNTING', 'EDIT', 'vouchers:edit', 1);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_accounting_edit_accounts_manage', 'ACCOUNTING', 'EDIT', 'accounts:manage', 1);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_accounting_delete_vouchers_delete', 'ACCOUNTING', 'DELETE', 'vouchers:delete', 1);
+INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_accounting_approve_vouchers_verify', 'ACCOUNTING', 'APPROVE', 'vouchers:verify', 1);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_accounting_export_reports_view', 'ACCOUNTING', 'EXPORT', 'reports:view', 0);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_accounting_export_reports_ledger_print', 'ACCOUNTING', 'EXPORT', 'reports.ledger:print', 1);
 INSERT IGNORE INTO `FeaturePermission` (`id`, `featureKey`, `action`, `permission`, `owned`) VALUES ('fp_accounting_print_vouchers_view', 'ACCOUNTING', 'PRINT', 'vouchers:view', 1);

@@ -25,7 +25,7 @@ export function ConsolidatedReportClient({
   toDateStr,
   book,
 }: Props) {
-  const [activeTab, setActiveTab] = useState<"BS" | "PL" | "TB" | "ELIM">("BS");
+  const [activeTab, setActiveTab] = useState<"BS" | "PL" | "TB" | "CF" | "NCI" | "ELIM">("BS");
 
   const money = (val: number | null | undefined) => {
     if (val === null || val === undefined || isNaN(val)) return "-";
@@ -216,6 +216,26 @@ export function ConsolidatedReportClient({
             }`}
           >
             ট্রায়াল ব্যালেন্স (Consolidated Trial Balance)
+          </button>
+          <button
+            onClick={() => setActiveTab("CF")}
+            className={`pb-3 text-sm font-semibold border-b-2 transition ${
+              activeTab === "CF"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            নগদ প্রবাহ বিবরণী (Consolidated Cash Flow)
+          </button>
+          <button
+            onClick={() => setActiveTab("NCI")}
+            className={`pb-3 text-sm font-semibold border-b-2 transition ${
+              activeTab === "NCI"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            সংখ্যালঘু অংশীদারিত্ব (NCI / Minority)
           </button>
           <button
             onClick={() => setActiveTab("ELIM")}
@@ -597,6 +617,10 @@ export function ConsolidatedReportClient({
                         <span className="inline-flex px-2 py-0.5 rounded text-xs font-semibold bg-rose-100 text-rose-800">
                           বিক্রয়-ক্রয় এলিমিনেশন
                         </span>
+                      ) : el.type === "UNREALIZED_INVENTORY_PROFIT" ? (
+                        <span className="inline-flex px-2 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800">
+                          মজুদ অপ্রাপ্ত মুনাফা বাদ (IFRS 10)
+                        </span>
                       ) : (
                         <span className="inline-flex px-2 py-0.5 rounded text-xs font-semibold bg-indigo-100 text-indigo-800">
                           দেনা-পাওনা কন্ট্রা সমন্বয়
@@ -624,6 +648,239 @@ export function ConsolidatedReportClient({
               </tbody>
             </table>
           )}
+        </div>
+      )}
+
+      {/* ── Tab 5: Consolidated Cash Flow ── */}
+      {activeTab === "CF" && report.cashFlow && (
+        <div className="rounded-xl border border-border bg-card shadow-sm overflow-x-auto">
+          <table className="w-full text-left border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/50 text-xs font-semibold text-muted-foreground uppercase">
+                <th className="py-3 px-4 min-w-[260px]">নগদ প্রবাহ খাত (Cash Flow Activities)</th>
+                {entities.map((e) => (
+                  <th key={e.id} className="py-3 px-3 text-right min-w-[130px]">
+                    {e.name}
+                    {e.intercompanyCode && (
+                      <span className="block text-[10px] text-muted-foreground">({e.intercompanyCode})</span>
+                    )}
+                  </th>
+                ))}
+                <th className="py-3 px-3 text-right min-w-[130px] bg-muted/80">মোট (Raw Total)</th>
+                <th className="py-3 px-3 text-center min-w-[140px] text-indigo-700 bg-indigo-50/50">
+                  অভ্যন্তরীণ ফান্ড বাদ
+                </th>
+                <th className="py-3 px-4 text-right min-w-[140px] bg-primary/10 text-primary font-bold">
+                  কনসোলিডেটেড মোট
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/60">
+              {/* Beginning Cash */}
+              <tr className="bg-slate-50 font-semibold">
+                <td className="py-2.5 px-4 text-ink-900">প্রারম্ভিক নগদ ও ব্যাংক তহবিল (Beginning Cash)</td>
+                {entities.map((e) => (
+                  <td key={e.id} className="py-2.5 px-3 text-right font-mono text-xs">
+                    {money(report.cashFlow?.beginningCash.entityValues[e.id])}
+                  </td>
+                ))}
+                <td className="py-2.5 px-3 text-right font-mono text-xs font-semibold bg-muted/40">
+                  {money(report.cashFlow?.beginningCash.rawTotal)}
+                </td>
+                <td className="py-2.5 px-3 text-center font-mono text-xs text-muted-foreground">-</td>
+                <td className="py-2.5 px-4 text-right font-mono text-xs font-bold bg-primary/5 text-primary">
+                  {money(report.cashFlow?.beginningCash.consolidated)}
+                </td>
+              </tr>
+
+              {/* Operating Activities */}
+              <tr className="bg-muted/30">
+                <td colSpan={entities.length + 4} className="py-2 px-4 text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                  ১. পরিচালন কার্যক্রম থেকে নগদ প্রবাহ (Operating Activities)
+                </td>
+              </tr>
+              {report.cashFlow.operatingLines.length === 0 ? (
+                <tr><td colSpan={entities.length + 4} className="py-2 px-6 text-xs text-muted-foreground italic">কোনো পরিচালন লেনদেন নেই</td></tr>
+              ) : (
+                report.cashFlow.operatingLines.map((l, i) => (
+                  <tr key={i} className="hover:bg-muted/30">
+                    <td className="py-2 px-6 text-ink-800">{l.label}</td>
+                    {entities.map((e) => (
+                      <td key={e.id} className="py-2 px-3 text-right font-mono text-xs">{money(l.entityValues[e.id])}</td>
+                    ))}
+                    <td className="py-2 px-3 text-right font-mono text-xs font-semibold bg-muted/40">{money(l.rawTotal)}</td>
+                    <td className="py-2 px-3 text-right font-mono text-xs text-indigo-700">{l.elimination !== 0 ? money(l.elimination) : "-"}</td>
+                    <td className="py-2 px-4 text-right font-mono text-xs font-bold bg-primary/5 text-primary">{money(l.consolidated)}</td>
+                  </tr>
+                ))
+              )}
+              <RenderSubtotal
+                title="পরিচালন কার্যক্রম থেকে নিট নগদ (Net Operating Cash)"
+                subtotal={report.cashFlow.netOperatingCash}
+                entities={entities}
+                money={money}
+                className="bg-emerald-50/40 text-emerald-900 font-bold"
+              />
+
+              {/* Investing Activities */}
+              <tr className="bg-muted/30">
+                <td colSpan={entities.length + 4} className="py-2 px-4 text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                  ২. বিনিয়োগ কার্যক্রম থেকে নগদ প্রবাহ (Investing Activities)
+                </td>
+              </tr>
+              {report.cashFlow.investingLines.length === 0 ? (
+                <tr><td colSpan={entities.length + 4} className="py-2 px-6 text-xs text-muted-foreground italic">কোনো বিনিয়োগ লেনদেন নেই</td></tr>
+              ) : (
+                report.cashFlow.investingLines.map((l, i) => (
+                  <tr key={i} className="hover:bg-muted/30">
+                    <td className="py-2 px-6 text-ink-800">{l.label}</td>
+                    {entities.map((e) => (
+                      <td key={e.id} className="py-2 px-3 text-right font-mono text-xs">{money(l.entityValues[e.id])}</td>
+                    ))}
+                    <td className="py-2 px-3 text-right font-mono text-xs font-semibold bg-muted/40">{money(l.rawTotal)}</td>
+                    <td className="py-2 px-3 text-right font-mono text-xs text-indigo-700">{l.elimination !== 0 ? money(l.elimination) : "-"}</td>
+                    <td className="py-2 px-4 text-right font-mono text-xs font-bold bg-primary/5 text-primary">{money(l.consolidated)}</td>
+                  </tr>
+                ))
+              )}
+              <RenderSubtotal
+                title="বিনিয়োগ কার্যক্রম থেকে নিট নগদ (Net Investing Cash)"
+                subtotal={report.cashFlow.netInvestingCash}
+                entities={entities}
+                money={money}
+                className="bg-blue-50/40 text-blue-900 font-bold"
+              />
+
+              {/* Financing Activities */}
+              <tr className="bg-muted/30">
+                <td colSpan={entities.length + 4} className="py-2 px-4 text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                  ৩. অর্থায়ন কার্যক্রম থেকে নগদ প্রবাহ (Financing Activities)
+                </td>
+              </tr>
+              {report.cashFlow.financingLines.length === 0 ? (
+                <tr><td colSpan={entities.length + 4} className="py-2 px-6 text-xs text-muted-foreground italic">কোনো অর্থায়ন লেনদেন নেই</td></tr>
+              ) : (
+                report.cashFlow.financingLines.map((l, i) => (
+                  <tr key={i} className="hover:bg-muted/30">
+                    <td className="py-2 px-6 text-ink-800">{l.label}</td>
+                    {entities.map((e) => (
+                      <td key={e.id} className="py-2 px-3 text-right font-mono text-xs">{money(l.entityValues[e.id])}</td>
+                    ))}
+                    <td className="py-2 px-3 text-right font-mono text-xs font-semibold bg-muted/40">{money(l.rawTotal)}</td>
+                    <td className="py-2 px-3 text-right font-mono text-xs text-indigo-700 font-bold">{l.elimination !== 0 ? money(l.elimination) : "-"}</td>
+                    <td className="py-2 px-4 text-right font-mono text-xs font-bold bg-primary/5 text-primary">{money(l.consolidated)}</td>
+                  </tr>
+                ))
+              )}
+              <RenderSubtotal
+                title="অর্থায়ন কার্যক্রম থেকে নিট নগদ (Net Financing Cash)"
+                subtotal={report.cashFlow.netFinancingCash}
+                entities={entities}
+                money={money}
+                className="bg-amber-50/40 text-amber-900 font-bold"
+              />
+
+              {/* Net Change and Ending Cash */}
+              <RenderSubtotal
+                title="নগদ ও ব্যাংক তহবিলের নিট পরিবর্তন (Net Change in Cash)"
+                subtotal={report.cashFlow.netChangeInCash}
+                entities={entities}
+                money={money}
+                className="bg-slate-200/80 font-bold text-ink-950"
+              />
+              <tr className="bg-primary/10 font-bold text-base border-t-2 border-primary/30">
+                <td className="py-3 px-4 text-primary">সমাপনী নগদ ও ব্যাংক তহবিল (Ending Cash & Bank)</td>
+                {entities.map((e) => (
+                  <td key={e.id} className="py-3 px-3 text-right font-mono text-xs text-primary font-bold">
+                    {money(report.cashFlow?.endingCash.entityValues[e.id])}
+                  </td>
+                ))}
+                <td className="py-3 px-3 text-right font-mono text-xs font-bold bg-primary/15 text-primary">
+                  {money(report.cashFlow?.endingCash.rawTotal)}
+                </td>
+                <td className="py-3 px-3 text-center font-mono text-xs text-muted-foreground">-</td>
+                <td className="py-3 px-4 text-right font-mono text-sm font-extrabold bg-primary text-white">
+                  {money(report.cashFlow?.endingCash.consolidated)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── Tab 6: Non-Controlling Interest (NCI / Minority) ── */}
+      {activeTab === "NCI" && report.nciBreakdown && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+              <span className="text-xs font-semibold text-muted-foreground uppercase">মোট গ্রুপ ইকুইটি</span>
+              <div className="mt-2 text-xl font-bold text-ink-900">{money(report.nciBreakdown.totalEquity)}</div>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+              <span className="text-xs font-semibold text-emerald-700 uppercase">প্যারেন্ট মালিকদের ইকুইটি</span>
+              <div className="mt-2 text-xl font-bold text-emerald-700">{money(report.nciBreakdown.parentEquity)}</div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">মূল প্রতিষ্ঠানের শেয়ারহোল্ডারদের অংশ</p>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+              <span className="text-xs font-semibold text-amber-700 uppercase">সংখ্যালঘু অংশীদারিত্ব (NCI)</span>
+              <div className="mt-2 text-xl font-bold text-amber-700">{money(report.nciBreakdown.nciEquity)}</div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">সাবসিডিয়ারির বহিরাগত অংশীদারদের ইকুইটি</p>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+              <span className="text-xs font-semibold text-indigo-700 uppercase">NCI নিট মুনাফা শেয়ার</span>
+              <div className="mt-2 text-xl font-bold text-indigo-700">{money(report.nciBreakdown.nciProfit)}</div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">চলতি মেয়াদে NCI-এর মুনাফার ভাগ</p>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border bg-card shadow-sm overflow-x-auto">
+            <table className="w-full text-left border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/50 text-xs font-semibold text-muted-foreground uppercase">
+                  <th className="py-3 px-4">প্রতিষ্ঠান (Subsidiary Entity)</th>
+                  <th className="py-3 px-3 text-center">প্যারেন্ট শেয়ার (%)</th>
+                  <th className="py-3 px-3 text-center">সংখ্যালঘু NCI (%)</th>
+                  <th className="py-3 px-3 text-right">মোট ইকুইটি</th>
+                  <th className="py-3 px-3 text-right text-emerald-700">প্যারেন্টের ইকুইটি</th>
+                  <th className="py-3 px-3 text-right text-amber-700">NCI ইকুইটি</th>
+                  <th className="py-3 px-3 text-right">নিট লাভ/ক্ষতি</th>
+                  <th className="py-3 px-4 text-right text-indigo-700">NCI মুনাফা ভাগ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/60">
+                {report.nciBreakdown.subsidiaries.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-6 text-center text-sm text-muted-foreground">
+                      গ্রুপে কোনো সহযোগী প্রতিষ্ঠান (Subsidiary) নির্ধারিত নেই অথবা সবই ১০০% মালিকানাধীন।
+                    </td>
+                  </tr>
+                ) : (
+                  report.nciBreakdown.subsidiaries.map((s) => (
+                    <tr key={s.id} className="hover:bg-muted/30">
+                      <td className="py-3 px-4 font-semibold text-ink-900">{s.name}</td>
+                      <td className="py-3 px-3 text-center font-mono font-bold text-emerald-800 bg-emerald-50/50">
+                        {s.ownershipPercentage}%
+                      </td>
+                      <td className="py-3 px-3 text-center font-mono font-bold text-amber-800 bg-amber-50/50">
+                        {s.minorityPercentage}%
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono">{money(s.equity)}</td>
+                      <td className="py-3 px-3 text-right font-mono font-semibold text-emerald-700">
+                        {money(s.parentEquityShare)}
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono font-semibold text-amber-700 bg-amber-50/30">
+                        {money(s.nciEquityShare)}
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono">{money(s.netProfit)}</td>
+                      <td className="py-3 px-4 text-right font-mono font-bold text-indigo-700 bg-indigo-50/30">
+                        {money(s.nciProfitShare)}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

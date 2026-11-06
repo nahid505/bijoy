@@ -6,10 +6,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { DEPOT_ACCESS } from "@/lib/depot";
 import { depotExpenseSchema, depotFundSchema } from "@/lib/validation";
-import { assertPermission } from "../auth";
+import { assertPermission, can, getContext } from "../auth";
 import { audit } from "../audit";
 import { flash } from "../flash";
-import { formToObject, guard, toResult, type ActionState } from "../action-utils";
+import { formToObject, guard, toResult, UserError, type ActionState } from "../action-utils";
 import { assertEntryDate, originalEntryDate } from "../entry-date";
 import { deleteDepotExpense, loadDepotExpense, saveDepotExpense, transferDepotFund } from "../services/depot-cash";
 import { voucherSnapshot } from "../services/voucher";
@@ -18,8 +18,16 @@ import { assertPartiesAllowed, assertVoucherAllowed } from "../party-scope";
 
 export async function saveDepotExpenseAction(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const r = await guard(async () => {
-    const ctx = await assertPermission(DEPOT_ACCESS.expense);
+    const required = id ? DEPOT_ACCESS.expenseEdit : DEPOT_ACCESS.expenseCreate;
+    const base = await getContext();
+    if (!base || !can(base, required)) {
+      throw new UserError("এই খরচ এন্ট্রি বা দেখার আপনার অনুমতি নেই");
+    }
+    const ctx = await assertPermission(required);
     const input = depotExpenseSchema.parse(formToObject(fd));
+    if (Number(input.amount) > 50000 && !can(ctx, "expense:max_limit_override") && !ctx.isOwner) {
+      throw new UserError("এই অঙ্কের অতিরিক্ত খরচ এন্ট্রি করার অনুমতি নেই (expense:max_limit_override প্রয়োজন)");
+    }
     if (id) await loadDepotExpense(prisma, ctx.business.id, id); // a depot expense, nothing else
     await assertVoucherAllowed(ctx, id); // a restricted user edits only what they can see
     await assertPartiesAllowed(ctx, [input.expenseAccountId, input.cashAccountId]);
@@ -40,7 +48,11 @@ export async function saveDepotExpenseAction(id: string | null, _prev: ActionSta
 
 export async function deleteDepotExpenseAction(id: string, _prev: ActionState, _fd: FormData): Promise<ActionState> {
   const r = await guard(async () => {
-    const ctx = await assertPermission(DEPOT_ACCESS.expense);
+    const base = await getContext();
+    if (!base || !can(base, DEPOT_ACCESS.expenseDelete)) {
+      throw new UserError("এই খরচ এন্ট্রি বা দেখার আপনার অনুমতি নেই");
+    }
+    const ctx = await assertPermission(DEPOT_ACCESS.expenseDelete);
     const old = await loadDepotExpense(prisma, ctx.business.id, id);
     await assertVoucherAllowed(ctx, id);
     assertEntryDate(ctx, old.date);

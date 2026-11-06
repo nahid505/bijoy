@@ -482,6 +482,7 @@ export async function PartyEditPage({ kind: pageKind, id }: { kind: PartyPageKin
   const party = id ? await findParty(pageKind, ctx, id) : null;
   if (id && !party) notFound();
   const opening = party ? await partyOpening(ctx.business.id, kind, party.accountId) : 0;
+  const sisterConcerns = ctx.group?.sisterConcerns.filter((s) => s.id !== ctx.business.id) ?? [];
   return (
     <>
       <PageHeader title={party ? `সম্পাদনা: ${partyName(party)}` : `নতুন ${cfg.title}`} crumbs={[...(dealer ? [{ label: "ডিপো ব্যবস্থাপনা" }] : []), { label: cfg.title, href: cfg.base }, { label: party ? partyName(party) : "নতুন" }]} />
@@ -489,11 +490,22 @@ export async function PartyEditPage({ kind: pageKind, id }: { kind: PartyPageKin
         <PartyForm
           action={dealer ? saveDealerAction.bind(null, id) : savePartyAction.bind(null, kind, id)}
           kind={kind}
-          defaults={party ? { ...party, openingBalance: opening, creditLimit: "creditLimit" in party ? num(party.creditLimit) : 0 } : {}}
+          defaults={
+            party
+              ? {
+                  ...party,
+                  openingBalance: opening,
+                  creditLimit: "creditLimit" in party ? num(party.creditLimit) : 0,
+                  isSisterConcern: Boolean(party.isSisterConcern),
+                  linkedBusinessId: party.linkedBusinessId,
+                }
+              : {}
+          }
           cancelHref={party ? `${cfg.base}/${party.id}` : cfg.base}
           openingHint={cfg.openingHint}
           showRoute={dealer || isDepot(ctx.business.businessType)}
           dealer={dealer}
+          sisterConcerns={sisterConcerns}
         />
       </section>
     </>

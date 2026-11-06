@@ -151,6 +151,40 @@ model CompanyGroup {
   updatedAt   DateTime   @updatedAt
 
   businesses  Business[]
+  roles       GroupRole[]
+  memberships GroupMembership[]
+}
+
+model GroupRole {
+  id          String            @id @default(cuid())
+  groupId     String
+  group       CompanyGroup      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name        String            // e.g. "GROUP_CFO", "GROUP_AUDITOR", "GROUP_ADMIN"
+  description String?
+  permissions String[]          // permissions granted across all businesses in the group
+  memberships GroupMembership[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@unique([groupId, name])
+  @@index([groupId])
+}
+
+model GroupMembership {
+  id        String       @id @default(cuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  groupId   String
+  group     CompanyGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  roleId    String
+  role      GroupRole    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@unique([userId, groupId])
+  @@index([groupId])
+  @@index([userId])
 }
 
 model Business {
@@ -221,12 +255,17 @@ model Business {
   depotDeliveries     DepotDelivery[]
   bankTransfers       BankTransferLog[]
   disbursementBatches BankDisbursementBatch[]
+  voucherItems        VoucherItem[]
+  voucherPayments     VoucherPayment[]
+  payslipLines        PayslipLine[]
 
   // ── Enterprise Group & Inter-Company
   groupId             String?
   group               CompanyGroup?           @relation(fields: [groupId], references: [id], onDelete: SetNull)
   isParent            Boolean                 @default(false)
   intercompanyCode    String?                 // Unique short code within group, e.g. "MILL", "DEPOT", "TRADING"
+  ownershipPercentage Decimal                 @default(100.0) @db.Decimal(5, 2) // % owned by parent (for NCI calculation)
+  intercompanyCreditLimit Decimal?            @db.Decimal(14, 2) // max allowable exposure from sister concerns
 
   linkedCustomers     Customer[]              @relation("LinkedBusinessCustomer")
   linkedSuppliers     Supplier[]              @relation("LinkedBusinessSupplier")
@@ -265,6 +304,7 @@ model User {
   attendancesVerified          Attendance[]            @relation("AttendanceVerifiedBy")
   bankTransfersInitiated       BankTransferLog[]       @relation("BankTransfersInitiated")
   disbursementBatchesInitiated BankDisbursementBatch[] @relation("DisbursementBatchesInitiated")
+  groupMemberships             GroupMembership[]
 }
 
 // Permissions are string keys (see src/lib/permissions.ts); "*" = everything.
@@ -501,15 +541,18 @@ model Voucher {
 /// Settlement of a sales / purchase / return voucher through one or more cash / bank ledgers
 /// (split payments: cash + bKash + bank …).
 model VoucherPayment {
-  id        String  @id @default(cuid())
-  voucherId String
-  voucher   Voucher @relation(fields: [voucherId], references: [id], onDelete: Cascade)
-  accountId String
-  account   Account @relation(fields: [accountId], references: [id])
-  amount    Decimal @db.Decimal(14, 2)
-  reference String?
-  lineNo    Int     @default(0)
+  id         String    @id @default(cuid())
+  businessId String?
+  business   Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  voucherId  String
+  voucher    Voucher   @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  accountId  String
+  account    Account   @relation(fields: [accountId], references: [id])
+  amount     Decimal   @db.Decimal(14, 2)
+  reference  String?
+  lineNo     Int       @default(0)
 
+  @@index([businessId, id])
   @@index([voucherId])
   @@index([accountId])
 }
@@ -539,6 +582,8 @@ model JournalEntry {
 /// Inventory line of a sales / purchase / return / stock-journal voucher.
 model VoucherItem {
   id             String          @id @default(cuid())
+  businessId     String?
+  business       Business?       @relation(fields: [businessId], references: [id], onDelete: Cascade)
   voucherId      String
   voucher        Voucher         @relation(fields: [voucherId], references: [id], onDelete: Cascade)
   productId      String
@@ -568,6 +613,7 @@ model VoucherItem {
   stockMovements StockMovement[]
   lineNo         Int             @default(0)
 
+  @@index([businessId, id])
   @@index([voucherId])
   @@index([productId])
   @@index([batchId])
@@ -1317,6 +1363,8 @@ model Payslip {
 
 model PayslipLine {
   id                 String           @id @default(cuid())
+  businessId         String?
+  business           Business?        @relation(fields: [businessId], references: [id], onDelete: Cascade)
   payslipId          String
   payslip            Payslip          @relation(fields: [payslipId], references: [id], onDelete: Cascade)
   componentId        String?
@@ -1334,6 +1382,7 @@ model PayslipLine {
   note               String?
   sortOrder          Int              @default(0)
 
+  @@index([businessId, id])
   @@index([payslipId])
   @@index([advanceId])
   @@index([componentId])
