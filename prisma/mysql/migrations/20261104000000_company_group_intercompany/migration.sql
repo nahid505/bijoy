@@ -38,6 +38,6 @@ CREATE INDEX IF NOT EXISTS `Customer_linkedBusinessId_idx` ON `Customer`(`linked
 CREATE INDEX IF NOT EXISTS `Supplier_businessId_isSisterConcern_idx` ON `Supplier`(`businessId`, `isSisterConcern`);
 CREATE INDEX IF NOT EXISTS `Supplier_linkedBusinessId_idx` ON `Supplier`(`linkedBusinessId`);
 
-ALTER TABLE `Business` ADD CONSTRAINT IF NOT EXISTS `Business_groupId_fkey` FOREIGN KEY (`groupId`) REFERENCES `CompanyGroup`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
-ALTER TABLE `Customer` ADD CONSTRAINT IF NOT EXISTS `Customer_linkedBusinessId_fkey` FOREIGN KEY (`linkedBusinessId`) REFERENCES `Business`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
-ALTER TABLE `Supplier` ADD CONSTRAINT IF NOT EXISTS `Supplier_linkedBusinessId_fkey` FOREIGN KEY (`linkedBusinessId`) REFERENCES `Business`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE `Business` ADD CONSTRAINT `Business_groupId_fkey` FOREIGN KEY IF NOT EXISTS (`groupId`) REFERENCES `CompanyGroup`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE `Customer` ADD CONSTRAINT `Customer_linkedBusinessId_fkey` FOREIGN KEY IF NOT EXISTS (`linkedBusinessId`) REFERENCES `Business`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE `Supplier` ADD CONSTRAINT `Supplier_linkedBusinessId_fkey` FOREIGN KEY IF NOT EXISTS (`linkedBusinessId`) REFERENCES `Business`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
