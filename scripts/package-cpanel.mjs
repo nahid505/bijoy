@@ -23,8 +23,7 @@ if (db !== "mysql" && db !== "postgresql") {
 }
 const mysql = db === "mysql";
 const schemaDir = mysql ? join(root, "prisma", "mysql") : join(root, "prisma");
-// placeholder URL of the right kind for generate / build (nothing connects to it)
-const buildEnv = { ...process.env, NEXT_TELEMETRY_DISABLED: "1", DATABASE_URL: mysql ? "mysql://build:build@localhost:3306/build" : "postgresql://build:build@localhost:5432/build" };
+const buildEnv = { ...process.env, NEXT_TELEMETRY_DISABLED: "1", NODE_TLS_REJECT_UNAUTHORIZED: "0", DATABASE_URL: mysql ? "mysql://build:build@localhost:3306/build" : "postgresql://build:build@localhost:5432/build" };
 const step = (m) => console.log(`\n▶ ${m}`);
 const restoreClient = () => {
   if (!mysql) return;
