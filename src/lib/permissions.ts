@@ -222,6 +222,8 @@ export const PERMISSION_GROUPS = [
     permissions: [
       { key: "auto_rice_mill.procurement:view", label: "ধান ক্রয় ও স্কেল ওজন দেখা", hint: "ধান ক্রয়ের ওজন স্লিপ তালিকা ও স্লিপ" },
       { key: "auto_rice_mill.procurement:create", label: "ধান ক্রয় ও স্কেল ওজন এন্ট্রি ও সম্পাদনা", hint: "নতুন ধান ক্রয় (ওজন স্লিপ) এন্ট্রি ও সম্পাদনা" },
+      { key: "auto_rice_mill:bag_return:view", label: "খালি বস্তা ফেরত তালিকা ও খতিয়ান দেখা", hint: "সরবরাহকারীর বস্তা দেনা-পাওনা ও পূর্বের ফেরত তালিকা দেখার অনুমতি" },
+      { key: "auto_rice_mill:bag_return:create", label: "খালি বস্তা ফেরত এন্ট্রি ও চালান তৈরি", hint: "সরবরাহকারীকে চটের ও প্লাস্টিক বস্তা ফেরত দিয়ে চালান প্রিন্ট করার অনুমতি" },
       { key: "auto_rice_mill.milling:view", label: "ধান প্রসেসিং / মিলিং ব্যাচ দেখা", hint: "মিলিং ব্যাচ, রেসিপি ও ব্যাচ চালান" },
       { key: "auto_rice_mill.milling:create", label: "মিলিং ব্যাচ তৈরি ও সম্পাদনা", hint: "নতুন মিলিং ব্যাচ ও রেসিপি তৈরি, সম্পাদনা ও মুছা" },
       { key: "auto_rice_mill.inventory:view", label: "চাল ও উপজাত স্টক দেখা", hint: "ধান, চাল, কুঁড়া, ভূসি ও খুদের মজুদ" },
@@ -287,6 +289,7 @@ export function hasPermission(granted: readonly string[], required: Permission |
   if (required === "can_verify_transactions" && granted.includes("vouchers:verify")) return true;
   if (required === "view_approval_queue" && (granted.includes("can_verify_transactions") || granted.includes("vouchers:verify"))) return true;
   if (required === "depot_delivery_verify" && (granted.includes("can_verify_transactions") || granted.includes("vouchers:verify"))) return true;
+  if (required === "auto_rice_mill:bag_return:view" && granted.includes("auto_rice_mill:bag_return:create")) return true;
   return false;
 }
 

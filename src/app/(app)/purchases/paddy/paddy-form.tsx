@@ -13,6 +13,7 @@ import type { AccountOption, PartyOption, ProductOption, WarehouseOption } from 
 import { formatMoney, formatQty, toBnDigits } from "@/lib/format";
 import { KG_PER_MON, monAndKg, PADDY_VARIETIES, paddyFigures, weighbridgeGross } from "@/lib/paddy";
 import { useT } from "@/components/lang";
+import type { CompanyVehicle } from "@prisma/client";
 
 export interface PaddyDefaults {
   date: string;
@@ -21,6 +22,8 @@ export interface PaddyDefaults {
   warehouseId: string | null;
   batchNo: string;
   bagCount: string;
+  juteBagQty: string;
+  plasticBagQty: string;
   grossKg: string;
   dhaltaKg: string;
   ratePerMon: string;
@@ -33,14 +36,21 @@ export interface PaddyDefaults {
   vehicleGrossKg: string;
   vehicleTareKg: string;
   labourCost: string;
+  // Logistics
+  destination?: string;
+  vehicleNo?: string;
+  driverName?: string;
+  driverMobile?: string;
+  transportFare?: string;
 }
 
 const n = (v: string) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
-export function PaddyPurchaseForm({ action, defaults, warehouses, cashAccounts, multiWarehouse, currency, dateLocked }: {
+export function PaddyPurchaseForm({ action, defaults, warehouses, cashAccounts, multiWarehouse, currency, dateLocked, companyVehicles }: {
   action: FormAction; defaults: PaddyDefaults; warehouses: WarehouseOption[]; cashAccounts: AccountOption[]; multiWarehouse: boolean; currency: string;
   /** no transaction:change_date permission */
   dateLocked?: boolean;
+  companyVehicles?: CompanyVehicle[];
 }) {
   const t = useT();
   const [f, setF] = useState(defaults);
@@ -51,11 +61,39 @@ export function PaddyPurchaseForm({ action, defaults, warehouses, cashAccounts, 
   const split = monAndKg(fig.netKg);
   const cashPurchase = !f.supplier;
   const paid = cashPurchase ? fig.totalPrice : n(f.paidAmount);
+  const totalBags = n(f.juteBagQty) + n(f.plasticBagQty);
+
+  const handleSupplierChange = (s: PartyOption | null) => {
+    setF((x) => ({
+      ...x,
+      supplier: s,
+      destination: s?.address ? s.address : x.destination,
+    }));
+  };
+
+  const handleVehicleChange = (val: string) => {
+    const matched = companyVehicles?.find(
+      (v) => v.vehicleNo.toLowerCase() === val.trim().toLowerCase()
+    );
+    setF((x) => ({
+      ...x,
+      vehicleNo: val,
+      driverName: matched?.driverName && !x.driverName ? matched.driverName : x.driverName,
+      driverMobile: matched?.driverMobile && !x.driverMobile ? matched.driverMobile : x.driverMobile,
+    }));
+  };
+
   const payload = JSON.stringify({
     date: f.date, reference: f.reference || null, narration: null, partyAccountId: f.supplier?.id ?? null, productId: f.product?.id ?? "",
     warehouseId: multiWarehouse ? f.warehouseId || null : null, batchNo: f.batchNo || null,
-    bagCount: f.bagCount || 0, grossKg: wbGross ?? f.grossKg, dhaltaKg: f.dhaltaKg || 0, ratePerMon: f.ratePerMon,
+    juteBagQty: n(f.juteBagQty), plasticBagQty: n(f.plasticBagQty), totalBags, bagCount: totalBags || n(f.bagCount),
+    grossKg: wbGross ?? f.grossKg, dhaltaKg: f.dhaltaKg || 0, ratePerMon: f.ratePerMon,
     variety: f.variety || null, moisturePct: f.moisturePct || null, vehicleGrossKg: f.vehicleGrossKg || null, vehicleTareKg: f.vehicleTareKg || null, labourCost: f.labourCost || 0,
+    destination: f.destination || null,
+    vehicleNo: f.vehicleNo || null,
+    driverName: f.driverName || null,
+    driverMobile: f.driverMobile || null,
+    transportFare: n(f.transportFare ?? "0"),
     paidAmount: cashPurchase ? fig.totalPrice : f.paidAmount || 0, cashAccountId: f.cashAccountId || null, notes: f.notes || null,
   });
   const auto = "input-num bg-ink-50 font-semibold";
@@ -67,7 +105,7 @@ export function PaddyPurchaseForm({ action, defaults, warehouses, cashAccounts, 
         <Field label="তারিখ *" name="date"><EntryDateInput id="date" value={f.date} onChange={(v) => set("date", v)} locked={dateLocked} /></Field>
         <div className="sm:col-span-2">
           <label className="mb-1 block text-sm font-medium text-ink-800" htmlFor="supplier">{t("সরবরাহকারী (কৃষক / ব্যাপারী)")}</label>
-          <SearchSelect kind="suppliers" id="supplier" value={f.supplier} onChange={(s) => set("supplier", s)} noneLabel={t("নগদ ক্রয় (সরবরাহকারী ছাড়া)")} placeholder={t("নাম বা মোবাইল দিয়ে খুঁজুন")} create={{}} currency={currency} />
+          <SearchSelect kind="suppliers" id="supplier" value={f.supplier} onChange={handleSupplierChange} noneLabel={t("নগদ ক্রয় (সরবরাহকারী ছাড়া)")} placeholder={t("নাম বা মোবাইল দিয়ে খুঁজুন")} create={{}} currency={currency} />
           <FieldError name="partyAccountId" />
         </div>
         <Field label="রেফারেন্স / স্লিপ নং" name="reference"><input id="reference" className="input" value={f.reference} onChange={(e) => set("reference", e.target.value)} /></Field>
@@ -91,6 +129,101 @@ export function PaddyPurchaseForm({ action, defaults, warehouses, cashAccounts, 
         {f.product?.trackBatch && <Field label="ব্যাচ / লট নং *" name="batchNo"><input id="batchNo" className="input" value={f.batchNo} onChange={(e) => set("batchNo", e.target.value)} /></Field>}
       </div>
 
+      {/* পরিবহন ও ড্রাইভার ট্রিপ ট্র্যাকিং (লজিস্টিকস) */}
+      <section className="panel p-3.5 bg-slate-50/60 border border-slate-200">
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+            <span>🚚</span>
+            <span>{t("পরিবহন ও ড্রাইভার ট্রিপ ট্র্যাকিং (লজিস্টিকস)")}</span>
+          </h3>
+          <span className="text-[11px] text-slate-500">
+            {t("গাড়ির নম্বর ও ড্রাইভার দিলে ট্রিপ লেজারে বকেয়া যুক্ত হবে")}
+          </span>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <label className="label text-xs" htmlFor="paddy-destination">
+              {t("গন্তব্য / রুটের বিবরণ")}
+              {f.supplier?.address && f.destination === f.supplier.address && (
+                <span className="ml-1 text-[10px] font-normal text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded">
+                  {t("অটো-ফিল")}
+                </span>
+              )}
+            </label>
+            <input
+              id="paddy-destination"
+              type="text"
+              className="input text-xs"
+              value={f.destination ?? ""}
+              onChange={(e) => set("destination", e.target.value)}
+              placeholder={t("যেমন: বীরগঞ্জ মিল, দিনাজপুর মোকাম")}
+            />
+          </div>
+          <div>
+            <label className="label text-xs" htmlFor="paddy-vehicle">
+              {t("গাড়ির নম্বর")}
+            </label>
+            <input
+              list="company-vehicles-paddy"
+              id="paddy-vehicle"
+              type="text"
+              className="input text-xs"
+              value={f.vehicleNo ?? ""}
+              onChange={(e) => handleVehicleChange(e.target.value)}
+              placeholder={t("কোম্পানির গাড়ি বা টাইপ করুন")}
+              autoComplete="off"
+            />
+            {companyVehicles && companyVehicles.length > 0 && (
+              <datalist id="company-vehicles-paddy">
+                {companyVehicles.map((cv) => (
+                  <option key={cv.id} value={cv.vehicleNo}>
+                    {cv.driverName ? `${cv.vehicleNo} (${cv.driverName})` : cv.vehicleNo}
+                  </option>
+                ))}
+              </datalist>
+            )}
+          </div>
+          <div>
+            <label className="label text-xs" htmlFor="paddy-driver-name">
+              {t("ড্রাইভারের নাম ও মোবাইল")}
+            </label>
+            <div className="grid grid-cols-2 gap-1.5">
+              <input
+                id="paddy-driver-name"
+                type="text"
+                className="input text-xs"
+                value={f.driverName ?? ""}
+                onChange={(e) => set("driverName", e.target.value)}
+                placeholder={t("নাম")}
+              />
+              <input
+                id="paddy-driver-mobile"
+                type="text"
+                className="input text-xs"
+                value={f.driverMobile ?? ""}
+                onChange={(e) => set("driverMobile", e.target.value)}
+                placeholder={t("মোবাইল")}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="label text-xs" htmlFor="paddy-fare">
+              {t("ট্রিপ ভাড়া (টাকা)")}
+            </label>
+            <input
+              id="paddy-fare"
+              type="text"
+              inputMode="decimal"
+              data-numeric
+              className="input text-xs font-semibold"
+              value={f.transportFare ?? ""}
+              onChange={(e) => set("transportFare", e.target.value)}
+              placeholder="০.০০"
+            />
+          </div>
+        </div>
+      </section>
+
       <section className="rounded-lg border border-rule p-4" aria-label={t("ওজন ও দাম")}>
         <h2 className="mb-3 text-sm font-semibold text-ink-900">{t("ওজন ও দামের হিসাব")} <span className="text-xs font-normal text-slate-500">({t("১ মণ = {n} কেজি", { n: toBnDigits(KG_PER_MON) })})</span></h2>
         <div className="mb-3 grid gap-3 rounded-md bg-ink-50 p-3 sm:grid-cols-3" id="weighbridge">
@@ -102,10 +235,22 @@ export function PaddyPurchaseForm({ action, defaults, warehouses, cashAccounts, 
           </Field>
           <p className="self-end pb-2 text-xs text-slate-500">{t("দুটো দিলে ধানের মোট ওজন = গাড়িসহ − খালি গাড়ি, নিজে থেকে বসবে। না দিলে নিচে মোট ওজন লিখুন।")}</p>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="১. বস্তার সংখ্যা" name="bagCount" hint="শুধু চালানে দেখানোর জন্য — হিসাবে প্রভাব নেই">
-            <input id="bagCount" className="input-num" inputMode="numeric" data-numeric value={f.bagCount} onChange={(e) => set("bagCount", e.target.value.replace(/[^0-9]/g, ""))} placeholder="০" />
+        <div className="mb-3 grid gap-3 rounded-md border border-amber-200 bg-amber-50/50 p-3 sm:grid-cols-3">
+          <Field label="১. ক) চটের বস্তা (সংখ্যা)" name="juteBagQty" hint="সরবরাহকারীর খালি চটের বস্তা">
+            <input id="juteBagQty" className="input-num bg-white font-semibold" inputMode="numeric" data-numeric value={f.juteBagQty} onChange={(e) => set("juteBagQty", e.target.value.replace(/[^0-9]/g, ""))} placeholder="০" />
           </Field>
+          <Field label="১. খ) প্লাস্টিক বস্তা (সংখ্যা)" name="plasticBagQty" hint="সরবরাহকারীর খালি প্লাস্টিক বস্তা">
+            <input id="plasticBagQty" className="input-num bg-white font-semibold" inputMode="numeric" data-numeric value={f.plasticBagQty} onChange={(e) => set("plasticBagQty", e.target.value.replace(/[^0-9]/g, ""))} placeholder="০" />
+          </Field>
+          <div className="flex flex-col justify-center rounded-md border border-amber-300 bg-white p-2.5 shadow-2xs">
+            <span className="text-xs font-semibold text-slate-700">{t("১. মোট বস্তা (স্বয়ংক্রিয়)")}</span>
+            <output id="totalBags" className="text-2xl font-bold text-amber-900 tabular-nums" aria-live="polite">
+              {toBnDigits(totalBags)} <span className="text-sm font-normal text-slate-600">টি</span>
+            </output>
+            <span className="text-[11px] text-slate-500">চট: {toBnDigits(n(f.juteBagQty))} + প্লাস্টিক: {toBnDigits(n(f.plasticBagQty))}</span>
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="২. মোট ওজন (কেজি) *" name="grossKg" hint={wbGross !== null ? "গাড়িসহ − খালি গাড়ি (স্বয়ংক্রিয়)" : undefined}>
             {wbGross !== null
               ? <output id="grossKg" className={`${auto} block`} aria-live="polite">{formatQty(wbGross)}</output>

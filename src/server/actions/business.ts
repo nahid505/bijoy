@@ -126,7 +126,15 @@ export async function saveMemberAction(userId: string | null, _prev: ActionState
     // customer / supplier assignment (sent by the form's assignment section; an assigned-only admin cannot change it)
     const assign = async (memberId: string) =>
       fd.get("assignment") === "1" && !isRestricted(ctx)
-        ? saveAssignments(businessId, memberId, fd.getAll("customerIds").map(String), fd.getAll("supplierIds").map(String), fd.getAll("accountIds").map(String))
+        ? saveAssignments(
+            businessId,
+            memberId,
+            fd.getAll("customerIds").map(String),
+            fd.getAll("supplierIds").map(String),
+            fd.getAll("accountIds").map(String),
+            fd.getAll("accountGroupIds").map(String),
+            fd.getAll("paymentAccountIds").map(String)
+          )
         : null;
 
     if (userId) {

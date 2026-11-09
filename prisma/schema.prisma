@@ -253,11 +253,19 @@ model Business {
   productionRuns      ProductionRun[]
   paddyPurchases      PaddyPurchase[]
   depotDeliveries     DepotDelivery[]
+  bagReturnVouchers   BagReturnVoucher[]
   bankTransfers       BankTransferLog[]
   disbursementBatches BankDisbursementBatch[]
   voucherItems        VoucherItem[]
   voucherPayments     VoucherPayment[]
   payslipLines        PayslipLine[]
+  packagingBagItems    PackagingBagItem[]
+  packagingBagWastages PackagingBagWastage[]
+  userAccountGroups    UserAccountGroup[]
+  userPaymentAccounts  UserPaymentAccount[]
+  companyVehicles      CompanyVehicle[]
+  driverTrips          DriverTrip[]
+  driverTripPayments   DriverTripPayment[]
 
   // ── Enterprise Group & Inter-Company
   groupId             String?
@@ -290,9 +298,11 @@ model User {
   updatedAt         DateTime  @updatedAt
 
   memberships       Membership[]
-  assignedCustomers UserCustomer[]
-  assignedSuppliers UserSupplier[]
-  assignedAccounts  UserAccount[]
+  assignedCustomers    UserCustomer[]
+  assignedSuppliers    UserSupplier[]
+  assignedAccounts     UserAccount[]
+  allowedAccountGroups   UserAccountGroup[]
+  allowedPaymentAccounts UserPaymentAccount[]
   auditLogs         AuditLog[]
   notificationReads NotificationRead[]
   sessions          Session[]
@@ -305,6 +315,9 @@ model User {
   bankTransfersInitiated       BankTransferLog[]       @relation("BankTransfersInitiated")
   disbursementBatchesInitiated BankDisbursementBatch[] @relation("DisbursementBatchesInitiated")
   groupMemberships             GroupMembership[]
+  bagReturnsCreated            BagReturnVoucher[]      @relation("BagReturnCreatedBy")
+  bagWastagesCreated           PackagingBagWastage[]   @relation("BagWastageCreatedBy")
+  driverTripPaymentsCreated    DriverTripPayment[]     @relation("DriverTripPaymentCreatedBy")
 }
 
 // Permissions are string keys (see src/lib/permissions.ts); "*" = everything.
@@ -384,24 +397,55 @@ model UserSupplier {
   @@index([businessId, userId])
 }
 
+/// Allowed account groups: a member assigned specific groups sees / uses only accounts in these groups (and subgroups) for expenses/vouchers.
+model UserAccountGroup {
+  id         String       @id @default(cuid())
+  businessId String
+  business   Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  groupId    String
+  group      AccountGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdAt  DateTime     @default(now())
+
+  @@unique([userId, groupId])
+  @@index([businessId, userId])
+}
+
+/// Allowed cash/bank payment accounts: a member assigned specific payment accounts can only pay from these accounts.
+model UserPaymentAccount {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId  String
+  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, accountId])
+  @@index([businessId, userId])
+}
+
 // ───────────────────────────── chart of accounts ─────────────────────────────
 
 model AccountGroup {
-  id          String         @id @default(cuid())
-  businessId  String
-  business    Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  name        String
-  nature      AccountNature
-  isDirect    Boolean        @default(false) // trading section of P&L (sales / cost of sales)
-  systemKey   String? // stable key for built-in groups, e.g. SUNDRY_DEBTORS
-  sortOrder   Int            @default(0)
+  id            String             @id @default(cuid())
+  businessId    String
+  business      Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name          String
+  nature        AccountNature
+  isDirect      Boolean            @default(false) // trading section of P&L (sales / cost of sales)
+  systemKey     String? // stable key for built-in groups, e.g. SUNDRY_DEBTORS
+  sortOrder     Int                @default(0)
   /// optional parent: a user sub-group shares its parent's nature and P&L section
-  parentId    String?
-  parent      AccountGroup?  @relation("GroupTree", fields: [parentId], references: [id], onDelete: SetNull)
-  children    AccountGroup[] @relation("GroupTree")
-  description String?
-  accounts    Account[]
-  createdAt   DateTime       @default(now())
+  parentId      String?
+  parent        AccountGroup?      @relation("GroupTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children      AccountGroup[]     @relation("GroupTree")
+  description   String?
+  accounts      Account[]
+  assignedUsers UserAccountGroup[]
+  createdAt     DateTime           @default(now())
 
   @@unique([businessId, systemKey])
   @@unique([businessId, name])
@@ -430,6 +474,7 @@ model Account {
   updatedAt     DateTime      @updatedAt
 
   assignedTo             UserAccount[]
+  paymentAssignedUsers   UserPaymentAccount[]
   entries                JournalEntry[]
   customer               Customer?
   supplier               Supplier?
@@ -457,6 +502,7 @@ model Account {
   webhookSecret       String?
   bankTransfers       BankTransferLog[]
   disbursementBatches BankDisbursementBatch[]
+  driverTripPayments  DriverTripPayment[]
 
   @@unique([businessId, systemKey])
   @@unique([businessId, code])
@@ -526,6 +572,13 @@ model Voucher {
   salaryPayments      SalaryPayment[]         @relation("SalaryPaymentVoucher")
   bankTransfers       BankTransferLog[]
   disbursementBatches BankDisbursementBatch[]
+  destination         String?
+  vehicleNo           String?
+  driverName          String?
+  driverMobile        String?
+  transportFare       Decimal?                @db.Decimal(14, 2)
+  driverTrip          DriverTrip?
+  driverTripPayments  DriverTripPayment[]
 
   @@unique([businessId, voucherNo])
   @@unique([businessId, sourceKey])
@@ -597,6 +650,9 @@ model VoucherItem {
   baseQuantity   Decimal         @db.Decimal(14, 3) // in product base unit
   /// free / scheme quantity (entered unit) on top of quantity: moves stock (quantity + free) but is never billed
   freeQuantity   Decimal         @default(0) @db.Decimal(14, 3)
+  juteBagQty     Int             @default(0) // চটের বস্তার সংখ্যা
+  plasticBagQty  Int             @default(0) // প্লাস্টিক বস্তার সংখ্যা
+  totalBags      Int             @default(0) // মোট বস্তা (স্বয়ংক্রিয় যোগফল)
   /// depot delivery: the rate printed on the dealer challan (the product's purchase price at delivery); null = not a depot line
   challanRate    Decimal?        @db.Decimal(14, 2)
   rate           Decimal         @db.Decimal(14, 2) // per entered unit
@@ -680,6 +736,7 @@ model Supplier {
   batches          ProductBatch[]
   smsMessages      SmsMessage[]
   assignedTo       UserSupplier[]
+  bagReturnVouchers BagReturnVoucher[]
 
   @@index([businessId, name])
   @@index([businessId, mobile])
@@ -735,6 +792,7 @@ model Warehouse {
   stockMovements StockMovement[]
   vouchers       Voucher[]
   voucherItems   VoucherItem[]
+  packagingBagWastages PackagingBagWastage[]
 
   @@unique([businessId, name])
 }
@@ -777,6 +835,13 @@ model Product {
   batches        ProductBatch[]
   notifications  Notification[]
   recipeLines    RecipeLine[]
+
+  // ── Packaging Bag Tracking (খালি চালের বস্তা)
+  packagingBagItem     PackagingBagItem?   @relation("ProductPackagingBag")
+  packagingBagId       String?
+  packagingBag         Product?            @relation("RicePackagingBag", fields: [packagingBagId], references: [id])
+  packagedRiceProducts Product[]           @relation("RicePackagingBag")
+  bagCapacityKg        Decimal?            @db.Decimal(10, 2)
 
   @@unique([businessId, code])
   @@unique([businessId, barcode])
@@ -1878,6 +1943,9 @@ model PaddyPurchase {
   voucherId      String   @unique
   voucher        Voucher  @relation(fields: [voucherId], references: [id], onDelete: Cascade)
   bagCount       Int      @default(0) // bag_count — shown first on the slip, not used in any calculation
+  juteBagQty     Int      @default(0) // চটের বস্তার সংখ্যা
+  plasticBagQty  Int      @default(0) // প্লাস্টিক বস্তার সংখ্যা
+  totalBags      Int      @default(0) // মোট বস্তা (স্বয়ংক্রিয় যোগফল)
   variety        String? // ধানের জাত (মিনিকেট, নাজিরশাইল, ব্রি-২৮ …) — information for the slip and the mill reports
   moisturePct    Decimal? @db.Decimal(5, 2) // আর্দ্রতা % — information only
   vehicleGrossKg Decimal? @db.Decimal(14, 3) // weighbridge: loaded vehicle
@@ -1895,4 +1963,163 @@ model PaddyPurchase {
   updatedAt      DateTime @updatedAt
 
   @@index([businessId])
+}
+
+/// Bag return voucher (খালি বস্তা ফেরত চালান) for Auto Rice Mill:
+/// Tracks jute & plastic bags returned to paddy suppliers.
+model BagReturnVoucher {
+  id                  String   @id @default(cuid())
+  voucherNo           String
+  date                DateTime
+  businessId          String
+  business            Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  supplierId          String
+  supplier            Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  returnedJuteBags    Int      @default(0)
+  returnedPlasticBags Int      @default(0)
+  driverName          String?
+  vehicleNo           String?
+  note                String?
+  createdById         String
+  createdBy           User     @relation("BagReturnCreatedBy", fields: [createdById], references: [id])
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([businessId, voucherNo])
+  @@index([businessId, date])
+  @@index([supplierId])
+}
+
+enum PackagingBagType {
+  BAG_50KG
+  BAG_25KG
+  BAG_10KG
+  BAG_5KG
+  OTHER
+}
+
+/// Packaging bag inventory item for rice packing (খালি চালের বস্তা ইনভেন্টরি)
+model PackagingBagItem {
+  id          String           @id @default(cuid())
+  businessId  String
+  business    Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  productId   String           @unique
+  product     Product          @relation("ProductPackagingBag", fields: [productId], references: [id], onDelete: Cascade)
+  bagType     PackagingBagType @default(BAG_50KG)
+  capacityKg  Decimal          @default(50) @db.Decimal(10, 2)
+  material    String?          // e.g. "প্লাস্টিক / বোভেন", "নন-ওভেন", "চট"
+  brandName   String?          // e.g. "মিনিকেট ৫০ কেজি বস্তা"
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  wastages    PackagingBagWastage[]
+
+  @@index([businessId])
+  @@index([bagType])
+}
+
+/// Wastage / damage of packaging bags (নষ্ট / ছেঁড়া খালি চালের বস্তা)
+model PackagingBagWastage {
+  id          String           @id @default(cuid())
+  businessId  String
+  business    Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  bagItemId   String
+  bagItem     PackagingBagItem @relation(fields: [bagItemId], references: [id], onDelete: Cascade)
+  warehouseId String
+  warehouse   Warehouse        @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  date        DateTime         @default(now())
+  quantity    Int              // নষ্ট/ছেঁড়া বস্তার সংখ্যা
+  reason      String?          // e.g. "ছেঁড়া বস্তা", "প্রিন্টিং ত্রুটি", "ইঁদুরে কাটা"
+  costRate    Decimal          @default(0) @db.Decimal(14, 2)
+  costAmount  Decimal          @default(0) @db.Decimal(14, 2)
+  notes       String?
+  createdById String
+  createdBy   User             @relation("BagWastageCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([businessId, date])
+  @@index([bagItemId])
+  @@index([warehouseId])
+}
+
+// ───────────────────────────── transport & logistics ─────────────────────────────
+
+model CompanyVehicle {
+  id           String       @id @default(cuid())
+  businessId   String
+  business     Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  vehicleNo    String
+  model        String?
+  driverName   String?
+  driverMobile String?
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  trips        DriverTrip[]
+
+  @@unique([businessId, vehicleNo])
+  @@index([businessId])
+}
+
+enum TripPaymentStatus {
+  PENDING
+  PARTIAL
+  PAID
+}
+
+model DriverTrip {
+  id            String            @id @default(cuid())
+  businessId    String
+  business      Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  voucherId     String?           @unique
+  voucher       Voucher?          @relation(fields: [voucherId], references: [id], onDelete: SetNull)
+  date          DateTime
+  vehicleNo     String
+  driverName    String
+  driverMobile  String?
+  destination   String?
+  goodsSummary  String?
+  totalQuantity Decimal?          @db.Decimal(14, 3)
+  tripFare      Decimal           @default(0) @db.Decimal(14, 2)
+  paidAmount    Decimal           @default(0) @db.Decimal(14, 2)
+  paymentStatus TripPaymentStatus @default(PENDING)
+  notes         String?
+  vehicleId     String?
+  vehicle       CompanyVehicle?   @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  payments      DriverTripPayment[]
+
+  @@index([businessId, driverName])
+  @@index([businessId, date])
+  @@index([businessId, paymentStatus])
+  @@index([businessId, vehicleNo])
+}
+
+model DriverTripPayment {
+  id            String      @id @default(cuid())
+  businessId    String
+  business      Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  tripId        String?
+  trip          DriverTrip? @relation(fields: [tripId], references: [id], onDelete: SetNull)
+  voucherId     String?
+  voucher       Voucher?    @relation(fields: [voucherId], references: [id], onDelete: SetNull)
+  driverName    String
+  driverMobile  String?
+  amount        Decimal     @db.Decimal(14, 2)
+  date          DateTime
+  cashAccountId String
+  cashAccount   Account     @relation(fields: [cashAccountId], references: [id])
+  reference     String?
+  notes         String?
+  createdById   String
+  createdBy     User        @relation("DriverTripPaymentCreatedBy", fields: [createdById], references: [id])
+  createdAt     DateTime    @default(now())
+
+  @@index([businessId, driverName])
+  @@index([businessId, date])
+  @@index([tripId])
 }

@@ -87,6 +87,8 @@ export const NAV: NavEntry[] = [
     highlight: true,
     children: [
       { href: "/purchases/paddy", label: "ধান ক্রয় ও স্কেল", permission: RICE_MILL_ACCESS.paddyView },
+      { href: "/auto-rice-mill/bag-returns", label: "খালি বস্তা ফেরত", permission: "auto_rice_mill:bag_return:view" },
+      { href: "/auto-rice-mill/bag-inventory", label: "চালের খালি বস্তা স্টক", permission: RICE_MILL_ACCESS.stock },
       { href: "/production", label: "মিলিং ও প্রসেসিং", permission: RICE_MILL_ACCESS.millingView },
       { href: "/rice-mill/stock", label: "চাল ও উপজাত স্টক", permission: RICE_MILL_ACCESS.stock },
       { href: "/rice-mill/sales", label: "চাল ও কুঁড়া/ভূসি বিক্রয়", permission: RICE_MILL_ACCESS.salesView },
@@ -141,6 +143,7 @@ export const NAV: NavEntry[] = [
     ],
   },
   { key: "expenses", label: "খরচ", icon: I.swap, href: "/expenses", permission: ["expense:view", "vouchers:view", "reports:view"] },
+  { key: "logistics", label: "পরিবহন ও ড্রাইভার", icon: I.truck, href: "/logistics/drivers", permission: ["vouchers:view", "sales:view", "purchases:view"] },
   {
     key: "production",
     label: "উৎপাদন ব্যবস্থাপনা",
@@ -249,6 +252,7 @@ export const NAV_LABEL_EN: Record<string, string> = {
   "উৎপাদন ও ফলন রিপোর্ট": "Production & Yield Report",
   "সম্মিলিত গ্রুপ রিপোর্ট": "Consolidated Group Financials",
   "কোম্পানি গ্রুপ": "Company Group",
+  "চালের খালি বস্তা স্টক": "Rice Bag Inventory",
 };
 
 export const MOBILE_TABS = [

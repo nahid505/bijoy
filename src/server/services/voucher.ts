@@ -85,7 +85,14 @@ async function ledgerBalance(tx: Tx, businessId: string, accountId: string, book
  * form schema strips it), and only within the rounding of the entered quantity (±0.005 × factor).
  */
 export type TradeLineInput = TradeVoucherInput["items"][number] & { baseQuantity?: number };
-export type TradeInputWithBase = Omit<TradeVoucherInput, "items"> & { items: TradeLineInput[] };
+export type TradeInputWithBase = Omit<TradeVoucherInput, "items" | "destination" | "vehicleNo" | "driverName" | "driverMobile" | "transportFare"> & {
+  destination?: string | null;
+  vehicleNo?: string | null;
+  driverName?: string | null;
+  driverMobile?: string | null;
+  transportFare?: number | null;
+  items: TradeLineInput[];
+};
 
 /** book: the book of a NEW voucher (depot pages: DEPOT); an edit keeps the voucher's own book. */
 export async function saveTradeVoucher(ctx: Ctx, type: TradeType, input: TradeInputWithBase, editId?: string, book?: BookKey) {
@@ -243,6 +250,11 @@ export async function tradeVoucherTx(tx: Tx, ctx: Ctx, type: TradeType, input: T
       vatAmount: totals.vatAmount,
       amount: totals.total,
       paidAmount: paid,
+      destination: input.destination?.trim() || null,
+      vehicleNo: input.vehicleNo?.trim() || null,
+      driverName: input.driverName?.trim() || null,
+      driverMobile: input.driverMobile?.trim() || null,
+      transportFare: input.transportFare !== undefined ? round2(Number(input.transportFare)) : null,
     };
     const voucher = existing
       ? await tx.voucher.update({ where: { id: existing.id }, data: { ...header, updatedById: ctx.userId } })
@@ -341,6 +353,72 @@ export async function tradeVoucherTx(tx: Tx, ctx: Ctx, type: TradeType, input: T
       if (supplier?.isSisterConcern && supplier.linkedBusinessId) {
         await mirrorPurchaseReturnToSalesReturnProposal(tx, ctx, voucher.id, supplier.linkedBusinessId);
       }
+    }
+
+    // ── Driver Trip tracking (স্বয়ংক্রিয় ড্রাইভার ট্রিপ ট্র্যাকিং)
+    const hasLogistics = Boolean(
+      input.vehicleNo?.trim() ||
+      input.driverName?.trim() ||
+      input.destination?.trim() ||
+      (input.transportFare !== undefined && Number(input.transportFare) > 0)
+    );
+
+    const existingTrip = await tx.driverTrip.findUnique({ where: { voucherId: voucher.id } });
+
+    if (hasLogistics) {
+      const companyVehicle = input.vehicleNo?.trim()
+        ? await tx.companyVehicle.findFirst({
+            where: { businessId: ctx.businessId, vehicleNo: input.vehicleNo.trim() },
+          })
+        : null;
+
+      const totalQty = round3(lines.reduce((s, l) => s + l.quantity, 0));
+      const goodsSummary = lines.map((l) => `${l.product.name} (${l.quantity})`).join(", ").slice(0, 500);
+      const vehicleNo = input.vehicleNo?.trim() || "—";
+      const driverName = input.driverName?.trim() || "ড্রাইভার";
+      const fare = round2(Number(input.transportFare || 0));
+
+      if (existingTrip) {
+        await tx.driverTrip.update({
+          where: { id: existingTrip.id },
+          data: {
+            date: input.date,
+            vehicleNo,
+            driverName,
+            driverMobile: input.driverMobile?.trim() || null,
+            destination: input.destination?.trim() || null,
+            goodsSummary,
+            totalQuantity: totalQty,
+            tripFare: fare,
+            vehicleId: companyVehicle?.id ?? null,
+            paymentStatus: Number(existingTrip.paidAmount) >= fare && fare > 0
+              ? "PAID"
+              : Number(existingTrip.paidAmount) > 0
+                ? "PARTIAL"
+                : "PENDING",
+          },
+        });
+      } else {
+        await tx.driverTrip.create({
+          data: {
+            businessId: ctx.businessId,
+            voucherId: voucher.id,
+            date: input.date,
+            vehicleNo,
+            driverName,
+            driverMobile: input.driverMobile?.trim() || null,
+            destination: input.destination?.trim() || null,
+            goodsSummary,
+            totalQuantity: totalQty,
+            tripFare: fare,
+            paidAmount: 0,
+            paymentStatus: "PENDING",
+            vehicleId: companyVehicle?.id ?? null,
+          },
+        });
+      }
+    } else if (existingTrip && Number(existingTrip.paidAmount) === 0) {
+      await tx.driverTrip.delete({ where: { id: existingTrip.id } });
     }
 
     return voucher;

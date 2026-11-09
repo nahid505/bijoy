@@ -140,6 +140,10 @@ export default async function VoucherDetailPage({ params }: { params: Promise<{ 
         {v.returns.map((r) => <DetailRow key={r.id} label={t("ফেরত")}><Link prefetch={false} href={`/vouchers/v/${r.id}`} className="text-brand-700 hover:underline">{r.voucherNo}</Link> · {formatMoney(num(r.amount), cur)}</DetailRow>)}
         {v.warehouse && <DetailRow label={t("গুদাম")}>{v.warehouse.name}</DetailRow>}
         {v.reference && <DetailRow label={t("রেফারেন্স")}>{v.reference}</DetailRow>}
+        {v.destination && <DetailRow label={t("গন্তব্য / রুট")}>{v.destination}</DetailRow>}
+        {v.vehicleNo && <DetailRow label={t("গাড়ির নম্বর")}>{v.vehicleNo}</DetailRow>}
+        {v.driverName && <DetailRow label={t("ড্রাইভার")}>{v.driverName}{v.driverMobile ? ` (${v.driverMobile})` : ""}</DetailRow>}
+        {num(v.transportFare) > 0 && <DetailRow label={t("পরিবহন ভাড়া")}>{formatMoney(num(v.transportFare), cur)}</DetailRow>}
         {trade && <DetailRow label={t("উপমোট")}>{formatMoney(num(v.subtotal), cur)}</DetailRow>}
         {trade && num(v.discount) > 0 && <DetailRow label={t("ছাড়")}>{formatMoney(num(v.discount), cur)}</DetailRow>}
         {trade && num(v.vatAmount) > 0 && <DetailRow label={`ভ্যাট (${formatQty(num(v.vatPercent))}%)`}>{formatMoney(num(v.vatAmount), cur)}</DetailRow>}

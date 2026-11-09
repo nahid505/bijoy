@@ -160,22 +160,25 @@ export async function DetailRow({ label, children }: { label: string; children: 
 export async function PrintHeader({ business, title, subtitle, heading }: { business: { name: string; address: string | null; mobile: string | null; logo: string | null; binNumber?: string | null }; title: string; subtitle?: string; heading?: string }) {
   const t = await getT();
   return (
-    <div className="print-only mb-4 border-b-2 border-ink-800 pb-2">
+    <div className="print-only report-header mb-4 border-b-2 border-black pb-2 text-black">
       <div className="flex items-center gap-3">
         {business.logo && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={business.logo} alt="" className="h-10 w-10 object-contain" />
         )}
         <div>
-          <p className="text-base font-bold">{business.name}</p>
-          <p className="text-[10px]">{[business.address, business.mobile, business.binNumber ? `BIN: ${business.binNumber}` : null].filter(Boolean).join(" · ")}</p>
+          <h1 className="text-base font-extrabold text-black">{business.name}</h1>
+          <p className="text-[10px] font-semibold text-black">{[business.address, business.mobile, business.binNumber ? `BIN: ${business.binNumber}` : null].filter(Boolean).join(" · ")}</p>
         </div>
       </div>
       {heading ? (
         // a report with its own fixed, centred heading line (used verbatim, not translated)
-        <p className="mt-2 text-center text-xl font-bold tracking-wide">{heading}</p>
+        <h2 className="mt-2 text-center text-xl font-extrabold tracking-wide text-black">{heading}</h2>
       ) : (
-        <p className="mt-2 text-sm font-semibold">{t(title)}{subtitle ? ` — ${t(subtitle)}` : ""}</p>
+        <div className="mt-2 flex items-baseline justify-between">
+          <h2 className="text-sm font-extrabold text-black">{t(title)}</h2>
+          {subtitle && <p className="report-date text-sm font-bold text-black">{subtitle}</p>}
+        </div>
       )}
     </div>
   );

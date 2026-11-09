@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 // depot forms' dealer / company / product / cash pickers; they are granted only in a depot business).
 const ACCESS: Record<string, Permission[]> = {
   customers: ["customers:view", "sales:view", "sales:create", "vouchers:create", "reports:view", "users:manage", "depot:delivery_manage", "depot:collection_create", "depot:reports_view", "auto_rice_mill.sales:create", "auto_rice_mill.sales:view"],
-  suppliers: ["suppliers:view", "purchases:view", "purchases:create", "vouchers:create", "reports:view", "users:manage", "depot:delivery_manage", "depot:stock_in", "depot:collection_create", "depot:reports_view", "auto_rice_mill.procurement:create", "auto_rice_mill.procurement:view"],
+  suppliers: ["suppliers:view", "purchases:view", "purchases:create", "vouchers:create", "reports:view", "users:manage", "depot:delivery_manage", "depot:stock_in", "depot:collection_create", "depot:reports_view", "auto_rice_mill.procurement:create", "auto_rice_mill.procurement:view", "auto_rice_mill:bag_return:create", "auto_rice_mill:bag_return:view"],
   parties: [
     "customers:view",
     "suppliers:view",
@@ -32,6 +32,8 @@ const ACCESS: Record<string, Permission[]> = {
     "auto_rice_mill.sales:view",
     "auto_rice_mill.procurement:create",
     "auto_rice_mill.procurement:view",
+    "auto_rice_mill:bag_return:create",
+    "auto_rice_mill:bag_return:view",
   ],
   products: ["inventory:view", "sales:create", "purchases:create", "stock:adjust", "production:manage", "depot:delivery_manage", "depot:stock_in", "depot:scheme_manage", "depot:stock_adjust", "depot:products_manage", "auto_rice_mill.sales:create", "auto_rice_mill.milling:create", "auto_rice_mill.procurement:create"],
   employees: ["payroll:view", "payroll:attendance"],

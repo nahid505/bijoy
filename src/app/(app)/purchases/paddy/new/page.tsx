@@ -6,6 +6,7 @@ import { requirePermission } from "@/server/auth";
 import { canChangeEntryDate } from "@/server/entry-date";
 import { savePaddyPurchaseAction } from "@/server/actions/paddy";
 import { defaultPaddyProduct } from "@/server/services/paddy";
+import { getCompanyVehicles } from "@/server/services/logistics";
 import { PaddyPurchaseForm } from "../paddy-form";
 import { RICE_MILL_ACCESS } from "@/lib/rice-mill";
 
@@ -13,10 +14,11 @@ export const metadata: Metadata = { title: "নতুন ধান ক্রয�
 
 export default async function NewPaddyPurchasePage() {
   const ctx = await requirePermission(RICE_MILL_ACCESS.paddyCreate);
-  const [paddy, warehouses, cash] = await Promise.all([
+  const [paddy, warehouses, cash, companyVehicles] = await Promise.all([
     defaultPaddyProduct(ctx.business.id),
     prisma.warehouse.findMany({ where: { businessId: ctx.business.id }, orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true } }),
     prisma.account.findFirst({ where: { businessId: ctx.business.id, systemKey: "CASH" }, select: { id: true, name: true } }),
+    getCompanyVehicles(ctx.business.id),
   ]);
   return (
     <>
@@ -29,11 +31,13 @@ export default async function NewPaddyPurchasePage() {
           multiWarehouse={ctx.features.includes("MULTI_WAREHOUSE")}
           currency={ctx.business.currencySymbol}
           dateLocked={!canChangeEntryDate(ctx)}
+          companyVehicles={companyVehicles}
           defaults={{
             date: toDateInput(), supplier: null, warehouseId: warehouses[0]?.id ?? null, batchNo: "",
             product: paddy ? { ...paddy, salePrice: num(paddy.salePrice), wholesalePrice: num(paddy.wholesalePrice), purchasePrice: num(paddy.purchasePrice), avgCost: num(paddy.avgCost), stock: num(paddy.stock) } : null,
-            bagCount: "", grossKg: "", dhaltaKg: "", ratePerMon: "", paidAmount: "", cashAccountId: cash?.id ?? "", reference: "", notes: "",
+            bagCount: "", juteBagQty: "", plasticBagQty: "", grossKg: "", dhaltaKg: "", ratePerMon: "", paidAmount: "", cashAccountId: cash?.id ?? "", reference: "", notes: "",
             variety: "", moisturePct: "", vehicleGrossKg: "", vehicleTareKg: "", labourCost: "",
+            destination: "", vehicleNo: "", driverName: "", driverMobile: "", transportFare: "",
           }}
         />
       </section>

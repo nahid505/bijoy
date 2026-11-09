@@ -16,6 +16,7 @@ export type PartyType = "CUSTOMER" | "SUPPLIER" | "BOTH";
 
 export interface PartyOption extends AccountOption {
   mobile?: string | null;
+  address?: string | null;
   creditLimit?: number;
   creditDays?: number;
   overdue?: number;

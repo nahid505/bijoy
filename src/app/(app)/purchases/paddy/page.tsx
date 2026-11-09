@@ -27,7 +27,7 @@ export default async function PaddyPurchasesPage({ searchParams }: { searchParam
         actions={can(ctx, RICE_MILL_ACCESS.paddyCreate) ? <Link prefetch={false} href="/purchases/paddy/new" className="btn-primary">+ নতুন ধান ক্রয়</Link> : undefined}
       />
       <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="মোট বস্তা" value={toBnDigits(sums.bags)} />
+        <StatCard label="মোট বস্তা" value={`${toBnDigits(sums.bags)} টি`} />
         <StatCard label="মোট নিট ওজন" value={`${formatQty(sums.netKg)} কেজি`} />
         <StatCard label="মোট মণ" value={toBnDigits(sums.mon.toFixed(2))} tone="blue" />
         <StatCard label="মোট দাম" value={formatMoney(sums.total, cur)} tone="green" />
@@ -46,7 +46,14 @@ export default async function PaddyPurchasesPage({ searchParams }: { searchParam
                   <tr key={r.id}>
                     <td><Link prefetch={false} href={`/vouchers/v/${r.voucher.id}`} className="font-semibold text-brand-700 hover:underline">{r.voucher.voucherNo}</Link><span className="block text-xs text-slate-500">{formatDate(r.voucher.date)}</span></td>
                     <td className="text-sm">{r.voucher.partyAccount?.name ?? "নগদ ক্রয়"}</td>
-                    <td className="num">{toBnDigits(r.bagCount)}</td>
+                    <td className="num">
+                      <span className="font-semibold">{toBnDigits(r.totalBags || r.bagCount)}</span>
+                      {((r.juteBagQty ?? 0) > 0 || (r.plasticBagQty ?? 0) > 0) && (
+                        <span className="block text-[11px] text-slate-500 font-normal whitespace-nowrap">
+                          চট {toBnDigits(r.juteBagQty ?? 0)} · প্লা {toBnDigits(r.plasticBagQty ?? 0)}
+                        </span>
+                      )}
+                    </td>
                     <td className="num">{formatQty(num(r.grossKg))}</td>
                     <td className="num">{formatQty(num(r.dhaltaKg))}</td>
                     <td className="num">{formatQty(num(r.netKg))}</td>

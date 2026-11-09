@@ -147,6 +147,7 @@ export async function searchParties(
             id: true,
             name: true,
             mobile: true,
+            address: true,
             accountId: true,
             creditDays: true,
             creditLimit: true,
@@ -155,7 +156,7 @@ export async function searchParties(
               select: {
                 code: true,
                 group: { select: { name: true } },
-                supplier: { select: { id: true, name: true, mobile: true, creditDays: true } },
+                supplier: { select: { id: true, name: true, mobile: true, address: true, creditDays: true } },
               },
             },
           },
@@ -170,13 +171,14 @@ export async function searchParties(
             id: true,
             name: true,
             mobile: true,
+            address: true,
             accountId: true,
             creditDays: true,
             account: {
               select: {
                 code: true,
                 group: { select: { name: true } },
-                customer: { select: { id: true, name: true, mobile: true, creditDays: true, creditLimit: true, ownerName: true } },
+                customer: { select: { id: true, name: true, mobile: true, address: true, creditDays: true, creditLimit: true, ownerName: true } },
               },
             },
           },
@@ -191,6 +193,7 @@ export async function searchParties(
     name: string;
     ownerName?: string | null;
     mobile: string | null;
+    address?: string | null;
     accountId: string;
     creditDays: number;
     creditLimit: number;
@@ -207,6 +210,7 @@ export async function searchParties(
       name: c.name,
       ownerName: c.ownerName,
       mobile: c.mobile,
+      address: c.address,
       accountId: c.accountId,
       creditDays: c.creditDays,
       creditLimit: num(c.creditLimit),
@@ -221,12 +225,14 @@ export async function searchParties(
     if (existing) {
       existing.hasSupplier = true;
       if (!existing.mobile && s.mobile) existing.mobile = s.mobile;
+      if (!existing.address && s.address) existing.address = s.address;
     } else {
       merged.set(s.accountId, {
         id: s.id,
         name: s.name,
         ownerName: s.account.customer?.ownerName ?? null,
         mobile: s.mobile,
+        address: s.address,
         accountId: s.accountId,
         creditDays: s.creditDays,
         creditLimit: s.account.customer?.creditLimit ? num(s.account.customer.creditLimit) : 0,
@@ -300,6 +306,7 @@ export async function searchParties(
       group: r.account.group.name,
       balance: bal.get(r.accountId) ?? 0,
       mobile: r.mobile,
+      address: r.address ?? null,
       creditLimit: r.creditLimit,
       creditDays: r.creditDays,
       overdue: overdue.get(r.accountId) ?? 0,

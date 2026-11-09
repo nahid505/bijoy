@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { featureForPath } from "@/lib/features";
-import { addDays, formatDate, formatMoney, formatQty, toBnDigits } from "@/lib/format";
+import { addDays, formatDate, formatMoney, formatQty, formatReportDateBangla, toBnDigits } from "@/lib/format";
 import { PrintButton } from "@/components/forms";
 import { FilterField, PageHeader, PrintHeader } from "@/components/ui";
 import { requirePermission } from "@/server/auth";
@@ -12,9 +12,9 @@ import { voucherScopeWhere } from "@/server/party-scope";
 
 export const metadata: Metadata = { title: "ডেইলি ক্রয় রিপোর্ট" };
 
-// ruled khata cells
-const th = "border border-ink-800 px-1.5 py-1 font-semibold";
-const td = "border border-ink-800 px-1.5 py-1";
+// ruled khata cells — crisp black borders and bold text for printing
+const th = "border border-black px-1.5 py-1 font-bold text-black bg-slate-100 print:bg-slate-100";
+const td = "border border-black px-1.5 py-1 font-semibold text-black";
 const num = `${td} whitespace-nowrap text-right tabular-nums`; // figures never wrap (৳ stays with the amount)
 
 export default async function DailyPurchasePage({ searchParams }: { searchParams: SearchParams }) {
@@ -58,15 +58,15 @@ export default async function DailyPurchasePage({ searchParams }: { searchParams
         </form>
 
         <div className="space-y-6 p-4 print:space-y-4">
-          <PrintHeader business={ctx.business} title="ডেইলি ক্রয় রিপোর্ট" subtitle={formatDate(d.date)} />
-          <h2 className="no-print text-base font-semibold text-ink-900">তারিখ: {formatDate(d.date)}</h2>
+          <PrintHeader business={ctx.business} title="ডেইলি ক্রয় রিপোর্ট" subtitle={formatReportDateBangla(d.date)} />
+          <h2 className="no-print text-base font-semibold text-ink-900">{formatReportDateBangla(d.date)}</h2>
 
           {/* ১. অন্যান্য ক্রয় */}
           <section aria-labelledby="sec-other" className="print:break-inside-avoid">
             <h3 id="sec-other" className="mb-1.5 text-sm font-bold text-ink-900">১. ডেইলি ক্রয় রিপোর্ট (অন্যান্য ক্রয়)</h3>
             <div className="overflow-x-auto print:overflow-visible">
-              <table className="w-full min-w-[46rem] border-collapse border border-ink-800 text-sm print:min-w-0 print:text-[10px]">
-                <thead className="bg-ink-50 print:bg-white">
+              <table className="w-full min-w-[46rem] border-collapse border border-black text-sm print:min-w-0">
+                <thead className="bg-slate-100 print:bg-slate-100">
                   <tr>
                     <th scope="col" className={`${th} w-12 text-center`}>নম্বর</th>
                     <th scope="col" className={`${th} text-left`}>পার্টির নাম</th>
@@ -83,18 +83,18 @@ export default async function DailyPurchasePage({ searchParams }: { searchParams
                     <tr key={`${l.voucherId}-${i}`} className="align-top">
                       <td className={`${td} text-center tabular-nums`}>{toBnDigits(i + 1)}</td>
                       <td className={td}>
-                        <span className="block">{l.party}</span>
-                        <Link prefetch={false} href={`/vouchers/v/${l.voucherId}`} className="block text-xs text-brand-700 hover:underline print:text-[9px] print:text-black print:no-underline">{l.voucherNo}</Link>
+                        <span className="block font-medium">{l.party}</span>
+                        <Link prefetch={false} href={`/vouchers/v/${l.voucherId}`} className="print:hidden block text-xs text-brand-700 hover:underline">{l.voucherNo}</Link>
                       </td>
                       <td className={td}>{l.product}</td>
                       <td className={num}>{formatQty(l.quantity)} {l.unit}</td>
                       <td className={num}>{money(l.rate)}</td>
                       <td className={num}>{money(l.amount)}{l.discount > 0 && <span className="block text-[10px] text-slate-500">ছাড় {money(l.discount)}</span>}</td>
-                      <td className={`${td} text-xs print:text-[9px]`}>{l.note || "—"}</td>
+                      <td className={`${td} text-xs`}>{l.note || "—"}</td>
                     </tr>
                   ))}
                 </tbody>
-                <tfoot>
+                <tfoot className="total-row report-summary">
                   <tr className="font-bold">
                     <td colSpan={5} className={`${td} text-right`}>মোট টাকা</td>
                     <td className={num} id="other-total">{money(d.otherTotal)}</td>
@@ -104,7 +104,7 @@ export default async function DailyPurchasePage({ searchParams }: { searchParams
                     <>
                       {d.otherDiscount > 0 && <tr><td colSpan={5} className={`${td} text-right`}>(−) ভাউচারের ছাড়</td><td className={num}>{money(d.otherDiscount)}</td><td className={td} /></tr>}
                       {d.otherVat > 0 && <tr><td colSpan={5} className={`${td} text-right`}>(+) ভ্যাট</td><td className={num}>{money(d.otherVat)}</td><td className={td} /></tr>}
-                      <tr className="font-semibold"><td colSpan={5} className={`${td} text-right`}>নিট ক্রয়</td><td className={num}>{money(d.otherNet)}</td><td className={td} /></tr>
+                      <tr className="font-semibold total-row"><td colSpan={5} className={`${td} text-right`}>নিট ক্রয়</td><td className={num}>{money(d.otherNet)}</td><td className={td} /></tr>
                     </>
                   )}
                 </tfoot>
@@ -116,8 +116,8 @@ export default async function DailyPurchasePage({ searchParams }: { searchParams
           <section aria-labelledby="sec-paddy" className="print:break-inside-avoid">
             <h3 id="sec-paddy" className="mb-1.5 text-sm font-bold text-ink-900">২. ধান ক্রয় রিপোর্ট</h3>
             <div className="overflow-x-auto print:overflow-visible">
-              <table className="w-full min-w-[54rem] border-collapse border border-ink-800 text-sm print:min-w-0 print:text-[10px]">
-                <thead className="bg-ink-50 print:bg-white">
+              <table className="w-full min-w-[54rem] border-collapse border border-black text-sm print:min-w-0">
+                <thead className="bg-slate-100 print:bg-slate-100">
                   <tr>
                     <th scope="col" className={`${th} w-12 text-center`}>নম্বর</th>
                     <th scope="col" className={`${th} text-left`}>পার্টির নাম</th>
@@ -137,9 +137,9 @@ export default async function DailyPurchasePage({ searchParams }: { searchParams
                     <tr key={l.voucherId} className="align-top">
                       <td className={`${td} text-center tabular-nums`}>{toBnDigits(i + 1)}</td>
                       <td className={td}>
-                        <span className="block">{l.party}</span>
-                        <span className="block text-xs text-slate-500 print:text-[9px]">
-                          <Link prefetch={false} href={`/vouchers/v/${l.voucherId}`} className="text-brand-700 hover:underline print:text-black print:no-underline">{l.voucherNo}</Link>{l.notes ? ` · ${l.notes}` : ""}
+                        <span className="block font-medium">{l.party}</span>
+                        <span className="print:hidden block text-xs text-slate-500">
+                          <Link prefetch={false} href={`/vouchers/v/${l.voucherId}`} className="text-brand-700 hover:underline">{l.voucherNo}</Link>{l.notes ? ` · ${l.notes}` : ""}
                         </span>
                       </td>
                       <td className={td}>{l.product}</td>
@@ -153,7 +153,7 @@ export default async function DailyPurchasePage({ searchParams }: { searchParams
                     </tr>
                   ))}
                 </tbody>
-                <tfoot>
+                <tfoot className="total-row report-summary">
                   <tr className="font-bold" id="paddy-totals">
                     <td colSpan={3} className={`${td} text-right`}>মোট</td>
                     <td className={num}>{toBnDigits(t.bags)}</td>
@@ -167,14 +167,14 @@ export default async function DailyPurchasePage({ searchParams }: { searchParams
                 </tfoot>
               </table>
             </div>
-            <p className="mt-1.5 text-xs text-slate-600">
+            <p className="mt-1.5 text-xs text-slate-600 print:text-[10px] print:text-black">
               মোট বস্তা <b>{toBnDigits(t.bags)}</b> · মোট নীট ওজন <b>{formatQty(t.netKg)} কেজি</b> · মোট মণ <b>{toBnDigits(t.mon.toFixed(2))}</b> · সর্বমোট টাকা <b>{money(t.total)}</b>
             </p>
           </section>
 
-          <div className="print-only pt-8 print:pt-6 print:break-inside-avoid">
-            <div className="grid grid-cols-3 gap-8 text-center text-xs">
-              {["প্রস্তুতকারী", "যাচাইকারী", "অনুমোদনকারী"].map((s) => <p key={s} className="border-t border-ink-800 pt-1">{s}</p>)}
+          <div className="print-only signature-section pt-10 print:break-inside-avoid">
+            <div className="grid grid-cols-3 gap-8 text-center text-xs font-bold text-black">
+              {["প্রস্তুতকারী", "হিসাবরক্ষক", "অনুমোদনকারী"].map((s) => <p key={s} className="border-t border-black pt-1">{s}</p>)}
             </div>
           </div>
         </div>

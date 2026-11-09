@@ -14,10 +14,20 @@ export const metadata: Metadata = { title: "ব্যবহারকারী �
 export default async function EditUserPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requirePermission("users:manage");
   const { id } = await params;
-  const [membership, roles, assigned] = await Promise.all([
+  const [membership, roles, assigned, allGroups, allCashAccounts] = await Promise.all([
     prisma.membership.findUnique({ where: { userId_businessId: { userId: id, businessId: ctx.business.id } }, include: { user: true } }),
     roleChoices(ctx.business.id),
     assignedPartiesOf(ctx.business.id, id),
+    prisma.accountGroup.findMany({
+      where: { businessId: ctx.business.id },
+      select: { id: true, name: true, nature: true, parentId: true, parent: { select: { name: true } } },
+      orderBy: [{ nature: "asc" }, { sortOrder: "asc" }, { name: "asc" }],
+    }),
+    prisma.account.findMany({
+      where: { businessId: ctx.business.id, isActive: true, kind: { in: ["CASH", "BANK"] } },
+      select: { id: true, name: true, kind: true, code: true, bankName: true, accountNumber: true },
+      orderBy: [{ kind: "asc" }, { name: "asc" }],
+    }),
   ]);
   if (!membership) notFound();
   return (
@@ -33,6 +43,8 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
           roles={roles}
           isEdit
           assigned={isRestricted(ctx) ? null : assigned} // an assigned-only admin cannot hand out parties
+          allGroups={allGroups.map((g) => ({ id: g.id, name: g.name, nature: g.nature, parentId: g.parentId, parentName: g.parent?.name }))}
+          allCashAccounts={allCashAccounts}
           depot={isDepot(ctx.business.businessType)}
           defaults={{ name: membership.user.name, email: membership.user.email ?? "", roleId: membership.roleId, isActive: membership.isActive }}
         />

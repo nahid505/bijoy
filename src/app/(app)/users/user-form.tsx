@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useT } from "@/components/lang";
 import { ActionForm, Field, SubmitButton, type FormAction } from "@/components/forms";
 import { PartyMultiSelect, type PartyChoice } from "@/components/party-multi-select";
+import { AccountGroupChecklist, PaymentAccountChecklist, type CashAccountItem, type GroupItem } from "./user-scope-cards";
 
 export interface RoleChoice {
   id: string;
@@ -21,6 +22,8 @@ export function UserForm({
   defaults,
   isEdit,
   assigned,
+  allGroups,
+  allCashAccounts,
   depot = false,
 }: {
   action: FormAction;
@@ -28,7 +31,18 @@ export function UserForm({
   defaults?: { name: string; email: string; roleId: string; isActive: boolean };
   isEdit: boolean;
   /** user-specific customer / supplier assignment (null: the section is not shown) */
-  assigned?: { customers: PartyChoice[]; suppliers: PartyChoice[]; dealers?: PartyChoice[]; accounts?: PartyChoice[] } | null;
+  assigned?: {
+    customers: PartyChoice[];
+    suppliers: PartyChoice[];
+    dealers?: PartyChoice[];
+    accounts?: PartyChoice[];
+    accountGroupIds?: string[];
+    paymentAccountIds?: string[];
+  } | null;
+  /** all account groups of the business */
+  allGroups?: GroupItem[];
+  /** all cash and bank accounts of the business */
+  allCashAccounts?: CashAccountItem[];
   /** depot business: depot dealers are assigned in their own list */
   depot?: boolean;
 }) {
@@ -64,9 +78,11 @@ export function UserForm({
         </label>
       </div>
       {assigned && (
-        <fieldset className="rounded-lg border border-slate-200 p-4" id="party-assignment">
-          <legend className="px-1 text-sm font-semibold text-slate-700">কাস্টমার, সরবরাহকারী ও হিসাব খাত নির্ধারণ</legend>
-          <p className="mb-3 text-xs text-slate-500">রোলে &quot;শুধু নির্ধারিত কাস্টমার/সরবরাহকারী/হিসাব খাত দেখতে পারবে&quot; টিক দেওয়া থাকলে এই ব্যবহারকারী শুধু এখানে নির্বাচিতদের তথ্য, লেনদেন, লেজার ও রিপোর্ট দেখবেন।</p>
+        <fieldset className="rounded-lg border border-slate-200 p-4 space-y-5" id="party-assignment">
+          <legend className="px-1 text-sm font-semibold text-slate-700">কাস্টমার, সরবরাহকারী, হিসাব খাত ও পেমেন্ট নির্ধারণ</legend>
+          <p className="text-xs text-slate-500">
+            রোলে &quot;শুধু নির্ধারিত কাস্টমার/সরবরাহকারী/হিসাব খাত দেখতে পারবে&quot; এবং নিচে অনুমোদিত অ্যাকাউন্ট গ্রুপ বা পেমেন্ট অ্যাকাউন্ট নির্দিষ্ট করা থাকলে ব্যবহারকারী শুধু তার অনুমোদিত খাতেই কাজ করতে পারবেন।
+          </p>
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <PartyMultiSelect kind="customers" name="customerIds" label="নির্ধারিত কাস্টমারসমূহ" initial={assigned.customers} />
@@ -87,6 +103,18 @@ export function UserForm({
               </div>
             )}
           </div>
+
+          <div className="border-t border-slate-200 pt-4 grid gap-4 md:grid-cols-2">
+            <AccountGroupChecklist
+              groups={allGroups ?? []}
+              initialSelectedIds={assigned.accountGroupIds ?? []}
+            />
+            <PaymentAccountChecklist
+              accounts={allCashAccounts ?? []}
+              initialSelectedIds={assigned.paymentAccountIds ?? []}
+            />
+          </div>
+
           <input type="hidden" name="assignment" value="1" />
         </fieldset>
       )}

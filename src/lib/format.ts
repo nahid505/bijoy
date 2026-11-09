@@ -163,3 +163,5 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   LOGOUT: "লগআউট",
   LOGIN_FAILED: "ব্যর্থ লগইন",
 };
+
+export { formatReportDateBangla } from "./utils/date-format";

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { addDays, dayOrToday, dayRange, formatDate, formatQty, toBnDigits } from "@/lib/format";
+import { addDays, dayOrToday, dayRange, formatDate, formatQty, formatReportDateBangla, toBnDigits } from "@/lib/format";
 import { PrintButton } from "@/components/forms";
 import { FilterField, PageHeader, PrintHeader, StatCard } from "@/components/ui";
 import { requirePermission } from "@/server/auth";
@@ -13,7 +13,7 @@ import { dailyMilling, type MillQty } from "@/server/services/rice-mill";
 
 export const metadata: Metadata = { title: "ডেইলি ধান ভাঙানো হিসাব" };
 
-const CELL = "border border-slate-300 px-2 py-1.5 align-top print:border-slate-400 print:px-1 print:py-1";
+const CELL = "border border-black px-2 py-1.5 align-top font-semibold text-black print:px-1 print:py-1";
 
 /**
  * ডেইলি ধান ভাঙানো হিসাব: every milling batch (production entry: paddy in, rice and by-products out) of one day —
@@ -83,7 +83,7 @@ export default async function DailyMillingPage({ searchParams }: { searchParams:
         </form>
 
         <div className="p-4 print:p-0">
-          <PrintHeader business={ctx.business} title="ডেইলি ধান ভাঙানো হিসাব" subtitle={formatDate(date)} />
+          <PrintHeader business={ctx.business} title="ডেইলি ধান ভাঙানো হিসাব" subtitle={formatReportDateBangla(date)} />
           {/* paper: the day's summary under the letterhead (the cards above are for the screen) */}
           <div className="print-only mb-3" id="milling-print-summary">
             <div className="grid grid-cols-4 gap-2 text-[10px]">
@@ -93,20 +93,20 @@ export default async function DailyMillingPage({ searchParams }: { searchParams:
                 ["মোট উপজাত (কুঁড়া, খুদ, তুষ)", `${formatQty(byProducts)} ${t("কেজি")}`],
                 ["মিলিং ব্যাচ", `${toBnDigits(d.rows.length)} · ${t("প্রসেস লস")} ${pct(d.yields.loss)}`],
               ].map(([label, value]) => (
-                <div key={label} className="rounded border border-slate-400 px-2 py-1">
-                  <p className="text-slate-600">{t(label)}</p>
+                <div key={label} className="rounded border border-black px-2 py-1 font-semibold text-black">
+                  <p className="text-black">{t(label)}</p>
                   <p className="font-bold">{value}</p>
                 </div>
               ))}
             </div>
           </div>
-          <h2 className="no-print mb-3 text-base font-semibold text-ink-900">{t("তারিখ:")} {formatDate(date)}</h2>
+          <h2 className="no-print mb-3 text-base font-semibold text-ink-900">{formatReportDateBangla(date)}</h2>
           {d.rows.length === 0 ? (
             <p className="rounded border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500" id="milling-empty">{t("এই দিনে কোনো মিলিং ব্যাচ নেই")}</p>
           ) : (
             <div className="overflow-x-auto print:overflow-visible">
-              <table className="w-full min-w-[1000px] border-collapse text-sm print:min-w-0 print:text-[10px]" id="milling-table">
-                <thead className="bg-slate-50 text-xs font-semibold text-slate-700 print:bg-white">
+              <table className="w-full min-w-[1000px] border-collapse border border-black text-sm print:min-w-0" id="milling-table">
+                <thead className="bg-slate-100 text-xs font-bold text-black print:bg-slate-100">
                   <tr>
                     <th rowSpan={2} className={`${CELL} w-10 text-center`}>{t("নং")}</th>
                     <th rowSpan={2} className={`${CELL} text-left`}>{t("মিলিং ব্যাচ নং ও তারিখ")}</th>
@@ -131,46 +131,46 @@ export default async function DailyMillingPage({ searchParams }: { searchParams:
                       <td className={`${CELL} text-center tabular-nums`}>{toBnDigits(i + 1)}</td>
                       <td className={CELL}>
                         <Link prefetch={false} href={`/production/${r.voucherId}`} className="font-mono text-xs font-semibold text-brand-700 hover:underline print:text-black">{r.batchNo}</Link>
-                        <span className="block text-xs text-slate-500 print:text-[9px]">{formatDate(r.date)}</span>
+                        <span className="block text-xs text-slate-500 print:text-[10px] print:text-black">{formatDate(r.date)}</span>
                       </td>
                       <td className={`${CELL} break-words`} data-keep-lang>{r.paddyNames}</td>
                       <td className={`${CELL} text-right tabular-nums`}>{r.paddy.bags === null ? "—" : bags(r.paddy.bags) || "—"}</td>
                       <td className={`${CELL} text-right tabular-nums`}>
                         <span className="block whitespace-nowrap font-medium">{formatQty(r.paddy.kg)} {t("কেজি")}</span>
-                        <span className="block text-xs text-slate-500 print:text-[9px]">{toBnDigits(r.paddy.mon.toFixed(2))} {t("মণ")}</span>
+                        <span className="block text-xs text-slate-500 print:text-[10px] print:text-black">{toBnDigits(r.paddy.mon.toFixed(2))} {t("মণ")}</span>
                       </td>
                       <td className={`${CELL} text-right tabular-nums`}>{qty(r.rice)}</td>
                       <td className={`${CELL} text-right tabular-nums`}>{qty(r.bran)}</td>
                       <td className={`${CELL} text-right tabular-nums`}>{qty(r.broken)}</td>
                       <td className={`${CELL} text-right tabular-nums`}>{qty(r.husk)}</td>
                       <td className={CELL}>{yieldList(r.yields)}</td>
-                      <td className={`${CELL} text-sm font-medium text-emerald-700 print:text-[10px] print:text-black`} data-keep-lang>{r.enteredBy ?? "—"}</td>
+                      <td className={`${CELL} text-sm font-medium text-black print:text-[10px] print:text-black`} data-keep-lang>{r.enteredBy ?? "—"}</td>
                     </tr>
                   ))}
                 </tbody>
-                <tfoot className="bg-slate-50 font-semibold print:bg-white" id="milling-totals">
+                <tfoot className="bg-slate-100 font-bold total-row report-summary print:bg-white text-black" id="milling-totals">
                   <tr>
-                    <td colSpan={3} className={`${CELL} border-t-2 border-t-slate-500 text-right`}>{t("সারাদিনের মোট ({0} টি ব্যাচ)", { 0: toBnDigits(d.rows.length) })}</td>
-                    <td className={`${CELL} border-t-2 border-t-slate-500 text-right tabular-nums`}>{d.totals.paddy.bags === null ? "—" : bags(d.totals.paddy.bags) || "—"}</td>
-                    <td className={`${CELL} border-t-2 border-t-slate-500 text-right tabular-nums`}>
+                    <td colSpan={3} className={`${CELL} border-t-2 border-t-black text-right`}>{t("সারাদিনের মোট ({0} টি ব্যাচ)", { 0: toBnDigits(d.rows.length) })}</td>
+                    <td className={`${CELL} border-t-2 border-t-black text-right tabular-nums`}>{d.totals.paddy.bags === null ? "—" : bags(d.totals.paddy.bags) || "—"}</td>
+                    <td className={`${CELL} border-t-2 border-t-black text-right tabular-nums`}>
                       <span className="block whitespace-nowrap">{formatQty(d.totals.paddy.kg)} {t("কেজি")}</span>
-                      <span className="block text-xs font-normal text-slate-500 print:text-[9px]">{toBnDigits(d.totals.paddy.mon.toFixed(2))} {t("মণ")}</span>
+                      <span className="block text-xs font-normal text-slate-600 print:text-[10px] print:text-black">{toBnDigits(d.totals.paddy.mon.toFixed(2))} {t("মণ")}</span>
                     </td>
-                    <td className={`${CELL} border-t-2 border-t-slate-500 text-right tabular-nums`}>{qty(d.totals.rice)}</td>
-                    <td className={`${CELL} border-t-2 border-t-slate-500 text-right tabular-nums`}>{qty(d.totals.bran)}</td>
-                    <td className={`${CELL} border-t-2 border-t-slate-500 text-right tabular-nums`}>{qty(d.totals.broken)}</td>
-                    <td className={`${CELL} border-t-2 border-t-slate-500 text-right tabular-nums`}>{qty(d.totals.husk)}</td>
-                    <td className={`${CELL} border-t-2 border-t-slate-500`}>{yieldList(d.yields)}</td>
-                    <td className={`${CELL} border-t-2 border-t-slate-500`} />
+                    <td className={`${CELL} border-t-2 border-t-black text-right tabular-nums`}>{qty(d.totals.rice)}</td>
+                    <td className={`${CELL} border-t-2 border-t-black text-right tabular-nums`}>{qty(d.totals.bran)}</td>
+                    <td className={`${CELL} border-t-2 border-t-black text-right tabular-nums`}>{qty(d.totals.broken)}</td>
+                    <td className={`${CELL} border-t-2 border-t-black text-right tabular-nums`}>{qty(d.totals.husk)}</td>
+                    <td className={`${CELL} border-t-2 border-t-black`}>{yieldList(d.yields)}</td>
+                    <td className={`${CELL} border-t-2 border-t-black`} />
                   </tr>
                 </tfoot>
               </table>
             </div>
           )}
-          <p className="mt-3 text-xs text-slate-500 print:text-[9px]">{t("ফলন = উৎপাদিত পরিমাণ ÷ ভাঙানো ধান × ১০০; প্রসেস লস = ধান − সব উৎপাদন (ধুলা, আর্দ্রতা)। বস্তা: যে ইউনিটে এন্ট্রি হয়েছে, নইলে ব্যবসার বস্তা ইউনিট থেকে।")}</p>
-          <div className="print-only mt-12">
-            <div className="grid grid-cols-3 gap-8 text-center text-xs">
-              {["অপারেটর", "মিল ম্যানেজার", "অনুমোদনকারী"].map((s) => <p key={s} className="border-t border-ink-800 pt-1">{t(s)}</p>)}
+          <p className="mt-3 text-xs text-slate-500 print:text-[10px] print:text-black">{t("ফলন = উৎপাদিত পরিমাণ ÷ ভাঙানো ধান × ১০০; প্রসেস লস = ধান − সব উৎপাদন (ধুলা, আর্দ্রতা)। বস্তা: যে ইউনিটে এন্ট্রি হয়েছে, নইলে ব্যবসার বস্তা ইউনিট থেকে।")}</p>
+          <div className="print-only signature-section mt-12 print:break-inside-avoid">
+            <div className="grid grid-cols-3 gap-8 text-center text-xs font-bold text-black">
+              {["অপারেটর", "মিল ম্যানেজার", "অনুমোদনকারী"].map((s) => <p key={s} className="border-t border-black pt-1">{t(s)}</p>)}
             </div>
           </div>
         </div>

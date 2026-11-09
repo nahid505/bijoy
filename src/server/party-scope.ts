@@ -29,6 +29,10 @@ export interface PartyScope {
   suppliers: string[] | null;
   /** allowed general (non-party) ledger ids; null / absent = every head */
   accounts?: string[] | null;
+  /** allowed account group ids (expanded with all subgroups); null = every group */
+  accountGroups?: string[] | null;
+  /** allowed cash/bank payment source account ids; null = every cash/bank account */
+  paymentAccounts?: string[] | null;
 }
 
 export const UNRESTRICTED: PartyScope = { customers: null, suppliers: null, accounts: null };
@@ -43,24 +47,90 @@ interface ScopeCtx {
 export function restrictionsOf(rolePermissions: unknown, isOwner: boolean) {
   const keys = strList(rolePermissions);
   if (isOwner || keys.includes("*")) return { customers: false, suppliers: false, accounts: false };
-  return { customers: keys.includes("customers:assigned_only"), suppliers: keys.includes("suppliers:assigned_only"), accounts: keys.includes("accounts:assigned_only") };
+  return {
+    customers: keys.includes("customers:assigned_only"),
+    suppliers: keys.includes("suppliers:assigned_only"),
+    accounts: keys.includes("accounts:assigned_only"),
+  };
 }
 
-/** Loads the allowed party accounts for a member (used by getContext). */
-export async function loadPartyScope(businessId: string, userId: string, r: { customers: boolean; suppliers: boolean; accounts?: boolean }): Promise<PartyScope> {
-  if (!r.customers && !r.suppliers && !r.accounts) return UNRESTRICTED;
-  const [c, s, a] = await Promise.all([
+/**
+ * Recursively resolves all descendant child subgroups of the given selected groups.
+ */
+export function getAllDescendantGroupIds(
+  allGroups: { id: string; parentId: string | null }[],
+  selectedGroupIds: string[]
+): string[] {
+  if (!selectedGroupIds.length) return [];
+  const childrenMap = new Map<string, string[]>();
+  for (const g of allGroups) {
+    if (g.parentId) {
+      const list = childrenMap.get(g.parentId) ?? [];
+      list.push(g.id);
+      childrenMap.set(g.parentId, list);
+    }
+  }
+
+  const result = new Set<string>(selectedGroupIds);
+  const queue = [...selectedGroupIds];
+  while (queue.length > 0) {
+    const curr = queue.shift()!;
+    const children = childrenMap.get(curr);
+    if (children) {
+      for (const childId of children) {
+        if (!result.has(childId)) {
+          result.add(childId);
+          queue.push(childId);
+        }
+      }
+    }
+  }
+  return Array.from(result);
+}
+
+/** Loads the allowed party accounts, account groups, and payment sources for a member (used by getContext). */
+export async function loadPartyScope(
+  businessId: string,
+  userId: string,
+  r: { customers: boolean; suppliers: boolean; accounts?: boolean; isOwner?: boolean }
+): Promise<PartyScope> {
+  if (r.isOwner) return UNRESTRICTED;
+  const [c, s, a, g, p] = await Promise.all([
     r.customers ? prisma.userCustomer.findMany({ where: { businessId, userId }, select: { customer: { select: { accountId: true } } } }) : null,
     r.suppliers ? prisma.userSupplier.findMany({ where: { businessId, userId }, select: { supplier: { select: { accountId: true } } } }) : null,
     r.accounts ? prisma.userAccount.findMany({ where: { businessId, userId }, select: { accountId: true } }) : null,
+    prisma.userAccountGroup.findMany({ where: { businessId, userId }, select: { groupId: true } }),
+    prisma.userPaymentAccount.findMany({ where: { businessId, userId }, select: { accountId: true } }),
   ]);
-  return { customers: c ? c.map((x) => x.customer.accountId) : null, suppliers: s ? s.map((x) => x.supplier.accountId) : null, accounts: a ? a.map((x) => x.accountId) : null };
+
+  let accountGroups: string[] | null = null;
+  if (g.length > 0) {
+    const allBusinessGroups = await prisma.accountGroup.findMany({
+      where: { businessId },
+      select: { id: true, parentId: true },
+    });
+    accountGroups = getAllDescendantGroupIds(allBusinessGroups, g.map((x) => x.groupId));
+  }
+
+  const paymentAccounts = p.length > 0 ? p.map((x) => x.accountId) : null;
+
+  return {
+    customers: c ? c.map((x) => x.customer.accountId) : null,
+    suppliers: s ? s.map((x) => x.supplier.accountId) : null,
+    accounts: a ? a.map((x) => x.accountId) : null,
+    ...(accountGroups ? { accountGroups } : {}),
+    ...(paymentAccounts ? { paymentAccounts } : {}),
+  };
 }
 
 /** the assigned account heads (null = every head) */
 export const allowedAccounts = (ctx: ScopeCtx) => ctx.partyScope.accounts ?? null;
 const partyRestricted = (ctx: ScopeCtx) => ctx.partyScope.customers !== null || ctx.partyScope.suppliers !== null;
-export const isRestricted = (ctx: ScopeCtx) => partyRestricted(ctx) || allowedAccounts(ctx) !== null;
+export const isRestricted = (ctx: ScopeCtx) =>
+  partyRestricted(ctx) ||
+  allowedAccounts(ctx) !== null ||
+  !!ctx.partyScope.accountGroups ||
+  !!ctx.partyScope.paymentAccounts;
 const allowedOf = (ctx: ScopeCtx, kind: PartyKind) => (kind === "CUSTOMER" ? ctx.partyScope.customers : ctx.partyScope.suppliers);
 
 /** Customer / supplier rows this user may see. */
@@ -77,12 +147,26 @@ function hiddenParties(ctx: ScopeCtx): Prisma.AccountWhereInput[] {
   return out;
 }
 
-/** Ledger accounts this user may not open or use: hidden parties, and general heads outside the assigned list. */
+/** Ledger accounts this user may not open or use: hidden parties, general heads outside assigned list, groups outside allowed groups, cash/bank outside payment accounts. */
 function hiddenAccounts(ctx: ScopeCtx): Prisma.AccountWhereInput[] {
   const out = hiddenParties(ctx);
   const heads = allowedAccounts(ctx);
   if (heads) out.push({ customer: { is: null }, supplier: { is: null }, id: { notIn: heads } });
+  if (ctx.partyScope.accountGroups) {
+    out.push({ kind: "GENERAL", groupId: { notIn: ctx.partyScope.accountGroups } });
+  }
+  if (ctx.partyScope.paymentAccounts) {
+    out.push({ kind: { in: ["CASH", "BANK"] }, id: { notIn: ctx.partyScope.paymentAccounts } });
+  }
   return out;
+}
+
+/** For filtering cash / bank accounts to the allowed payment sources */
+export function cashAccountScopeWhere(ctx: ScopeCtx): Prisma.AccountWhereInput {
+  if (ctx.partyScope.paymentAccounts) {
+    return { id: { in: ctx.partyScope.paymentAccounts } };
+  }
+  return {};
 }
 
 /** For account lists (ledgers, debtors, creditors, pickers). */
@@ -137,20 +221,42 @@ export async function canSeeAccount(ctx: ScopeCtx, accountId: string) {
   return (await prisma.account.count({ where: { id: accountId, businessId: ctx.business.id, ...accountScopeWhere(ctx) } })) > 0;
 }
 
-/** The ids of these accounts that this user may not use (parties outside their list). */
+/** The ids of these accounts that this user may not use (parties, heads, groups or payment accounts outside their list). */
 export async function forbiddenAccounts(ctx: ScopeCtx, accountIds: (string | null | undefined)[]) {
   const ids = [...new Set(accountIds.filter((x): x is string => !!x))];
   if (!isRestricted(ctx) || ids.length === 0) return [];
   const hidden = hiddenAccounts(ctx);
-  const rows = await prisma.account.findMany({ where: { id: { in: ids }, businessId: ctx.business.id, OR: hidden }, select: { id: true, name: true, customer: { select: { id: true } }, supplier: { select: { id: true } } } });
+  if (!hidden.length) return [];
+  const rows = await prisma.account.findMany({
+    where: { id: { in: ids }, businessId: ctx.business.id, OR: hidden },
+    select: { id: true, name: true, kind: true, customer: { select: { id: true } }, supplier: { select: { id: true } } },
+  });
   return rows;
 }
 
-/** Refuses a voucher that names / posts to a party or an account head outside the user's lists. */
+/** Refuses any cash / bank payment accounts outside the user's allowed list. */
+export async function assertPaymentAccountsAllowed(ctx: ScopeCtx, cashAccountIds: (string | null | undefined)[]) {
+  if (!ctx.partyScope.paymentAccounts) return;
+  const ids = [...new Set(cashAccountIds.filter((x): x is string => !!x))];
+  const unauthorized = ids.filter((id) => !ctx.partyScope.paymentAccounts!.includes(id));
+  if (unauthorized.length > 0) {
+    const acc = await prisma.account.findFirst({
+      where: { id: { in: unauthorized }, businessId: ctx.business.id },
+      select: { name: true },
+    });
+    throw new UserError(`পেমেন্ট হিসাব "${acc?.name ?? unauthorized[0]}" আপনার জন্য নির্ধারিত নয় — অ্যাডমিনের সাথে যোগাযোগ করুন`);
+  }
+}
+
+/** Refuses a voucher that names / posts to a party, account group or payment source outside the user's lists. */
 export async function assertPartiesAllowed(ctx: ScopeCtx, accountIds: (string | null | undefined)[]) {
   const bad = await forbiddenAccounts(ctx, accountIds);
   if (!bad.length) return;
   if (bad.some((a) => a.customer || a.supplier)) throw new UserError("এই কাস্টমার/সরবরাহকারী আপনার জন্য নির্ধারিত নয় — অ্যাডমিনের সাথে যোগাযোগ করুন");
+  if (ctx.partyScope.paymentAccounts && bad.some((a) => (a.kind === "CASH" || a.kind === "BANK") && !ctx.partyScope.paymentAccounts!.includes(a.id))) {
+    const payAcc = bad.find((a) => (a.kind === "CASH" || a.kind === "BANK") && !ctx.partyScope.paymentAccounts!.includes(a.id))!;
+    throw new UserError(`পেমেন্ট হিসাব "${payAcc.name}" আপনার জন্য নির্ধারিত নয় — অ্যাডমিনের সাথে যোগাযোগ করুন`);
+  }
   throw new UserError(`হিসাব খাত "${bad[0].name}" আপনার জন্য নির্ধারিত নয় — অ্যাডমিনের সাথে যোগাযোগ করুন`);
 }
 
@@ -183,17 +289,22 @@ export async function assertVoucherAllowed(ctx: ScopeCtx, voucherId: string | nu
 }
 
 /**
- * Restricted users: the only ledgers they may open are the customer / supplier accounts they may see
- * (a sales, cash or expense ledger lists every party's transactions).
+ * Restricted users: the only ledgers they may open are the customer / supplier accounts they may see,
+ * their assigned heads, and accounts belonging to their allowed account groups or payment sources.
  */
 export async function canOpenLedger(ctx: ScopeCtx, accountId: string) {
   if (!isRestricted(ctx)) return true;
-  const a = await prisma.account.findFirst({ where: { id: accountId, businessId: ctx.business.id }, select: { customer: { select: { id: true } }, supplier: { select: { id: true } } } });
+  const a = await prisma.account.findFirst({
+    where: { id: accountId, businessId: ctx.business.id },
+    select: { kind: true, groupId: true, customer: { select: { id: true } }, supplier: { select: { id: true } } },
+  });
   if (!a) return false;
   if (a.customer) return canSeeParty(ctx, "CUSTOMER", accountId);
   if (a.supplier) return canSeeParty(ctx, "SUPPLIER", accountId);
   const heads = allowedAccounts(ctx);
-  if (heads) return heads.includes(accountId); // account-head restriction: my heads only
+  if (heads && !heads.includes(accountId)) return false;
+  if (ctx.partyScope.accountGroups && a.kind === "GENERAL" && !ctx.partyScope.accountGroups.includes(a.groupId)) return false;
+  if (ctx.partyScope.paymentAccounts && (a.kind === "CASH" || a.kind === "BANK") && !ctx.partyScope.paymentAccounts.includes(accountId)) return false;
   return !partyRestricted(ctx); // party-restricted users: a sales / cash ledger lists every party
 }
 
@@ -217,13 +328,15 @@ export async function roleChoices(businessId: string) {
   });
 }
 
-/** The customers / suppliers assigned to a member. */
+/** The customers, suppliers, heads, groups and payment accounts assigned to a member. */
 export async function assignedPartiesOf(businessId: string, userId: string) {
   const select = { id: true, name: true, mobile: true } as const;
-  const [c, s, a] = await Promise.all([
+  const [c, s, a, g, p] = await Promise.all([
     prisma.userCustomer.findMany({ where: { businessId, userId }, select: { customer: { select: { ...select, isDepotDealer: true } } }, orderBy: { customer: { name: "asc" } } }),
     prisma.userSupplier.findMany({ where: { businessId, userId }, select: { supplier: { select } }, orderBy: { supplier: { name: "asc" } } }),
     prisma.userAccount.findMany({ where: { businessId, userId }, select: { account: { select: { id: true, name: true, group: { select: { name: true } } } } }, orderBy: { account: { name: "asc" } } }),
+    prisma.userAccountGroup.findMany({ where: { businessId, userId }, select: { groupId: true } }),
+    prisma.userPaymentAccount.findMany({ where: { businessId, userId }, select: { accountId: true } }),
   ]);
   const strip = ({ id, name, mobile }: { id: string; name: string; mobile: string | null }) => ({ id, name, mobile });
   return {
@@ -231,24 +344,49 @@ export async function assignedPartiesOf(businessId: string, userId: string) {
     dealers: c.filter((x) => x.customer.isDepotDealer).map((x) => strip(x.customer)),
     suppliers: s.map((x) => x.supplier),
     accounts: a.map((x) => ({ id: x.account.id, name: x.account.name, mobile: x.account.group.name })),
+    accountGroupIds: g.map((x) => x.groupId),
+    paymentAccountIds: p.map((x) => x.accountId),
   };
 }
 
 /** Replaces a member's assignment (ids of another business are ignored). */
-export async function saveAssignments(businessId: string, userId: string, customerIds: string[], supplierIds: string[], accountIds: string[] = []) {
-  const [customers, suppliers, accounts] = await Promise.all([
+export async function saveAssignments(
+  businessId: string,
+  userId: string,
+  customerIds: string[],
+  supplierIds: string[],
+  accountIds: string[] = [],
+  accountGroupIds: string[] = [],
+  paymentAccountIds: string[] = []
+) {
+  const [customers, suppliers, accounts, groups, payments] = await Promise.all([
     prisma.customer.findMany({ where: { businessId, id: { in: [...new Set(customerIds)] } }, select: { id: true } }),
     prisma.supplier.findMany({ where: { businessId, id: { in: [...new Set(supplierIds)] } }, select: { id: true } }),
     // account heads only: party ledgers are assigned as customers / suppliers
     prisma.account.findMany({ where: { businessId, id: { in: [...new Set(accountIds)] }, customer: { is: null }, supplier: { is: null } }, select: { id: true } }),
+    prisma.accountGroup.findMany({ where: { businessId, id: { in: [...new Set(accountGroupIds)] } }, select: { id: true } }),
+    prisma.account.findMany({ where: { businessId, id: { in: [...new Set(paymentAccountIds)] }, kind: { in: ["CASH", "BANK"] } }, select: { id: true } }),
   ]);
   await prisma.$transaction([
     prisma.userCustomer.deleteMany({ where: { businessId, userId } }),
     prisma.userSupplier.deleteMany({ where: { businessId, userId } }),
     prisma.userAccount.deleteMany({ where: { businessId, userId } }),
+    prisma.userAccountGroup.deleteMany({ where: { businessId, userId } }),
+    prisma.userPaymentAccount.deleteMany({ where: { businessId, userId } }),
     prisma.userCustomer.createMany({ data: customers.map((c) => ({ businessId, userId, customerId: c.id })) }),
     prisma.userSupplier.createMany({ data: suppliers.map((s) => ({ businessId, userId, supplierId: s.id })) }),
     prisma.userAccount.createMany({ data: accounts.map((a) => ({ businessId, userId, accountId: a.id })) }),
+    prisma.userAccountGroup.createMany({ data: groups.map((g) => ({ businessId, userId, groupId: g.id })) }),
+    prisma.userPaymentAccount.createMany({ data: payments.map((p) => ({ businessId, userId, accountId: p.id })) }),
   ]);
-  return { customers: customers.length, suppliers: suppliers.length, accounts: accounts.length };
+  const out: { customers: number; suppliers: number; accounts: number; accountGroups?: number; paymentAccounts?: number } = {
+    customers: customers.length,
+    suppliers: suppliers.length,
+    accounts: accounts.length,
+  };
+  if (accountGroupIds.length > 0 || paymentAccountIds.length > 0) {
+    out.accountGroups = groups.length;
+    out.paymentAccounts = payments.length;
+  }
+  return out;
 }

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Fragment } from "react";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { addDays, formatDateSlash, formatMoney, toBnDigits } from "@/lib/format";
+import { addDays, formatDateSlash, formatMoney, formatReportDateBangla, toBnDigits } from "@/lib/format";
 import { PrintButton } from "@/components/forms";
 import { FilterField, PageHeader, PrintHeader } from "@/components/ui";
 import { requirePermission } from "@/server/auth";
@@ -26,8 +26,12 @@ export default async function DailyCashPage({ searchParams }: { searchParams: Se
     cashLineDetail(l, (n) => (Math.abs(n) < 0.005 ? money(0) : `${money(Math.abs(n))} ${t(n > 0 ? "ডেবিট" : "ক্রেডিট")}`), t("বর্তমান জের:"));
   const q = (date: string) => `/reports/daily-cash?date=${date}${d.scope !== "cash" ? `&scope=${encodeURIComponent(d.scope)}` : ""}`;
   const exportHref = `/api/reports/daily-cash?date=${d.date}&scope=${encodeURIComponent(d.scope)}`;
-  // the date in the heading follows the selected day: "… ----নগদ ক্যাশ----- তারিখ : ০৫/১১/২০২৬"
-  const heading = `ডেইলী জমা খরচ হিসাব  ----নগদ ক্যাশ----- তারিখ : ${formatDateSlash(d.date)}`;
+  const accounts = all;
+  const selectedAccountName =
+    accounts.find((a) => a.id === d.scope)?.name ||
+    (d.scope === "cash-bank" ? "সকল নগদ ও ব্যাংক হিসাব" : "নগদ ক্যাশ");
+  const formattedDate = formatReportDateBangla(d.date);
+  const heading = `ডেইলী জমা খরচ হিসাব ------- ${selectedAccountName} ------ ${formattedDate}`;
   // both sides get the same number of body rows, so the totals line up like a cash khata
   const bodyRows = Math.max(d.receipts.length + 1, d.payments.length, 6);
 
@@ -120,9 +124,9 @@ export default async function DailyCashPage({ searchParams }: { searchParams: Se
             />
           </div>
 
-          <div className="print-only mt-14">
-            <div className="grid grid-cols-3 gap-8 text-center text-xs">
-              {["ক্যাশিয়ার", "হিসাবরক্ষক", "অনুমোদনকারী"].map((s) => <p key={s} className="border-t border-ink-800 pt-1">{s}</p>)}
+          <div className="print-only signature-section mt-14 print:break-inside-avoid">
+            <div className="grid grid-cols-3 gap-8 text-center text-xs font-bold text-black">
+              {["ক্যাশিয়ার", "হিসাবরক্ষক", "অনুমোদনকারী"].map((s) => <p key={s} className="border-t border-black pt-1">{s}</p>)}
             </div>
           </div>
         </div>
@@ -131,8 +135,8 @@ export default async function DailyCashPage({ searchParams }: { searchParams: Se
   );
 }
 
-// a ruled khata: every cell of every row (the empty filler rows too) has its own light rule; on paper a shade darker
-const CELL = "border border-slate-300 px-1.5 py-1 align-top print:border-slate-400";
+// a ruled khata: crisp black borders and bold text for printing
+const CELL = "border border-black px-1.5 py-1 align-top font-semibold text-black";
 // on paper the amounts are larger and bold so the printout reads clearly
 const AMOUNT_PRINT = "print:text-[17px] print:font-bold";
 
@@ -147,13 +151,13 @@ function Particulars({ l, detail }: { l: CashLine; detail: (l: CashLine) => stri
   const note = l.narration?.trim();
   return (
     <>
-      <span className="block font-medium text-gray-800 print:text-[16px] print:font-bold print:text-black">
+      <span className="block font-medium text-black print:font-bold print:text-black">
         <Link prefetch={false} href={`/vouchers/v/${l.voucherId}`} className="text-inherit hover:underline print:no-underline">{l.particulars}</Link>
         {l.address && <>, <span data-keep-lang>{l.address}</span></>}
-        {l.enteredBy && <span className="font-normal text-slate-600 print:text-black"> (<span data-keep-lang>{l.enteredBy}</span>)</span>}
+        {l.enteredBy && <span className="font-normal text-slate-700 print:text-black"> (<span data-keep-lang>{l.enteredBy}</span>)</span>}
       </span>
       {(balance || note) && (
-        <span className="block text-xs text-gray-500 print:text-[9.5px] print:text-slate-700">
+        <span className="block text-xs text-slate-600 print:text-black">
           {balance}
           {note && <>{balance ? ", " : ""}<span data-keep-lang>{note}</span></>}
         </span>
@@ -183,8 +187,8 @@ function CashBook({
     ...(receipts.length ? receipts.map(line) : [{ note: "আজ কোনো রিসিট নেই" }]),
   ];
   const n = Math.max(rows, left.length, right.length);
-  const mid = "border-l-2 border-l-slate-500"; // the rule between the two sides
-  const top = "border-t-2 border-t-slate-500"; // above the balancing totals
+  const mid = "border-l-2 border-l-black"; // the rule between the two sides
+  const top = "border-t-2 border-t-black"; // above the balancing totals
   const side = (c: Cells | undefined, first: string, key: string) => {
     const ds = key === "l" ? "pay" : "receipt"; // data-side: which half a cell belongs to
     if (!c) return (<Fragment key={key}><td data-side={ds} className={`${CELL} h-7 ${first}`} /><td data-side={ds} className={CELL} /><td data-side={ds} className={CELL} /></Fragment>);
@@ -204,7 +208,7 @@ function CashBook({
     ["সর্বমোট", totals.totalReceipts, "মোট রিসিট (পূর্বের জমা + আজকের রিসিট)", totals.totalReceipts],
   ];
   return (
-    <table id="cash-book" className="cash-khata hidden w-full table-fixed border-collapse border border-slate-300 text-sm md:table print:table print:border-slate-400 print:text-[10.5px]">
+    <table id="cash-book" className="cash-khata hidden w-full table-fixed border-collapse border border-black text-sm md:table print:table print:border-black">
       {/* fixed widths, the same on both sides: নং narrow, টাকা wide enough for "৳ ১২,৫০,০০০.০০", বিবরণ takes the rest */}
       <colgroup>
         <col className="w-10 print:w-[8mm]" />
@@ -219,7 +223,7 @@ function CashBook({
           <th data-side="pay" colSpan={3} scope="colgroup" className={`${CELL} bg-red-50 py-1.5 text-center font-bold text-red-900 print:bg-white print:text-black`}>খরচ / পেমেন্ট</th>
           <th data-side="receipt" colSpan={3} scope="colgroup" className={`${CELL} ${mid} bg-emerald-50 py-1.5 text-center font-bold text-emerald-900 print:bg-white print:text-black`}>জমা / রিসিট</th>
         </tr>
-        <tr className="bg-slate-50 print:bg-white">
+        <tr className="bg-slate-100 print:bg-slate-100">
           {[0, 1].map((i) => (
             <Fragment key={i}>
               <th data-side={i ? "receipt" : "pay"} scope="col" className={`${CELL} ${i ? mid : ""} text-center font-semibold`}>নং</th>
@@ -240,11 +244,11 @@ function CashBook({
           );
         })}
       </tbody>
-      <tfoot>
+      <tfoot className="total-row report-summary">
         {foot.map(([ll, lv, rl, rv], i) => (
           <tr key={i} className={i === 2 ? "font-bold" : "font-semibold"}>
             <td data-side="pay" colSpan={2} className={`${CELL} text-right ${i === 2 ? top : ""}`}>{ll}</td>
-            <td data-side="pay" className={`${CELL} whitespace-nowrap text-right tabular-nums ${AMOUNT_PRINT} ${i === 1 ? "text-brand-800" : ""} ${i === 2 ? top : ""}`}>{lv === null ? "" : money(lv)}</td>
+            <td data-side="pay" className={`${CELL} whitespace-nowrap text-right tabular-nums ${AMOUNT_PRINT} ${i === 1 ? "text-brand-800 print:text-black" : ""} ${i === 2 ? top : ""}`}>{lv === null ? "" : money(lv)}</td>
             <td data-side="receipt" colSpan={2} className={`${CELL} ${mid} text-right ${i === 2 ? top : ""}`}>{rl || " "}</td>
             <td data-side="receipt" className={`${CELL} whitespace-nowrap text-right tabular-nums ${AMOUNT_PRINT} ${i === 2 ? top : ""}`}>{rv === null ? "" : money(rv)}</td>
           </tr>
@@ -271,16 +275,16 @@ function CashSide({
   const cell = CELL;
   return (
     <section className={`${className} min-w-0`} aria-label={title}>
-      <table className="cash-khata w-full table-fixed border-collapse border border-slate-300 text-sm print:border-slate-400 print:text-[10.5px]">
+      <table className="cash-khata w-full table-fixed border-collapse border border-black text-sm">
         {/* fixed widths: নং narrow, টাকা wide enough for "৳ ১২,৫০,০০০.০০", বিবরণ takes the rest */}
         <colgroup>
           <col className="w-10 print:w-[8mm]" />
           <col />
           <col className="w-32 print:w-[27mm]" />
         </colgroup>
-        <caption className={`border border-b-0 border-slate-300 py-1.5 text-center font-bold print:border-slate-400 ${tone === "green" ? "bg-emerald-50 text-emerald-900" : "bg-red-50 text-red-900"} print:bg-white print:text-black`}>{title}</caption>
+        <caption className={`border border-b-0 border-black py-1.5 text-center font-bold ${tone === "green" ? "bg-emerald-50 text-emerald-900" : "bg-red-50 text-red-900"} print:bg-white print:text-black`}>{title}</caption>
         <thead>
-          <tr className="bg-slate-50 print:bg-white">
+          <tr className="bg-slate-100 print:bg-slate-100">
             <th scope="col" className={`${cell} text-center font-semibold`}>নং</th>
             <th scope="col" className={`${cell} text-left font-semibold`}>বিবরণ</th>
             <th scope="col" className={`${cell} text-right font-semibold`}>টাকা</th>

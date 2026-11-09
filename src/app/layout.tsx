@@ -23,8 +23,8 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const lang = await getLang();
   return (
-    <html lang={lang} className={`${latin.variable} ${bengali.variable}`} data-lang-pending={lang === "en" ? "" : undefined}>
-      <body className="min-h-screen font-sans">
+    <html lang={lang} className={`${latin.variable} ${bengali.variable}`} data-lang-pending={lang === "en" ? "" : undefined} suppressHydrationWarning>
+      <body className="min-h-screen font-sans" suppressHydrationWarning>
         <LangProvider lang={lang}>
           <Toaster>{children}</Toaster>
           <NavWatchdog />

@@ -229,9 +229,15 @@ export const DAILY_CASH_REPORT: ReportDef = {
       { kind: "total", cells: { no: null, voucher: "", particulars: "মোট পেমেন্ট", amount: d.totalPayments } },
       { kind: "total", cells: { no: null, voucher: "", particulars: "অবশিষ্ট ক্যাশ (সমাপনী ব্যালেন্স)", amount: d.closing } },
     ];
+    const selectedAccountName =
+      d.scope === "cash-bank"
+        ? "সকল নগদ ও ব্যাংক হিসাব"
+        : d.scope === "cash"
+        ? "নগদ ক্যাশ"
+        : d.scopeLabel;
     return {
       title: "ডেইলী জমা-খরচ হিসাব",
-      subtitle: `${formatDate(d.date)} — ${d.scopeLabel}`,
+      subtitle: `${formatDate(d.date)} — ${selectedAccountName}`,
       columns: [{ key: "no", label: "নং" }, { key: "voucher", label: "ভাউচার" }, { key: "particulars", label: "বিবরণ" }, { key: "amount", label: "টাকা", format: "money" }],
       rows,
       summary: [

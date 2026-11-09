@@ -14,11 +14,103 @@ import { UserError } from "@/lib/errors";
 import { RICE_MILL_TEMPLATE } from "@/lib/production";
 import { round2, round3, round4 } from "@/lib/calc";
 import type { ProductionInput, RecipeInput } from "@/lib/validation";
-import { assertAccounts, assertNotLocked, nextVoucherNo, type Ctx } from "./accounting";
+import { assertAccounts, assertNotLocked, nextVoucherNo, type Ctx, type Tx } from "./accounting";
 import { allocateSaleBatches, ensureInboundBatch } from "./batches";
 import { assertBookProducts, defaultWarehouseId, lockProducts, writeMovements, type MovementInput } from "./inventory";
 import { recostProduction, repostVoucher, revalueProducts } from "./posting";
 import { assertWarehouse, clearPostings, loadEditable, TX_OPTIONS } from "./voucher";
+
+// ───────────────────────── packaging bag auto-consumption ─────────────────────────
+
+async function resolvePackagingBagsForOutputs(
+  tx: Tx,
+  businessId: string,
+  inputs: ProductionInput["inputs"],
+  outputs: ProductionInput["outputs"],
+) {
+  const outputIds = outputs.map((l) => l.productId);
+  const outputProducts = await tx.product.findMany({
+    where: { id: { in: outputIds }, businessId },
+    include: { unit: true },
+  });
+  const outputMap = new Map(outputProducts.map((p) => [p.id, p]));
+
+  const bagItems = await tx.packagingBagItem.findMany({
+    where: { businessId },
+    include: { product: true },
+  });
+  if (bagItems.length === 0) return inputs;
+
+  const bag50 = bagItems.find((b) => b.bagType === "BAG_50KG" || Number(b.capacityKg) === 50) ?? bagItems[0];
+  const bag25 = bagItems.find((b) => b.bagType === "BAG_25KG" || Number(b.capacityKg) === 25) ?? bag50;
+  const bag10 = bagItems.find((b) => b.bagType === "BAG_10KG" || Number(b.capacityKg) === 10);
+  const bag5 = bagItems.find((b) => b.bagType === "BAG_5KG" || Number(b.capacityKg) === 5);
+
+  const existingInputProductIds = new Set(inputs.map((i) => i.productId));
+  const bagNeeds = new Map<string, number>();
+
+  for (const out of outputs) {
+    const prod = outputMap.get(out.productId);
+    if (!prod) continue;
+
+    let targetBagProductId: string | null = prod.packagingBagId ?? null;
+    let capacity = Number(prod.bagCapacityKg) || 0;
+
+    if (!targetBagProductId) {
+      const name = prod.name.toLowerCase();
+      const isRice =
+        (name.includes("চাল") || name.includes("rice")) &&
+        !name.includes("খুদ") &&
+        !name.includes("কুঁড়া") &&
+        !name.includes("তুষ");
+      const isExplicitBagProduct = prod.bagCapacityKg !== null;
+
+      if (isRice || isExplicitBagProduct) {
+        if (capacity > 0) {
+          if (capacity === 25) targetBagProductId = bag25.productId;
+          else if (capacity === 10) targetBagProductId = bag10?.productId ?? bag50.productId;
+          else if (capacity === 5) targetBagProductId = bag5?.productId ?? bag50.productId;
+          else targetBagProductId = bag50.productId;
+        } else if (name.includes("৫০") || name.includes("50")) {
+          targetBagProductId = bag50.productId;
+          capacity = 50;
+        } else if (name.includes("২৫") || name.includes("25")) {
+          targetBagProductId = bag25.productId;
+          capacity = 25;
+        } else if (name.includes("১০") || name.includes("10")) {
+          targetBagProductId = bag10?.productId ?? bag50.productId;
+          capacity = 10;
+        } else if (/\b5\b|৫\s*কেজি/.test(name)) {
+          targetBagProductId = bag5?.productId ?? bag50.productId;
+          capacity = 5;
+        } else {
+          targetBagProductId = bag50.productId;
+          capacity = Number(bag50.capacityKg) || 50;
+        }
+      }
+    }
+
+    if (!targetBagProductId) continue;
+    if (existingInputProductIds.has(targetBagProductId)) continue;
+
+    if (capacity <= 0) capacity = 50;
+    const unitName = prod.unit?.name ?? "";
+    const isBagUnit = unitName.includes("বস্তা") || unitName.includes("ব্যাগ") || unitName.toLowerCase().includes("bag");
+    const bagsCount = isBagUnit ? Math.ceil(out.quantity) : Math.ceil(out.quantity / capacity);
+
+    if (bagsCount > 0) {
+      bagNeeds.set(targetBagProductId, (bagNeeds.get(targetBagProductId) ?? 0) + bagsCount);
+    }
+  }
+
+  if (bagNeeds.size === 0) return inputs;
+
+  const newInputs = [...inputs];
+  for (const [productId, quantity] of bagNeeds.entries()) {
+    newInputs.push({ productId, quantity, batchNo: null });
+  }
+  return newInputs;
+}
 
 // ───────────────────────── recipes ─────────────────────────
 
@@ -116,7 +208,8 @@ export async function saveProduction(ctx: Ctx, input: ProductionInput, editId?: 
     await assertWarehouse(tx, ctx.businessId, warehouseId);
 
     const removed = existing ? await clearPostings(tx, existing.id) : [];
-    const inputIds = input.inputs.map((l) => l.productId);
+    const effectiveInputs = await resolvePackagingBagsForOutputs(tx, ctx.businessId, input.inputs, input.outputs);
+    const inputIds = effectiveInputs.map((l) => l.productId);
     const outputIds = input.outputs.map((l) => l.productId);
     await assertBookProducts(tx, ctx.businessId, "GENERAL", [...inputIds, ...outputIds], removed);
     await lockProducts(tx, [...inputIds, ...outputIds, ...removed]);
@@ -135,7 +228,7 @@ export async function saveProduction(ctx: Ctx, input: ProductionInput, editId?: 
     const items: Prisma.VoucherItemCreateManyInput[] = [];
     const moves: MovementInput[] = [];
     const used = new Map<string, number>();
-    for (const [i, l] of input.inputs.entries()) {
+    for (const [i, l] of effectiveInputs.entries()) {
       const p = products.get(l.productId)!;
       const itemId = randomUUID();
       const allocs = p.trackBatch
@@ -151,7 +244,7 @@ export async function saveProduction(ctx: Ctx, input: ProductionInput, editId?: 
       const batch = p.trackBatch
         ? await ensureInboundBatch(tx, ctx.businessId, { productId: p.id, productName: p.name, batchNo: l.batchNo || voucher.voucherNo, expiryDate: l.expiryDate, mfgDate: input.date, date: input.date, unitCost: 0, salePrice: Number(p.salePrice) })
         : null;
-      items.push({ id: itemId, voucherId: voucher.id, productId: p.id, warehouseId, unitId: p.unitId, quantity: l.quantity, baseQuantity: l.quantity, rate: 0, amount: 0, direction: 1, costShare: l.costShare, batchId: batch?.id ?? null, batchNo: batch?.batchNo ?? null, expiryDate: batch?.expiryDate ?? null, lineNo: input.inputs.length + i });
+      items.push({ id: itemId, voucherId: voucher.id, productId: p.id, warehouseId, unitId: p.unitId, quantity: l.quantity, baseQuantity: l.quantity, rate: 0, amount: 0, direction: 1, costShare: l.costShare, batchId: batch?.id ?? null, batchNo: batch?.batchNo ?? null, expiryDate: batch?.expiryDate ?? null, lineNo: effectiveInputs.length + i });
       moves.push({ productId: p.id, warehouseId, voucherItemId: itemId, type: "PRODUCTION_IN", quantityIn: l.quantity, unitCost: 0, batchId: batch?.id ?? null, batchNo: batch?.batchNo ?? null, expiryDate: batch?.expiryDate ?? null });
     }
     await tx.voucherItem.createMany({ data: items });

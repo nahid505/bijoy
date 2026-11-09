@@ -161,6 +161,7 @@ export async function VoucherEditor({
       defaults = {
         date, dateLocked, reference: existing.reference ?? "", narration: existing.narration ?? "", partyAccountId: existing.partyAccountId ?? "", warehouseId: existing.warehouseId ?? "",
         discount: num(existing.discount), vatPercent: num(existing.vatPercent), dueDate: existing.dueDate ? toDateInput(existing.dueDate) : "",
+        destination: existing.destination ?? "", vehicleNo: existing.vehicleNo ?? "", driverName: existing.driverName ?? "", driverMobile: existing.driverMobile ?? "", transportFare: existing.transportFare ? num(existing.transportFare) : 0,
         returnOfId: existing.returnOfId ?? "", returnOfNo: existing.returnOf?.voucherNo ?? "",
         payments: existing.payments.map((p) => ({ accountId: p.accountId, amount: num(p.amount), reference: p.reference ?? "" })),
         items: existing.items.map((i) => ({ productId: i.productId, unitId: i.unitId ?? "", quantity: num(i.quantity), freeQuantity: num(i.freeQuantity), rate: num(i.rate), discount: num(i.discount), batchNo: i.batchNo ?? "", expiryDate: i.expiryDate ? toDateInput(i.expiryDate) : "", mfgDate: i.batch?.mfgDate ? toDateInput(i.batch.mfgDate) : "" })),
@@ -194,17 +195,21 @@ export async function VoucherEditor({
         .filter((i) => i.quantity > 0);
       defaults = {
         date, dateLocked, reference: original?.voucherNo ?? "", narration: original ? `${original.voucherNo} এর বিপরীতে ফেরত` : "", partyAccountId: original?.partyAccountId ?? "",
-        warehouseId: original?.warehouseId ?? "", discount: 0, vatPercent: 0, dueDate: "", returnOfId: original?.id ?? "", returnOfNo: original?.voucherNo ?? "", payments: [], items,
+        warehouseId: original?.warehouseId ?? "", discount: 0, vatPercent: 0, dueDate: "", returnOfId: original?.id ?? "", returnOfNo: original?.voucherNo ?? "",
+        destination: original?.destination ?? "", vehicleNo: original?.vehicleNo ?? "", driverName: original?.driverName ?? "", driverMobile: original?.driverMobile ?? "", transportFare: 0,
+        payments: [], items,
       };
     } else {
       defaults = {
         date, dateLocked, reference: "", narration: "", partyAccountId: partyAccountId ?? "",
-        warehouseId: "", discount: 0, vatPercent: type === "SALES" ? ctx.business.defaultVatPercent : 0, dueDate: "", returnOfId: "", returnOfNo: "", payments: [], items: [],
+        warehouseId: "", discount: 0, vatPercent: type === "SALES" ? ctx.business.defaultVatPercent : 0, dueDate: "", returnOfId: "", returnOfNo: "",
+        destination: "", vehicleNo: "", driverName: "", driverMobile: "", transportFare: 0,
+        payments: [], items: [],
       };
     }
     const isDepotStockIn = depot && type === "PURCHASE";
     // only the party and products already on the voucher are sent; the pickers search the rest
-    const [parties, cashAccounts, inv] = await Promise.all([
+    const [parties, cashAccounts, inv, companyVehicles] = await Promise.all([
       defaults.partyAccountId
         ? searchParties(businessId, "ALL", "", {
             accountIds: [defaults.partyAccountId],
@@ -216,6 +221,11 @@ export async function VoucherEditor({
         : Promise.resolve([]),
       accountOptions(businessId, { kind: { in: ["CASH", "BANK"] }, ...accountScopeWhere(ctx) }, true, false, book),
       inventoryOptions(businessId, isDepotStockIn ? { book, includeProductIds: defaults.items.map((i) => i.productId) } : { productIds: defaults.items.map((i) => i.productId) }),
+      prisma.companyVehicle.findMany({
+        where: { businessId, isActive: true },
+        select: { id: true, vehicleNo: true, driverName: true, driverMobile: true },
+        orderBy: { vehicleNo: "asc" },
+      }),
     ]);
     if (defaults.partyAccountId && parties.length === 0) defaults = { ...defaults, partyAccountId: "" }; // ?party= of another business / kind
     return (
@@ -233,6 +243,7 @@ export async function VoucherEditor({
         book={pickerBook}
         categories={inv.categories}
         productGrid={isDepotStockIn}
+        companyVehicles={companyVehicles}
       />
     );
   }

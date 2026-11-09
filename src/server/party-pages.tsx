@@ -4,7 +4,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma, num } from "@/lib/db";
 import { round2 } from "@/lib/calc";
-import { formatDate, formatDrCr, formatMoney, toDateInput } from "@/lib/format";
+import { formatDate, formatDrCr, formatMoney, toBnDigits, toDateInput } from "@/lib/format";
 import { ActionButton, PrintButton } from "@/components/forms";
 import { LedgerAvatar } from "@/components/ledger-avatar";
 import { PartyForm } from "@/components/party-form";
@@ -26,6 +26,9 @@ import { canSeeParty, partyListWhere } from "./party-scope";
 import type { AppContext } from "./auth";
 import { digitVariants, toAsciiDigits } from "@/lib/digits";
 import { getT } from "./i18n";
+import { getSupplierBagBalance } from "./services/bag-tracking";
+import { businessModules } from "@/lib/business-types";
+import { RICE_MILL_ACCESS } from "@/lib/rice-mill";
 
 export type PartyKind = "CUSTOMER" | "SUPPLIER";
 /** DEALER = a depot dealer (Customer.isDepotDealer): own list / profile under the depot menu, DEPOT book */
@@ -251,6 +254,8 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
   const isCustomer = pageKind === "CUSTOMER";
   const isSupplier = pageKind === "SUPPLIER";
   const isDealer = pageKind === "DEALER";
+  const isRiceMill = businessModules(ctx.business.businessTypes).has("RICE_MILL");
+  const bagBal = isSupplier ? await getSupplierBagBalance(ctx.business.id, party.id) : null;
   const dueFormatted = due >= 0 ? formatMoney(due, cur) : `${formatMoney(-due, cur)} ${t("অগ্রিম")}`;
   const dueLabel = `${t(isCustomer ? "বর্তমান বাকি" : isSupplier ? "বর্তমান দেনা" : cfg.balanceLabel)}:`;
 
@@ -265,6 +270,13 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
       </span>
     </span>
   );
+  if (bagBal && (isRiceMill || bagBal.receivedTotalBags > 0 || bagBal.returnedTotalBags > 0)) {
+    subItems.push(
+      <span key="bags" className="inline-flex items-center gap-1 font-semibold text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-300">
+        📦 {t("অবশিষ্ট বস্তা পাওনা")}: <span className="tabular-nums">চট [{toBnDigits(bagBal.dueJuteBags)}] টি, প্লাস্টিক [{toBnDigits(bagBal.duePlasticBags)}] টি</span>
+      </span>
+    );
+  }
   if (!party.isActive) {
     subItems.push(<Badge key="status" tone="red">{t("নিষ্ক্রিয়")}</Badge>);
   }
@@ -282,6 +294,61 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
 
   const profile = (
     <>
+      {isSupplier && bagBal && (isRiceMill || bagBal.receivedTotalBags > 0 || bagBal.returnedTotalBags > 0) && (
+        <section className="panel mb-2 sm:mb-3 p-3 sm:p-4 border-2 border-amber-300 bg-amber-50/60 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-base sm:text-lg">📦</span>
+                <h3 className="text-xs sm:text-sm font-bold text-amber-950">
+                  {t("খালি বস্তা লেজার হিসাব (অটো রাইস মিল)")}
+                </h3>
+              </div>
+              <p className="text-[11px] sm:text-xs text-amber-800 mt-0.5">
+                {t("ধান ক্রয়ের সময় গৃহীত খালি বস্তা ও মিল কর্তৃক ফেরত প্রদানের চলমান স্থিতি")}
+              </p>
+            </div>
+            {can(ctx, ["auto_rice_mill:bag_return:create", ...RICE_MILL_ACCESS.paddyCreate]) && (
+              <Link
+                prefetch={false}
+                href={`/auto-rice-mill/bag-returns/new?supplierId=${party.id}`}
+                className="btn-primary text-xs py-1 px-2.5 sm:py-1.5 sm:px-3 flex items-center gap-1 shrink-0 font-medium"
+              >
+                <span>+</span>
+                <span>{t("বস্তা ফেরত দিন")}</span>
+              </Link>
+            )}
+          </div>
+          <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5">
+            <div className="rounded bg-white p-2 sm:p-2.5 border border-amber-200">
+              <span className="text-[10px] sm:text-[11px] text-slate-500 block leading-tight">{t("মোট গৃহীত বস্তা")}</span>
+              <span className="text-sm sm:text-base font-bold text-ink-900 tabular-nums">
+                {toBnDigits(bagBal.receivedTotalBags)} <span className="text-xs font-normal text-slate-500">টি</span>
+              </span>
+              <span className="text-[10px] text-slate-400 block truncate">চট: {toBnDigits(bagBal.receivedJuteBags)}, প্লা: {toBnDigits(bagBal.receivedPlasticBags)}</span>
+            </div>
+            <div className="rounded bg-white p-2 sm:p-2.5 border border-amber-200">
+              <span className="text-[10px] sm:text-[11px] text-slate-500 block leading-tight">{t("মোট ফেরত প্রদান")}</span>
+              <span className="text-sm sm:text-base font-bold text-emerald-800 tabular-nums">
+                {toBnDigits(bagBal.returnedTotalBags)} <span className="text-xs font-normal text-slate-500">টি</span>
+              </span>
+              <span className="text-[10px] text-slate-400 block truncate">চট: {toBnDigits(bagBal.returnedJuteBags)}, প্লা: {toBnDigits(bagBal.returnedPlasticBags)}</span>
+            </div>
+            <div className="rounded bg-amber-100/70 p-2 sm:p-2.5 border border-amber-300">
+              <span className="text-[10px] sm:text-[11px] font-semibold text-amber-900 block leading-tight">{t("অবশিষ্ট চটের বস্তা পাওনা")}</span>
+              <span className="text-base sm:text-lg font-black text-amber-950 tabular-nums">
+                {toBnDigits(bagBal.dueJuteBags)} <span className="text-xs font-normal text-amber-900">টি</span>
+              </span>
+            </div>
+            <div className="rounded bg-blue-50 p-2 sm:p-2.5 border border-blue-200">
+              <span className="text-[10px] sm:text-[11px] font-semibold text-blue-900 block leading-tight">{t("অবশিষ্ট প্লাস্টিক বস্তা পাওনা")}</span>
+              <span className="text-base sm:text-lg font-black text-blue-950 tabular-nums">
+                {toBnDigits(bagBal.duePlasticBags)} <span className="text-xs font-normal text-blue-900">টি</span>
+              </span>
+            </div>
+          </div>
+        </section>
+      )}
       {isDealer && (
         <section className="panel mb-2 sm:mb-3">
           <div className="grid gap-0 lg:grid-cols-4">

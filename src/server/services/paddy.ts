@@ -80,6 +80,11 @@ export async function savePaddyPurchase(ctx: Ctx, input: PaddyPurchaseInput, edi
       dueDate: null,
       discount: 0,
       vatPercent: 0,
+      destination: input.destination,
+      vehicleNo: input.vehicleNo,
+      driverName: input.driverName,
+      driverMobile: input.driverMobile,
+      transportFare: input.transportFare,
       // with a supplier: what was paid now (the rest is owed to the supplier); cash purchase: paid in full
       payments: !input.cashAccountId ? []
         : input.partyAccountId ? (input.paidAmount > 0 ? [{ accountId: input.cashAccountId, amount: input.paidAmount, reference: null }] : [])
@@ -87,8 +92,10 @@ export async function savePaddyPurchase(ctx: Ctx, input: PaddyPurchaseInput, edi
       items: [{ productId: product.id, unitId: unit.id, quantity: f.mon, rate: input.ratePerMon, discount: 0, batchNo: input.batchNo, expiryDate: null, mfgDate: null, baseQuantity: f.netKg }],
     }, editId);
 
+    const totalBags = input.totalBags || (input.juteBagQty + input.plasticBagQty) || input.bagCount;
     const data = {
-      bagCount: input.bagCount, grossKg, dhaltaKg: input.dhaltaKg, netKg: f.netKg, mon: f.mon, ratePerMon: input.ratePerMon, totalPrice: f.totalPrice, notes: input.notes,
+      bagCount: totalBags, juteBagQty: input.juteBagQty ?? 0, plasticBagQty: input.plasticBagQty ?? 0, totalBags,
+      grossKg, dhaltaKg: input.dhaltaKg, netKg: f.netKg, mon: f.mon, ratePerMon: input.ratePerMon, totalPrice: f.totalPrice, notes: input.notes,
       variety: input.variety, moisturePct: input.moisturePct, vehicleGrossKg: input.vehicleGrossKg, vehicleTareKg: input.vehicleTareKg, labourCost: input.labourCost,
     };
     await tx.paddyPurchase.upsert({ where: { voucherId: voucher.id }, create: { ...data, voucherId: voucher.id, businessId: ctx.businessId }, update: data });
@@ -103,7 +110,14 @@ export async function loadPaddyPurchase(businessId: string, voucherId: string) {
     include: {
       voucher: {
         include: {
-          partyAccount: { select: { id: true, name: true } },
+          partyAccount: {
+            select: {
+              id: true,
+              name: true,
+              supplier: { select: { address: true } },
+              customer: { select: { address: true } },
+            },
+          },
           payments: { include: { account: { select: { id: true, name: true } } } },
           items: { include: { product: { select: { id: true, name: true, code: true, barcode: true, unitId: true, salePrice: true, wholesalePrice: true, purchasePrice: true, avgCost: true, stock: true, trackBatch: true } } } },
         },
@@ -121,9 +135,9 @@ export async function listPaddyPurchases(businessId: string, opts: { from?: Date
   const [rows, total, sums] = await Promise.all([
     prisma.paddyPurchase.findMany({ where, orderBy: [{ voucher: { date: "desc" } }, { createdAt: "desc" }], skip: opts.skip, take: opts.take, include: { voucher: { select: { id: true, voucherNo: true, date: true, paidAmount: true, partyAccount: { select: { name: true } } } } } }),
     prisma.paddyPurchase.count({ where }),
-    prisma.paddyPurchase.aggregate({ where, _sum: { bagCount: true, netKg: true, mon: true, totalPrice: true } }),
+    prisma.paddyPurchase.aggregate({ where, _sum: { bagCount: true, juteBagQty: true, plasticBagQty: true, totalBags: true, netKg: true, mon: true, totalPrice: true } }),
   ]);
-  return { rows, total, sums: { bags: sums._sum.bagCount ?? 0, netKg: num(sums._sum.netKg), mon: num(sums._sum.mon), total: num(sums._sum.totalPrice) } };
+  return { rows, total, sums: { bags: sums._sum.totalBags ?? sums._sum.bagCount ?? 0, netKg: num(sums._sum.netKg), mon: num(sums._sum.mon), total: num(sums._sum.totalPrice) } };
 }
 
 /** Default paddy product (named "ধান") for the form, if the business has one. */

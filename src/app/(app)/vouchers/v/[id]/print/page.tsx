@@ -150,6 +150,20 @@ export default async function VoucherPrintPage({
                 {party?.mobile && <p>{t("মোবাইল")}: {party.mobile}</p>}
               </>
             )}
+            {(v.vehicleNo || v.driverName || v.destination || (v.transportFare && Number(v.transportFare) > 0)) && (
+              <div className="border-t border-dashed border-black pt-1 mt-1 text-[9px] text-slate-800">
+                <p>
+                  {[
+                    v.vehicleNo && `গাড়ির নম্বর: ${v.vehicleNo}`,
+                    v.driverName && `ড্রাইভার: ${v.driverName}${v.driverMobile ? ` (${v.driverMobile})` : ""}`,
+                    v.destination && `গন্তব্য: ${v.destination}`,
+                    v.transportFare && Number(v.transportFare) > 0 && `পরিবহন ভাড়া: ${formatMoney(num(v.transportFare), cur)}`,
+                  ]
+                    .filter(Boolean)
+                    .join(" | ")}
+                </p>
+              </div>
+            )}
           </div>
 
           <table className="my-1.5 w-full border-collapse text-[10px]">
@@ -329,6 +343,28 @@ export default async function VoucherPrintPage({
                   </span>
                 </div>
               )}
+            </div>
+          </section>
+        )}
+
+        {/* Logistics / Transport Details */}
+        {(v.vehicleNo || v.driverName || v.destination || (v.transportFare && Number(v.transportFare) > 0)) && (
+          <section className="my-2.5 rounded border border-slate-300 bg-slate-50/80 px-3 py-2 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-slate-800">
+              <span className="font-semibold text-brand-900 flex items-center gap-1">
+                <span>🚚</span>
+                <span>{t("পরিবহন ও লজিস্টিকস:")}</span>
+              </span>
+              <p className="font-medium">
+                {[
+                  v.vehicleNo && `${t("গাড়ির নম্বর")}: ${v.vehicleNo}`,
+                  v.driverName && `${t("ড্রাইভার")}: ${v.driverName}${v.driverMobile ? ` (${v.driverMobile})` : ""}`,
+                  v.destination && `${t("গন্তব্য")}: ${v.destination}`,
+                  v.transportFare && Number(v.transportFare) > 0 && `${t("পরিবহন ভাড়া")}: ${formatMoney(num(v.transportFare), cur)}`,
+                ]
+                  .filter(Boolean)
+                  .join(" | ")}
+              </p>
             </div>
           </section>
         )}

@@ -259,6 +259,11 @@ export const tradeVoucherSchema = z.object({
   dueDate: optionalDate,
   discount: money.default(0),
   vatPercent: z.coerce.number().min(0).max(100).default(0),
+  destination: optionalText(300).optional(),
+  vehicleNo: optionalText(60).optional(),
+  driverName: optionalText(100).optional(),
+  driverMobile: optionalText(30).optional(),
+  transportFare: money.default(0).optional(),
   payments: z
     .array(z.object({ accountId: z.string().min(1, "নগদ/ব্যাংক হিসাব নির্বাচন করুন"), amount: positiveMoney, reference: optionalText(100) }))
     .max(10)
@@ -423,6 +428,9 @@ export const paddyPurchaseSchema = z
     warehouseId: optionalId,
     batchNo: optionalText(60),
     bagCount: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).int("বস্তার সংখ্যা পূর্ণসংখ্যা হবে").min(0, "ঋণাত্মক হতে পারবে না").max(1_000_000).default(0),
+    juteBagQty: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).int("চটের বস্তার সংখ্যা পূর্ণসংখ্যা হবে").min(0, "ঋণাত্মক হতে পারবে না").max(1_000_000).default(0),
+    plasticBagQty: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).int("প্লাস্টিক বস্তার সংখ্যা পূর্ণসংখ্যা হবে").min(0, "ঋণাত্মক হতে পারবে না").max(1_000_000).default(0),
+    totalBags: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).int("মোট বস্তার সংখ্যা পূর্ণসংখ্যা হবে").min(0, "ঋণাত্মক হতে পারবে না").max(2_000_000).default(0),
     // typed directly, or (weighbridge) loaded − empty vehicle — see the transform below
     grossKg: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).min(0, "ঋণাত্মক হতে পারবে না").max(100_000_000, "ওজন খুব বড়").default(0),
     dhaltaKg: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).min(0, "ঋণাত্মক হতে পারবে না").max(100_000_000).default(0),
@@ -436,6 +444,12 @@ export const paddyPurchaseSchema = z
     vehicleGrossKg: z.preprocess((v) => (v === "" || v === null || v === undefined || v === 0 || v === "0" ? null : v), z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).positive().max(100_000_000).nullable()).default(null),
     vehicleTareKg: z.preprocess((v) => (v === "" || v === null || v === undefined || v === 0 || v === "0" ? null : v), z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).positive().max(100_000_000).nullable()).default(null),
     labourCost: money.default(0),
+    // logistics & driver tracking
+    destination: optionalText(300).optional(),
+    vehicleNo: optionalText(60).optional(),
+    driverName: optionalText(100).optional(),
+    driverMobile: optionalText(30).optional(),
+    transportFare: money.default(0).optional(),
   })
   .superRefine((v, ctx) => {
     if ((v.vehicleGrossKg === null) !== (v.vehicleTareKg === null)) ctx.addIssue({ code: "custom", path: [v.vehicleGrossKg === null ? "vehicleGrossKg" : "vehicleTareKg"], message: "গাড়িসহ ও খালি গাড়ির — দুটো ওজনই দিন (অথবা কোনোটিই নয়)" });
@@ -447,8 +461,37 @@ export const paddyPurchaseSchema = z
     if (v.paidAmount > 0 && !v.cashAccountId) ctx.addIssue({ code: "custom", path: ["cashAccountId"], message: "পরিশোধের নগদ/ব্যাংক হিসাব নির্বাচন করুন" });
     if (!v.partyAccountId && !v.cashAccountId) ctx.addIssue({ code: "custom", path: ["cashAccountId"], message: "সরবরাহকারী ছাড়া নগদ ক্রয়ে নগদ/ব্যাংক হিসাব নির্বাচন করুন" });
   })
-  .transform((v) => ({ ...v, grossKg: weighbridgeGross(v.vehicleGrossKg, v.vehicleTareKg) ?? v.grossKg }));
+  .transform((v) => {
+    const sumBags = v.juteBagQty + v.plasticBagQty;
+    const totalBags = sumBags > 0 ? sumBags : (v.totalBags || v.bagCount || 0);
+    const bagCount = totalBags;
+    return {
+      ...v,
+      juteBagQty: v.juteBagQty,
+      plasticBagQty: v.plasticBagQty,
+      totalBags,
+      bagCount,
+      grossKg: weighbridgeGross(v.vehicleGrossKg, v.vehicleTareKg) ?? v.grossKg,
+    };
+  });
 export type PaddyPurchaseInput = z.infer<typeof paddyPurchaseSchema>;
+
+export const bagReturnSchema = z
+  .object({
+    date: z.string().min(1, "তারিখ দিন"),
+    supplierId: z.string().min(1, "সরবরাহকারী নির্বাচন করুন"),
+    returnedJuteBags: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).int("চটের বস্তা পূর্ণসংখ্যা হবে").min(0, "ঋণাত্মক হতে পারবে না").default(0),
+    returnedPlasticBags: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).int("প্লাস্টিক বস্তা পূর্ণসংখ্যা হবে").min(0, "ঋণাত্মক হতে পারবে না").default(0),
+    driverName: optionalText(100),
+    vehicleNo: optionalText(60),
+    note: optionalText(500),
+  })
+  .superRefine((v, ctx) => {
+    if (v.returnedJuteBags + v.returnedPlasticBags <= 0) {
+      ctx.addIssue({ code: "custom", path: ["returnedJuteBags"], message: "কমপক্ষে ১টি চটের বা প্লাস্টিক বস্তা ফেরত সংখ্যা দিন" });
+    }
+  });
+export type BagReturnInput = z.infer<typeof bagReturnSchema>;
 
 // ───────────────────────── production (BOM) ─────────────────────────
 
@@ -753,6 +796,31 @@ export const advanceSchema = z
   .refine((v) => v.installment <= v.amount, { path: ["installment"], message: "কিস্তি মোট টাকার বেশি হতে পারে না" });
 
 export const departmentSchema = z.object({ name: requiredText("বিভাগের নাম", 80) });
+
+// ───────────────────────── packaging bag (খালি চালের বস্তা) ─────────────────────────
+
+export const packagingBagItemSchema = z.object({
+  name: z.string().trim().min(1, "বস্তার নাম দিন"),
+  code: optionalText(60),
+  bagType: z.enum(["BAG_50KG", "BAG_25KG", "BAG_10KG", "BAG_5KG", "OTHER"]).default("BAG_50KG"),
+  capacityKg: z.coerce.number().positive("ধারণক্ষমতা দিন").default(50),
+  material: optionalText(100),
+  brandName: optionalText(100),
+  purchasePrice: z.coerce.number().min(0).default(0),
+  openingStock: z.coerce.number().min(0).default(0),
+  warehouseId: z.string().optional().nullable(),
+});
+export type PackagingBagItemInput = z.infer<typeof packagingBagItemSchema>;
+
+export const packagingBagWastageSchema = z.object({
+  bagItemId: z.string().min(1, "বস্তা নির্বাচন করুন"),
+  warehouseId: z.string().min(1, "গুদাম নির্বাচন করুন"),
+  date: dateField,
+  quantity: z.coerce.number().int().positive("নষ্ট বস্তার সংখ্যা কমপক্ষে ১ হতে হবে"),
+  reason: optionalText(200),
+  notes: optionalText(500),
+});
+export type PackagingBagWastageInput = z.infer<typeof packagingBagWastageSchema>;
 
 /** Flatten zod errors into { "path.to.field": [messages] } for forms. */
 export function fieldErrors(error: z.ZodError): Record<string, string[]> {

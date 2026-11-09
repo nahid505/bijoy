@@ -58,6 +58,13 @@ function Footer({ cancelHref, label, disabled, extra }: { cancelHref: string; la
 
 // ───────────────────────── trade: sales / purchase / returns ─────────────────────────
 
+export interface CompanyVehicleOption {
+  id: string;
+  vehicleNo: string;
+  driverName: string | null;
+  driverMobile: string | null;
+}
+
 export interface TradeDefaults {
   date: string;
   /** no transaction:change_date permission: the date is fixed */
@@ -69,6 +76,11 @@ export interface TradeDefaults {
   discount: number;
   vatPercent: number;
   dueDate: string;
+  destination?: string;
+  vehicleNo?: string;
+  driverName?: string;
+  driverMobile?: string;
+  transportFare?: number;
   returnOfId: string;
   returnOfNo: string;
   payments: { accountId: string; amount: number; reference: string }[];
@@ -106,6 +118,7 @@ export function TradeVoucherForm({
   showFree = false,
   book,
   productGrid = false,
+  companyVehicles = [],
 }: {
   kind: "SALES" | "PURCHASE" | "SALES_RETURN" | "PURCHASE_RETURN";
   action: FormAction;
@@ -126,6 +139,7 @@ export function TradeVoucherForm({
   book?: "depot";
   /** POS / Dealer challan style product cards grid and cart table */
   productGrid?: boolean;
+  companyVehicles?: CompanyVehicleOption[];
 }) {
   const isSale = kind === "SALES" || kind === "SALES_RETURN";
   const outgoing = kind === "SALES" || kind === "PURCHASE_RETURN";
@@ -145,6 +159,30 @@ export function TradeVoucherForm({
   const [discount, setDiscount] = useState(String(defaults.discount));
   const [vat, setVat] = useState(String(defaults.vatPercent));
   const [dueDate, setDueDate] = useState(defaults.dueDate);
+  const [destination, setDestination] = useState(defaults.destination ?? "");
+  const [vehicleNo, setVehicleNo] = useState(defaults.vehicleNo ?? "");
+  const [driverName, setDriverName] = useState(defaults.driverName ?? "");
+  const [driverMobile, setDriverMobile] = useState(defaults.driverMobile ?? "");
+  const [transportFare, setTransportFare] = useState(defaults.transportFare ? String(defaults.transportFare) : "");
+
+  const handlePartyChange = (p: PartyOption | null) => {
+    setParty(p);
+    if (p?.address) {
+      setDestination(p.address);
+    }
+  };
+
+  const handleVehicleChange = (val: string) => {
+    setVehicleNo(val);
+    const matched = companyVehicles?.find(
+      (v) => v.vehicleNo.toLowerCase() === val.trim().toLowerCase()
+    );
+    if (matched) {
+      if (matched.driverName) setDriverName(matched.driverName);
+      if (matched.driverMobile) setDriverMobile(matched.driverMobile);
+    }
+  };
+
   const [payments, setPayments] = useState<PaymentRow[]>(defaults.payments.map((p) => ({ key: nextKey(), accountId: p.accountId, amount: String(p.amount), reference: p.reference })));
   const [priceMode, setPriceMode] = useState<"retail" | "wholesale">("retail");
   const [lines, setLines] = useState<TradeLine[]>(
@@ -262,6 +300,11 @@ export function TradeVoucherForm({
     date, reference, narration, partyAccountId: partyId || null, warehouseId,
     returnOfId: defaults.returnOfId || null, dueDate: dueDate || null,
     discount: Number(discount) || 0, vatPercent: kind === "SALES" ? Number(vat) || 0 : 0,
+    destination: destination || null,
+    vehicleNo: vehicleNo || null,
+    driverName: driverName || null,
+    driverMobile: driverMobile || null,
+    transportFare: Number(transportFare) || 0,
     payments: pay,
     items: lines.filter((l) => l.productId).map((l) => ({
       productId: l.productId, unitId: l.unitId || null, quantity: Number(l.quantity) || 0, ...(showFree ? { freeQuantity: Number(l.freeQuantity) || 0 } : {}), rate: Number(l.rate) || 0, discount: Number(l.discount) || 0,
@@ -288,7 +331,7 @@ export function TradeVoucherForm({
             book={book}
             id="v-party"
             value={party}
-            onChange={setParty}
+            onChange={handlePartyChange}
             noneLabel={t(isSale ? "নগদ কাস্টমার (ওয়াক-ইন)" : "নগদ ক্রয় (সরবরাহকারী ছাড়া)")}
             disabled={lockedToInvoice}
             create={lockedToInvoice ? false : {}}
@@ -312,6 +355,101 @@ export function TradeVoucherForm({
             <input id="v-due" type="date" className="input" value={dueDate} onChange={(e) => setDueDate(e.target.value)} title={t("ফাঁকা থাকলে পার্টির ক্রেডিট দিন অনুযায়ী")} />
           </div>
         )}
+      </section>
+
+      {/* পরিবহন ও লজিস্টিকস ট্র্যাকিং (Transport & Logistics) */}
+      <section className="panel p-3.5 bg-slate-50/60 border border-slate-200">
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+            <span>🚚</span>
+            <span>{t("পরিবহন ও ড্রাইভার ট্রিপ ট্র্যাকিং (লজিস্টিকস)")}</span>
+          </h3>
+          <span className="text-[11px] text-slate-500">
+            {t("গাড়ির নম্বর ও ড্রাইভার দিলে ট্রিপ লেজারে বকেয়া যুক্ত হবে")}
+          </span>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <label className="label text-xs" htmlFor="v-destination">
+              {t("গন্তব্য / রুটের বিবরণ")}
+              {party?.address && destination === party.address && (
+                <span className="ml-1 text-[10px] font-normal text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded">
+                  {t("অটো-ফিল")}
+                </span>
+              )}
+            </label>
+            <input
+              id="v-destination"
+              type="text"
+              className="input text-xs"
+              value={destination}
+              onChange={(e) => setDestination(e.target.value)}
+              placeholder={t("যেমন: বীরগঞ্জ মিল, দিনাজপুর মোকাম")}
+            />
+          </div>
+          <div>
+            <label className="label text-xs" htmlFor="v-vehicle">
+              {t("গাড়ির নম্বর")}
+            </label>
+            <input
+              list="company-vehicles-list"
+              id="v-vehicle"
+              type="text"
+              className="input text-xs"
+              value={vehicleNo}
+              onChange={(e) => handleVehicleChange(e.target.value)}
+              placeholder={t("কোম্পানির গাড়ি বা টাইপ করুন")}
+              autoComplete="off"
+            />
+            {companyVehicles && companyVehicles.length > 0 && (
+              <datalist id="company-vehicles-list">
+                {companyVehicles.map((cv) => (
+                  <option key={cv.id} value={cv.vehicleNo}>
+                    {cv.driverName ? `${cv.vehicleNo} (${cv.driverName})` : cv.vehicleNo}
+                  </option>
+                ))}
+              </datalist>
+            )}
+          </div>
+          <div>
+            <label className="label text-xs" htmlFor="v-driver-name">
+              {t("ড্রাইভারের নাম ও মোবাইল")}
+            </label>
+            <div className="grid grid-cols-2 gap-1.5">
+              <input
+                id="v-driver-name"
+                type="text"
+                className="input text-xs"
+                value={driverName}
+                onChange={(e) => setDriverName(e.target.value)}
+                placeholder={t("নাম")}
+              />
+              <input
+                id="v-driver-mobile"
+                type="text"
+                className="input text-xs"
+                value={driverMobile}
+                onChange={(e) => setDriverMobile(e.target.value)}
+                placeholder={t("মোবাইল")}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="label text-xs" htmlFor="v-fare">
+              {t("ট্রিপ ভাড়া (টাকা)")}
+            </label>
+            <input
+              id="v-fare"
+              type="text"
+              inputMode="decimal"
+              data-numeric
+              className="input text-xs text-right font-medium"
+              value={transportFare}
+              onChange={(e) => setTransportFare(e.target.value)}
+              placeholder="০.০০"
+            />
+          </div>
+        </div>
       </section>
 
       {productGrid ? (

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { addDays, formatDate, formatQty, toBnDigits } from "@/lib/format";
+import { addDays, formatDate, formatQty, formatReportDateBangla, toBnDigits } from "@/lib/format";
 import { PrintButton } from "@/components/forms";
 import { FilterField } from "@/components/ui";
 import { requirePermission } from "@/server/auth";
@@ -13,7 +13,7 @@ import { dailyStock, type UnitTotals } from "@/server/reports/daily-stock";
 
 export const metadata: Metadata = { title: "দৈনিক স্টক রিপোর্ট" };
 
-const CELL = "border border-slate-300 px-2 py-1.5 print:border-slate-500 print:px-1.5 print:py-1";
+const CELL = "border border-black px-2 py-1.5 font-semibold text-black print:px-1.5 print:py-1";
 
 /**
  * দৈনিক স্টক রিপোর্ট: per product for one day (and warehouse) — পূর্বের মজুদ, উৎপাদন / ক্রয়, বিক্রয় / ব্যবহার,
@@ -62,18 +62,17 @@ export default async function DailyStockPage({ searchParams }: { searchParams: S
 
         <div className="p-4 print:p-0">
           {/* heading: company | title | date — on screen and on paper */}
-          <header className="mb-3 grid grid-cols-3 items-end gap-3 border-b-2 border-ink-800 pb-2" id="daily-stock-head">
+          <header className="report-header mb-3 grid grid-cols-3 items-end gap-3 border-b-2 border-black pb-2 text-black" id="daily-stock-head">
             <div className="text-left">
-              <p className="text-base font-bold text-ink-900 print:text-sm" data-keep-lang>{b.name}</p>
-              {(b.address || b.mobile) && <p className="text-xs text-slate-500 print:text-[9px]" data-keep-lang>{[b.address, b.mobile].filter(Boolean).join(" · ")}</p>}
+              <h1 className="text-base font-extrabold text-black" data-keep-lang>{b.name}</h1>
+              {(b.address || b.mobile) && <p className="text-xs font-semibold text-black" data-keep-lang>{[b.address, b.mobile].filter(Boolean).join(" · ")}</p>}
             </div>
             <div className="text-center">
-              <h1 className="text-lg font-bold text-ink-900 print:text-base">{t("দৈনিক স্টক রিপোর্ট")}</h1>
-              <p className="text-xs text-slate-500 print:text-[9px]">{d.warehouse ? t("গুদাম: {0}", { 0: d.warehouse.name }) : t("সব গুদাম")}</p>
+              <h2 className="text-lg font-extrabold text-black">{t("দৈনিক স্টক রিপোর্ট")}</h2>
+              <p className="text-xs font-semibold text-black">{d.warehouse ? t("গুদাম: {0}", { 0: d.warehouse.name }) : t("সব গুদাম")}</p>
             </div>
             <div className="text-right">
-              <p className="text-xs text-slate-500 print:text-[9px]">{t("তারিখ")}</p>
-              <p className="text-base font-semibold text-ink-900 print:text-sm" id="daily-stock-date">{formatDate(d.date)}</p>
+              <p className="report-date text-base font-bold text-black" id="daily-stock-date">{formatReportDateBangla(d.date)}</p>
             </div>
           </header>
 
@@ -81,7 +80,7 @@ export default async function DailyStockPage({ searchParams }: { searchParams: S
             <p className="rounded border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500" id="daily-stock-empty">{t("এই দিনে কোনো মজুদ বা লেনদেন নেই")}</p>
           ) : (
             <div className="overflow-x-auto relative print:overflow-visible">
-              <table className="w-full border-collapse text-sm print:text-[10px]" id="daily-stock-table">
+              <table className="w-full border-collapse border border-black text-sm" id="daily-stock-table">
                 <thead className="bg-slate-50 text-xs font-semibold text-slate-700 print:bg-white">
                   <tr>
                     <th className={`${CELL} sticky left-0 z-30 bg-slate-50 w-10 min-w-[40px] max-w-[40px] text-center print:static print:bg-white`}>{t("নং")}</th>
@@ -107,25 +106,25 @@ export default async function DailyStockPage({ searchParams }: { searchParams: S
                     </tr>
                   ))}
                 </tbody>
-                <tfoot className="bg-slate-50 font-bold print:bg-white" id="daily-stock-totals">
+                <tfoot className="bg-slate-100 font-bold total-row report-summary print:bg-white text-black" id="daily-stock-totals">
                   <tr>
-                    <td className={`${CELL} border-r-0 border-t-2 border-t-slate-600 sticky left-0 z-20 bg-slate-50 w-10 min-w-[40px] max-w-[40px] print:static`} />
-                    <td className={`${CELL} border-l-0 border-t-2 border-t-slate-600 text-right sticky left-[40px] z-20 bg-slate-50 min-w-[120px] max-w-[150px] sm:max-w-none border-r border-gray-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] print:static print:shadow-none`}>
+                    <td className={`${CELL} border-r-0 border-t-2 border-t-black sticky left-0 z-20 bg-slate-50 w-10 min-w-[40px] max-w-[40px] print:static`} />
+                    <td className={`${CELL} border-l-0 border-t-2 border-t-black text-right sticky left-[40px] z-20 bg-slate-50 min-w-[120px] max-w-[150px] sm:max-w-none border-r border-gray-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] print:static print:shadow-none text-black font-bold`}>
                       {t("মোট ({0} টি পণ্য)", { 0: toBnDigits(d.rows.length) })}
                     </td>
-                    <td className={`${CELL} border-t-2 border-t-slate-600 text-right tabular-nums whitespace-nowrap`}>{total(d.totals.opening)}</td>
-                    <td className={`${CELL} border-t-2 border-t-slate-600 text-right tabular-nums whitespace-nowrap`}>{total(d.totals.in)}</td>
-                    <td className={`${CELL} border-t-2 border-t-slate-600 text-right tabular-nums whitespace-nowrap`}>{total(d.totals.out)}</td>
-                    <td className={`${CELL} border-t-2 border-t-slate-600 text-right tabular-nums whitespace-nowrap`}>{total(d.totals.closing)}</td>
+                    <td className={`${CELL} border-t-2 border-t-black text-right tabular-nums whitespace-nowrap text-black font-bold`}>{total(d.totals.opening)}</td>
+                    <td className={`${CELL} border-t-2 border-t-black text-right tabular-nums whitespace-nowrap text-black font-bold`}>{total(d.totals.in)}</td>
+                    <td className={`${CELL} border-t-2 border-t-black text-right tabular-nums whitespace-nowrap text-black font-bold`}>{total(d.totals.out)}</td>
+                    <td className={`${CELL} border-t-2 border-t-black text-right tabular-nums whitespace-nowrap text-black font-bold`}>{total(d.totals.closing)}</td>
                   </tr>
                 </tfoot>
               </table>
             </div>
           )}
-          <p className="mt-2 text-xs text-slate-500 print:text-[9px]">{t("আজকের মজুদ = পূর্বের মজুদ + উৎপাদন / ক্রয় − বিক্রয় / ব্যবহার। ভিন্ন ইউনিটের পরিমাণ যোগ না করে ইউনিট অনুযায়ী মোট দেখানো হয়েছে।")}</p>
-          <div className="print-only mt-12">
-            <div className="grid grid-cols-3 gap-8 text-center text-xs">
-              {["স্টোর কিপার", "হিসাবরক্ষক", "অনুমোদনকারী"].map((s) => <p key={s} className="border-t border-ink-800 pt-1">{t(s)}</p>)}
+          <p className="mt-2 text-xs text-slate-500 print:text-[10px] print:text-black">{t("আজকের মজুদ = পূর্বের মজুদ + উৎপাদন / ক্রয় − বিক্রয় / ব্যবহার। ভিন্ন ইউনিটের পরিমাণ যোগ না করে ইউনিট অনুযায়ী মোট দেখানো হয়েছে।")}</p>
+          <div className="print-only signature-section mt-12">
+            <div className="grid grid-cols-3 gap-8 text-center text-xs font-bold text-black">
+              {["স্টোর কিপার", "হিসাবরক্ষক", "অনুমোদনকারী"].map((s) => <p key={s} className="border-t border-black pt-1">{t(s)}</p>)}
             </div>
           </div>
         </div>

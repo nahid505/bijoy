@@ -13,6 +13,9 @@ export const RICE_MILL_ACCESS = {
   paddyView: ["auto_rice_mill.procurement:view", "auto_rice_mill.procurement:create", "purchases:view"],
   paddyCreate: ["auto_rice_mill.procurement:create", "purchases:create"],
   paddyEdit: ["auto_rice_mill.procurement:create", "purchases:edit"],
+  /** empty bag returns (খালি বস্তা ফেরত) */
+  bagReturnView: ["auto_rice_mill:bag_return:view", "auto_rice_mill:bag_return:create"],
+  bagReturnCreate: ["auto_rice_mill:bag_return:create"],
   /** milling batches and recipes (/production) */
   millingView: ["auto_rice_mill.milling:view", "auto_rice_mill.milling:create", "production:view"],
   milling: ["auto_rice_mill.milling:create", "production:manage"],
@@ -27,6 +30,7 @@ export const RICE_MILL_ACCESS = {
 export function riceMillHome(can: (p: readonly Permission[]) => boolean): string | null {
   const screens: [string, readonly Permission[]][] = [
     ["/purchases/paddy", RICE_MILL_ACCESS.paddyView],
+    ["/auto-rice-mill/bag-returns", RICE_MILL_ACCESS.bagReturnView],
     ["/production", RICE_MILL_ACCESS.millingView],
     ["/rice-mill/stock", RICE_MILL_ACCESS.stock],
     ["/rice-mill/sales", RICE_MILL_ACCESS.salesView],
