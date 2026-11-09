@@ -53,10 +53,10 @@ const drop = (p) => {
 const nm = join(pkgDir, "node_modules");
 // TypeScript is traced because of next.config.ts; the standalone server reads the compiled config instead
 if (existsSync(join(nm, "typescript"))) drop(join(nm, "typescript"));
-// cPanel / Recohost run CloudLinux (RHEL): the Debian and Alpine (musl) engines are only for Docker hosts
+// cPanel / Recohost run CloudLinux (RHEL) or Debian-compatible: keep rhel and debian engines
 if (!allEngines) {
   const engines = join(nm, ".prisma", "client");
-  for (const f of readdirSync(engines)) if (/^libquery_engine-/.test(f) && !/^libquery_engine-rhel-/.test(f)) drop(join(engines, f));
+  for (const f of readdirSync(engines)) if (/^libquery_engine-/.test(f) && !/^libquery_engine-(rhel|debian)-/.test(f)) drop(join(engines, f));
 }
 const walk = (dir) => {
   for (const f of readdirSync(dir)) {

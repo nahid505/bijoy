@@ -564,18 +564,18 @@ export function TradeVoucherForm({
                 {t("উপরে গ্রিড থেকে পণ্য বেছে নিন অথবা কোড/বারকোড স্ক্যান করে তালিকায় যোগ করুন")}
               </p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="table w-full border-collapse">
+              <div className="w-full overflow-x-auto pb-2">
+                <table className="table min-w-[680px] w-full border-collapse">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-100 text-xs font-bold text-slate-700">
                       <th className="w-10 px-3 py-3 text-center">#</th>
                       <th className="min-w-48 px-3 py-3 text-left">{t("পণ্যের নাম ও কোড")}</th>
                       <th className="w-36 px-3 py-3 text-left">{t("ব্যাচ / মেয়াদ")}</th>
-                      <th className="w-28 px-3 py-3 text-left">{t("ইউনিট")}</th>
-                      <th className="w-36 px-3 py-3 text-center">{t("পরিমাণ")}</th>
-                      <th className="w-28 px-3 py-3 text-center">{t("ফ্রি পরিমাণ")}</th>
-                      <th className="w-28 px-3 py-3 text-right">{t("ক্রয় দর")}</th>
-                      <th className="w-32 px-3 py-3 text-right">{t("মোট টাকা")}</th>
+                      <th className="w-20 min-w-[70px] px-3 py-3 text-left">{t("ইউনিট")}</th>
+                      <th className="w-36 min-w-[110px] px-3 py-3 text-center">{t("পরিমাণ")}</th>
+                      <th className="w-28 min-w-[75px] px-3 py-3 text-center">{t("ফ্রি পরিমাণ")}</th>
+                      <th className="w-24 min-w-[90px] px-3 py-3 text-center">{t("ক্রয় দর")}</th>
+                      <th className="min-w-[110px] px-3 py-3 text-right font-bold whitespace-nowrap">{t("মোট টাকা")}</th>
                       <th className="w-10 px-2 py-3 text-center" aria-label={t("অ্যাকশন")} />
                     </tr>
                   </thead>
@@ -622,7 +622,7 @@ export function TradeVoucherForm({
                           {/* ৪. ইউনিট */}
                           <td className="px-3 py-3">
                             <select
-                              className="input py-1 text-xs"
+                              className="input w-20 min-w-[70px] py-1 text-xs sm:text-sm"
                               value={l.unitId}
                               disabled={!p}
                               onChange={(e) => {
@@ -648,7 +648,7 @@ export function TradeVoucherForm({
                                 −
                               </button>
                               <input
-                                className="input-num h-8 w-20 text-center font-bold text-slate-900"
+                                className="input-num w-20 min-w-[75px] text-center font-semibold border rounded px-2 py-1.5 text-base sm:text-sm"
                                 type="text"
                                 inputMode="decimal"
                                 data-numeric
@@ -674,7 +674,7 @@ export function TradeVoucherForm({
                           <td className="px-3 py-3">
                             <div className="flex items-center justify-center">
                               <input
-                                className="input-num h-8 w-20 text-center font-bold text-emerald-700 bg-emerald-50/50 border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500/20"
+                                className="input-num w-20 min-w-[75px] text-center font-semibold border rounded px-2 py-1.5 text-base sm:text-sm text-emerald-700 bg-emerald-50/50 border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500/20"
                                 type="text"
                                 inputMode="decimal"
                                 data-numeric
@@ -693,7 +693,7 @@ export function TradeVoucherForm({
                           <td className="px-3 py-3">
                             <div className="flex items-center justify-end">
                               <input
-                                className="input-num h-8 w-24 text-right font-bold text-slate-900"
+                                className="input-num w-24 min-w-[90px] text-center font-bold text-gray-900 border rounded px-2 py-1.5 focus:ring-1 text-base sm:text-sm"
                                 type="text"
                                 inputMode="decimal"
                                 data-numeric
@@ -708,7 +708,7 @@ export function TradeVoucherForm({
                           </td>
 
                           {/* ৮. মোট টাকা (Line Total = পরিমাণ × দর) */}
-                          <td className="px-3 py-3 text-right font-bold text-slate-900 text-sm whitespace-nowrap tabular-nums">
+                          <td className="px-3 py-3 text-right font-bold text-slate-900 text-sm min-w-[110px] whitespace-nowrap tabular-nums">
                             {formatMoney(lineTotal, currency)}
                           </td>
 
@@ -737,7 +737,7 @@ export function TradeVoucherForm({
                         {formatQty(lines.filter((l) => l.productId).reduce((s, x) => s + (Number(x.freeQuantity) || 0), 0))}
                       </td>
                       <td className="px-3 py-3 text-right" />
-                      <td className="px-3 py-3 text-right tabular-nums text-sm font-bold text-brand-900">
+                      <td className="px-3 py-3 text-right tabular-nums text-sm font-bold text-brand-900 min-w-[110px] whitespace-nowrap">
                         {formatMoney(totals.subtotal, currency)}
                       </td>
                       <td />
@@ -764,19 +764,19 @@ export function TradeVoucherForm({
               )}
             </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="table">
+          <div className="w-full overflow-x-auto pb-2">
+            <table className="table min-w-[680px] w-full border-collapse">
               <thead>
                 <tr>
                   <th className="w-8">#</th>
                   <th className="min-w-56">{t("পণ্য")}</th>
                   <th className="w-40">{t("ব্যাচ / মেয়াদ")}</th>
-                  <th className="w-32">{t("ইউনিট")}</th>
-                  <th className="w-28 text-right">{t("পরিমাণ")}</th>
-                  {showFree && <th className="w-24 text-right" title={t("ফ্রি / স্কিম — স্টকে যোগ/বাদ হবে, দাম ধরা হবে না")}>{t("ফ্রি")}</th>}
-                  <th className="w-32 text-right">{t("দর")}</th>
-                  <th className="w-28 text-right">{t("ছাড়")}</th>
-                  <th className="w-36 text-right">{t("মোট")}</th>
+                  <th className="w-20 min-w-[70px]">{t("ইউনিট")}</th>
+                  <th className="w-20 min-w-[75px] text-center">{t("পরিমাণ")}</th>
+                  {showFree && <th className="w-20 min-w-[75px] text-center" title={t("ফ্রি / স্কিম — স্টকে যোগ/বাদ হবে, দাম ধরা হবে না")}>{t("ফ্রি")}</th>}
+                  <th className="w-24 min-w-[90px] text-center">{t("দর")}</th>
+                  <th className="w-20 min-w-[70px] text-center">{t("ছাড়")}</th>
+                  <th className="min-w-[110px] text-right font-bold whitespace-nowrap">{t("মোট")}</th>
                   <th className="w-10" />
                 </tr>
               </thead>
@@ -814,7 +814,7 @@ export function TradeVoucherForm({
                       </td>
                       <td>
                         <select
-                          className="input"
+                          className="input w-20 min-w-[70px] text-sm"
                           value={l.unitId}
                           disabled={!p}
                           onChange={(e) => {
@@ -828,18 +828,18 @@ export function TradeVoucherForm({
                         </select>
                       </td>
                       <td>
-                        <input className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="0.001" value={l.quantity} onChange={(e) => update(l.key, { quantity: e.target.value })} aria-label={t("পরিমাণ")} />
+                        <input className="input-num w-20 min-w-[75px] text-center font-semibold border rounded px-2 py-1.5 text-base sm:text-sm" type="text" inputMode="decimal" data-numeric min="0" step="0.001" value={l.quantity} onChange={(e) => update(l.key, { quantity: e.target.value })} aria-label={t("পরিমাণ")} />
                         <FieldError name={`items.${idx}.quantity`} />
                       </td>
                       {showFree && (
                         <td>
-                          <input className="input-num border-amber-300 bg-amber-50" type="text" inputMode="decimal" data-numeric min="0" step="0.001" value={l.freeQuantity} placeholder="0" onChange={(e) => update(l.key, { freeQuantity: e.target.value })} aria-label={t("ফ্রি পরিমাণ")} />
+                          <input className="input-num w-20 min-w-[75px] text-center font-semibold border rounded px-2 py-1.5 text-base sm:text-sm border-amber-300 bg-amber-50" type="text" inputMode="decimal" data-numeric min="0" step="0.001" value={l.freeQuantity} placeholder="0" onChange={(e) => update(l.key, { freeQuantity: e.target.value })} aria-label={t("ফ্রি পরিমাণ")} />
                           <FieldError name={`items.${idx}.freeQuantity`} />
                         </td>
                       )}
-                      <td><input className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="0.01" value={l.rate} onChange={(e) => update(l.key, { rate: e.target.value })} aria-label={t("দর")} /></td>
-                      <td><input className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="0.01" value={l.discount} placeholder="0" onChange={(e) => update(l.key, { discount: e.target.value })} aria-label={t("ছাড়")} /></td>
-                      <td className="num font-semibold">{formatMoney(lineAmount({ quantity: Number(l.quantity) || 0, unitPrice: Number(l.rate) || 0, discount: Number(l.discount) || 0 }), currency)}</td>
+                      <td><input className="input-num w-24 min-w-[90px] text-center font-bold text-gray-900 border rounded px-2 py-1.5 focus:ring-1 text-base sm:text-sm" type="text" inputMode="decimal" data-numeric min="0" step="0.01" value={l.rate} onChange={(e) => update(l.key, { rate: e.target.value })} aria-label={t("দর")} /></td>
+                      <td><input className="input-num w-20 min-w-[70px] text-center border rounded px-2 py-1.5 text-base sm:text-sm" type="text" inputMode="decimal" data-numeric min="0" step="0.01" value={l.discount} placeholder="0" onChange={(e) => update(l.key, { discount: e.target.value })} aria-label={t("ছাড়")} /></td>
+                      <td className="num min-w-[110px] text-right font-bold whitespace-nowrap">{formatMoney(lineAmount({ quantity: Number(l.quantity) || 0, unitPrice: Number(l.rate) || 0, discount: Number(l.discount) || 0 }), currency)}</td>
                       <td>{lines.length > 1 && <button type="button" className="btn-ghost btn-sm text-credit" aria-label={t("সারি মুছুন")} onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}>✕</button>}</td>
                     </tr>
                   );
@@ -1173,9 +1173,9 @@ export function StockJournalForm({
       <section className="panel grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4"><Header date={date} setDate={setDate} reference={reference} setReference={setReference} dateLocked={defaults.dateLocked} /></section>
       <section className="panel">
         <div className="panel-head"><h2 className="panel-title">{t("স্টক সমন্বয় / স্থানান্তর")}</h2><span className="text-xs text-slate-500">{t("স্থানান্তর: এক গুদাম থেকে “বাহির” ও অন্য গুদামে “আগমন” লাইন দিন")}</span></div>
-        <div className="overflow-x-auto">
-          <table className="table">
-            <thead><tr><th className="min-w-56">{t("পণ্য")}</th><th className="w-40">{t("গুদাম")}</th><th className="w-36">{t("দিক")}</th><th className="w-40">{t("ব্যাচ")}</th><th className="w-28 text-right">{t("পরিমাণ")}</th><th className="w-32 text-right">{t("দর (আগমন)")}</th><th className="w-32 text-right">{t("মূল্য")}</th><th className="w-10" /></tr></thead>
+        <div className="w-full overflow-x-auto pb-2">
+          <table className="table min-w-[680px] w-full border-collapse">
+            <thead><tr><th className="min-w-56">{t("পণ্য")}</th><th className="w-40">{t("গুদাম")}</th><th className="w-36">{t("দিক")}</th><th className="w-40">{t("ব্যাচ")}</th><th className="w-20 min-w-[75px] text-center">{t("পরিমাণ")}</th><th className="w-24 min-w-[90px] text-center">{t("দর (আগমন)")}</th><th className="min-w-[110px] text-right font-bold whitespace-nowrap">{t("মূল্য")}</th><th className="w-10" /></tr></thead>
             <tbody>
               {lines.map((l, idx) => {
                 const p = productMap.get(l.productId);
@@ -1212,12 +1212,12 @@ export function StockJournalForm({
                     </td>
                     <td><BatchCell product={p} inbound={l.direction === "1"} batches={batches} warehouseId={l.warehouseId} batchNo={l.batchNo} expiryDate={l.expiryDate} mfgDate={l.mfgDate} onChange={(patch) => update(l.key, patch)} /></td>
                     <td>
-                      <input className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="0.001" value={l.quantity} onChange={(e) => update(l.key, { quantity: e.target.value })} aria-label={t("পরিমাণ")} />
+                      <input className="input-num w-20 min-w-[75px] text-center font-semibold border rounded px-2 py-1.5 text-base sm:text-sm" type="text" inputMode="decimal" data-numeric min="0" step="0.001" value={l.quantity} onChange={(e) => update(l.key, { quantity: e.target.value })} aria-label={t("পরিমাণ")} />
                       {p && <span className="text-[11px] text-slate-400">{unitName(p.unitId)}</span>}
                       <FieldError name={`lines.${idx}.quantity`} />
                     </td>
-                    <td><input className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="0.01" value={l.rate} placeholder={p ? String(p.avgCost || p.purchasePrice) : ""} disabled={l.direction !== "1"} onChange={(e) => update(l.key, { rate: e.target.value })} aria-label={t("দর")} /></td>
-                    <td className="num">{formatMoney(value(l), currency)}</td>
+                    <td><input className="input-num w-24 min-w-[90px] text-center font-bold text-gray-900 border rounded px-2 py-1.5 focus:ring-1 text-base sm:text-sm" type="text" inputMode="decimal" data-numeric min="0" step="0.01" value={l.rate} placeholder={p ? String(p.avgCost || p.purchasePrice) : ""} disabled={l.direction !== "1"} onChange={(e) => update(l.key, { rate: e.target.value })} aria-label={t("দর")} /></td>
+                    <td className="num min-w-[110px] text-right font-bold whitespace-nowrap">{formatMoney(value(l), currency)}</td>
                     <td>{lines.length > 1 && <button type="button" className="btn-ghost btn-sm text-credit" aria-label={t("সারি মুছুন")} onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}>✕</button>}</td>
                   </tr>
                 );

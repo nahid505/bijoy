@@ -200,9 +200,9 @@ export function PosScreen({
             {cart.length === 0 ? (
               <p className="px-4 py-10 text-center text-sm text-slate-400">{t("পণ্য খুঁজে বা বারকোড স্ক্যান করে কার্টে যোগ করুন")}</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="table">
-                  <thead><tr><th className="min-w-44">{t("পণ্য")}</th><th className="w-36">{t("ব্যাচ")}</th><th className="w-28">{t("ইউনিট")}</th><th className="w-36 text-center">{t("পরিমাণ")}</th><th className="w-28 text-right">{t("দর")}</th><th className="w-24 text-right">{t("ছাড়")}</th><th className="w-32 text-right">{t("মোট")}</th><th className="w-8" /></tr></thead>
+              <div className="w-full overflow-x-auto pb-2">
+                <table className="table min-w-[680px] w-full border-collapse">
+                  <thead><tr><th className="min-w-44">{t("পণ্য")}</th><th className="w-36">{t("ব্যাচ")}</th><th className="w-20 min-w-[70px]">{t("ইউনিট")}</th><th className="w-36 min-w-[110px] text-center">{t("পরিমাণ")}</th><th className="w-24 min-w-[90px] text-center">{t("দর")}</th><th className="w-20 min-w-[70px] text-center">{t("ছাড়")}</th><th className="min-w-[110px] text-right font-bold whitespace-nowrap">{t("মোট")}</th><th className="w-8" /></tr></thead>
                   <tbody>
                     {cart.map((l, idx) => {
                       const p = productMap.get(l.productId)!;
@@ -216,7 +216,7 @@ export function PosScreen({
                           </td>
                           <td><BatchCell product={p} inbound={false} batches={batches} warehouseId={warehouseId} batchNo={l.batchNo} expiryDate="" fefo blockExpired={!allowExpiredSale} onChange={(x) => update(l.key, { batchNo: x.batchNo ?? l.batchNo })} /></td>
                           <td>
-                            <select className="input" value={l.unitId} onChange={(e) => {
+                            <select className="input w-20 min-w-[70px] text-sm" value={l.unitId} onChange={(e) => {
                               const nu = unitMap.get(e.target.value)!;
                               const nf = unitConversionFactor(nu, unitMap.get(p.unitId)!) ?? 1;
                               update(l.key, { unitId: e.target.value, rate: round2((l.rate / factorOf(l)) * nf) });
@@ -227,13 +227,13 @@ export function PosScreen({
                           <td>
                             <div className="flex items-center justify-center gap-1">
                               <button type="button" className="btn-secondary btn-sm" aria-label={t("কমান")} onClick={() => update(l.key, { quantity: Math.max(round2(l.quantity - 1), 0.001) })}>−</button>
-                              <input className="input-num w-16" type="text" inputMode="decimal" data-numeric min="0" step="0.001" value={l.quantity} onChange={(e) => update(l.key, { quantity: Number(e.target.value) || 0 })} aria-label={t("পরিমাণ")} />
+                              <input className="input-num w-20 min-w-[75px] text-center font-semibold border rounded px-2 py-1.5 text-base sm:text-sm" type="text" inputMode="decimal" data-numeric min="0" step="0.001" value={l.quantity} onChange={(e) => update(l.key, { quantity: Number(e.target.value) || 0 })} aria-label={t("পরিমাণ")} />
                               <button type="button" className="btn-secondary btn-sm" aria-label={t("বাড়ান")} onClick={() => update(l.key, { quantity: round2(l.quantity + 1) })}>+</button>
                             </div>
                           </td>
-                          <td><input className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="0.01" value={l.rate} onChange={(e) => update(l.key, { rate: Number(e.target.value) || 0 })} aria-label={t("দর")} /></td>
-                          <td><input className="input-num" type="text" inputMode="decimal" data-numeric min="0" step="0.01" value={l.discount || ""} placeholder="0" onChange={(e) => update(l.key, { discount: Number(e.target.value) || 0 })} aria-label={t("ছাড়")} /></td>
-                          <td className="num font-semibold">{formatMoney(lineAmount({ quantity: l.quantity, unitPrice: l.rate, discount: l.discount }), currency)}</td>
+                          <td><input className="input-num w-24 min-w-[90px] text-center font-bold text-gray-900 border rounded px-2 py-1.5 focus:ring-1 text-base sm:text-sm" type="text" inputMode="decimal" data-numeric min="0" step="0.01" value={l.rate} onChange={(e) => update(l.key, { rate: Number(e.target.value) || 0 })} aria-label={t("দর")} /></td>
+                          <td><input className="input-num w-20 min-w-[70px] text-center border rounded px-2 py-1.5 text-base sm:text-sm" type="text" inputMode="decimal" data-numeric min="0" step="0.01" value={l.discount || ""} placeholder="0" onChange={(e) => update(l.key, { discount: Number(e.target.value) || 0 })} aria-label={t("ছাড়")} /></td>
+                          <td className="num min-w-[110px] text-right font-bold whitespace-nowrap">{formatMoney(lineAmount({ quantity: l.quantity, unitPrice: l.rate, discount: l.discount }), currency)}</td>
                           <td><button type="button" className="btn-ghost btn-sm text-credit" aria-label={t("সারি মুছুন")} onClick={() => setCart((c) => c.filter((x) => x.key !== l.key))}>✕</button></td>
                         </tr>
                       );
