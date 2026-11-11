@@ -5,6 +5,7 @@
 // and pickers, keyed on the group's system key.
 
 export const NO_SUBGROUP_KEYS = ["CASH_IN_HAND", "BANK_ACCOUNTS", "SUNDRY_DEBTORS", "SUNDRY_CREDITORS"];
+export const RESERVED_GROUPS = ["SUNDRY_DEBTORS", "SUNDRY_CREDITORS"];
 /** Levels allowed below a top group (top group → 1 → … → MAX_GROUP_DEPTH). */
 export const MAX_GROUP_DEPTH = 4;
 
@@ -73,4 +74,62 @@ export function effectiveGroupKeys(groups: (GroupNode & { systemKey: string | nu
 export function canHaveSubgroups(groups: (GroupNode & { systemKey: string | null })[], id: string): boolean {
   const g = groups.find((x) => x.id === id);
   return !!g && !NO_SUBGROUP_KEYS.includes(g.systemKey ?? "") && groupDepth(groups, id) < MAX_GROUP_DEPTH;
+}
+
+function buildChildrenMap(groups: GroupNode[]): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  for (const g of groups) {
+    if (g.parentId && g.parentId !== g.id) {
+      map.set(g.parentId, [...(map.get(g.parentId) ?? []), g.id]);
+    }
+  }
+  return map;
+}
+
+/** Descendant group ids below `id` (excluding `id` itself; cycle-safe). */
+export function descendantGroupIds(groups: GroupNode[], id: string): Set<string> {
+  const children = buildChildrenMap(groups);
+  const out = new Set<string>();
+  const seen = new Set<string>([id]);
+  const queue = [id];
+  while (queue.length > 0) {
+    const curr = queue.shift()!;
+    for (const childId of children.get(curr) ?? []) {
+      if (seen.has(childId)) continue;
+      seen.add(childId);
+      out.add(childId);
+      queue.push(childId);
+    }
+  }
+  return out;
+}
+
+/** Maximum depth of descendants below `id` (0 = leaf; cycle-safe). */
+export function subtreeHeight(groups: GroupNode[], id: string): number {
+  const children = buildChildrenMap(groups);
+  const seen = new Set<string>([id]);
+  const queue: { id: string; h: number }[] = [{ id, h: 0 }];
+  let maxH = 0;
+  while (queue.length > 0) {
+    const curr = queue.shift()!;
+    if (curr.h > maxH) maxH = curr.h;
+    for (const childId of children.get(curr.id) ?? []) {
+      if (seen.has(childId)) continue;
+      seen.add(childId);
+      queue.push({ id: childId, h: curr.h + 1 });
+    }
+  }
+  return maxH;
+}
+
+/** Whether group `id` can be moved under `parentId` without cycles, reserved parents, or exceeding MAX_GROUP_DEPTH. */
+export function canMoveGroupUnder(
+  groups: (GroupNode & { systemKey: string | null })[],
+  id: string,
+  parentId: string,
+): boolean {
+  if (!parentId || parentId === id) return false;
+  if (!canHaveSubgroups(groups, parentId)) return false;
+  if (descendantGroupIds(groups, id).has(parentId)) return false;
+  return groupDepth(groups, parentId) + 1 + subtreeHeight(groups, id) <= MAX_GROUP_DEPTH;
 }
