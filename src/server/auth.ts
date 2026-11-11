@@ -254,15 +254,20 @@ export const getContext = cache(async (): Promise<AppContext | null> => {
   const on = access.on;
   const off = FEATURE_KEYS.filter((k) => !on.has(k));
   const isOwner = m.role.isSystem;
+  const isPrivileged = user.isSuperAdmin || isOwner;
   const eff = access.effective;
   // a suspended subscription leaves only the billing pages (to pay / contact the platform)
   const billingOnly = strList(m.role.permissions).filter((p) => p === "*" || p === "billing:view" || p === "billing:manage").map((p) => (p === "*" ? ["billing:view", "billing:manage"] : [p])).flat();
-  const partyScope = isOwner || strList(m.role.permissions).includes("*")
+  const partyScope = isPrivileged || strList(m.role.permissions).includes("*")
     ? UNRESTRICTED
     : await loadPartyScope(b.id, user.id, restrictionsOf(m.role.permissions, isOwner));
   // the rice-mill keys open shared screens (paddy slips, milling batches, sales): refused outside a rice-mill business
   const moduleBlocks = riceMillBlocked(strList(b.businessTypes));
-  const permissions = eff?.blocked ? billingOnly : !on.has("MULTI_USER") && !isOwner ? [] : [...strList(m.role.permissions), ...[...blockedPermissions(off), ...moduleBlocks].map((x) => `!${x}`)];
+  const permissions = eff?.blocked
+    ? billingOnly
+    : !on.has("MULTI_USER") && !isPrivileged
+      ? []
+      : [...(isPrivileged ? ["*"] : strList(m.role.permissions)), ...[...blockedPermissions(off), ...moduleBlocks].map((x) => `!${x}`)];
 
   // Group context resolution
   const groupContext: GroupContext | null = b.group

@@ -22,10 +22,13 @@ export default async function AccountsPage({ searchParams }: { searchParams: Sea
   const q = p.q?.trim().toLowerCase();
   const nature = p.nature && p.nature in NATURE_LABELS ? (p.nature as Nature) : undefined;
 
+  const isPrivileged = Boolean(ctx.user.isSuperAdmin || ctx.isOwner);
   const [accountsRaw, allGroups] = await Promise.all([
     listAccounts(ctx.business.id, {
       ...(nature ? { nature } : {}),
-      AND: [accountScopeWhere(ctx), bookAccountWhere("GENERAL")],
+      AND: isPrivileged
+        ? [bookAccountWhere("GENERAL")]
+        : [accountScopeWhere(ctx), bookAccountWhere("GENERAL")],
     }),
     listAccountGroups(ctx.business.id),
   ]);
@@ -72,7 +75,7 @@ export default async function AccountsPage({ searchParams }: { searchParams: Sea
 
   const cur = ctx.business.currencySymbol;
   const groupOptions = allGroups.filter((g) => !RESERVED_GROUPS.includes(g.systemKey ?? ""));
-  const canManage = can(ctx, "accounts:manage");
+  const canManage = isPrivileged || can(ctx, "accounts:manage");
 
   return (
     <>

@@ -69,7 +69,7 @@ describe("account group tree", () => {
     expect(canMoveGroupUnder(deep, "a", "d1")).toBe(true);
   });
 
-  it("ancestorGroupIds and visibleLedgerGroupIds keep parent headers visible even when only sub-groups hold ledgers", () => {
+  it("ancestorGroupIds and visibleLedgerGroupIds include all empty groups in default view and full parent-child tree on search", () => {
     const groups = [
       { id: "sysExp", parentId: null, systemKey: "INDIRECT_EXPENSES", name: "পরিচালন ব্যয়", nature: "EXPENSE" },
       { id: "cocola", parentId: null, systemKey: null, name: "কোকোলা ডিপো খরচ", nature: "EXPENSE" },
@@ -79,19 +79,21 @@ describe("account group tree", () => {
     ];
     expect([...ancestorGroupIds(groups, "fuel")]).toEqual(["cocola"]);
 
-    // Only leaf sub-group "fuel" directly contains accounts; parent "cocola" has 0 direct accounts
+    // Default view (!q): ALL groups (populated, empty custom, empty system) appear
     const visDefault = visibleLedgerGroupIds(groups, new Set(["fuel"]));
     expect(visDefault.has("fuel")).toBe(true);
     expect(visDefault.has("cocola")).toBe(true);
     expect(visDefault.has("emptyCustom")).toBe(true);
-    expect(visDefault.has("emptySys")).toBe(false);
+    expect(visDefault.has("emptySys")).toBe(true);
+    expect(visDefault.has("sysExp")).toBe(true);
 
-    // Nature filter hides non-matching groups
+    // Nature filter limits empty groups cleanly while preserving populated groups
     const visAsset = visibleLedgerGroupIds(groups, new Set(["fuel"]), { nature: "ASSET" });
     expect(visAsset.has("emptyCustom")).toBe(false);
+    expect(visAsset.has("emptySys")).toBe(true);
 
-    // Search matches parent header by name along with ancestors
-    const visSearch = visibleLedgerGroupIds(groups, new Set(["fuel"]), { q: "কোকোলা" });
+    // Search matches parent header by name along with its child sub-groups even when sub-group is empty
+    const visSearch = visibleLedgerGroupIds(groups, new Set(), { q: "কোকোলা" });
     expect(visSearch.has("cocola")).toBe(true);
     expect(visSearch.has("fuel")).toBe(true);
     expect(visSearch.has("emptyCustom")).toBe(false);

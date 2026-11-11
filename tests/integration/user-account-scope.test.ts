@@ -321,4 +321,64 @@ run("user account group and payment account restrictions", () => {
     expect(await canOpenLedger(ctx, accFactoryLabor)).toBe(false);
     expect(await canOpenLedger(ctx, accMainCash)).toBe(false);
   });
+
+  it("12. Super Admin and Owner bypass all role/scope restrictions and see 100% of ledgers", async () => {
+    const restrictedScope: PartyScope = {
+      customers: [],
+      suppliers: [],
+      accounts: [],
+      accountGroups: [grpOffice],
+      paymentAccounts: [accDepotCash],
+    };
+    const superAdminCtx = {
+      partyScope: restrictedScope,
+      user: { id: cashier.id, isSuperAdmin: true },
+      business: { id: owner.businessId },
+    };
+    const ownerCtx = {
+      partyScope: restrictedScope,
+      user: { id: owner.userId },
+      business: { id: owner.businessId },
+      isOwner: true,
+    };
+
+    for (const priv of [superAdminCtx, ownerCtx]) {
+      expect(isRestricted(priv)).toBe(false);
+      expect(accountScopeWhere(priv)).toEqual({});
+      expect(await canOpenLedger(priv, accTransport)).toBe(true);
+      expect(await canOpenLedger(priv, accMainCash)).toBe(true);
+      const count = await prisma.account.count({
+        where: { businessId: owner.businessId, ...accountScopeWhere(priv) },
+      });
+      expect(count).toBeGreaterThanOrEqual(6);
+    }
+  });
+
+  it("13. Assigning a parent accountGroup alongside accounts:assigned_only does not block child ledgers", async () => {
+    const combinedCtx = {
+      partyScope: {
+        customers: null,
+        suppliers: null,
+        accounts: [],
+        accountGroups: [grpOffice, grpStationery],
+      },
+      user: { id: cashier.id },
+      business: { id: owner.businessId },
+    };
+
+    const visible = await prisma.account.findMany({
+      where: {
+        businessId: owner.businessId,
+        id: { in: [accOfficeRent, accPaper, accTransport] },
+        ...accountScopeWhere(combinedCtx),
+      },
+      select: { id: true },
+    });
+    const ids = visible.map((v) => v.id);
+    expect(ids).toContain(accOfficeRent);
+    expect(ids).toContain(accPaper);
+    expect(ids).not.toContain(accTransport);
+    expect(await canOpenLedger(combinedCtx, accPaper)).toBe(true);
+    expect(await canOpenLedger(combinedCtx, accTransport)).toBe(false);
+  });
 });

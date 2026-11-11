@@ -112,6 +112,13 @@ export function AccountsLedgerTable({
     router.refresh();
   };
 
+  const sectionIds = new Set(sectionList.map((s) => s.group.id));
+  const hasVisibleChildren = (groupId: string) => {
+    for (const did of descendantGroupIds(groupList, groupId)) {
+      if (sectionIds.has(did)) return true;
+    }
+    return false;
+  };
   const directTotalByGroup = new Map<string, number>();
   for (const s of sectionList) {
     directTotalByGroup.set(
@@ -182,6 +189,11 @@ export function AccountsLedgerTable({
                             <span className="font-bold text-gray-800 text-sm">{group.name}</span>
                           )}
                           <span className="text-xs font-normal text-gray-500">({typeLabel})</span>
+                          {accounts.length === 0 && !hasVisibleChildren(group.id) && (
+                            <span className="text-[11px] font-normal text-slate-400">
+                              ({t("কোনো লেজার নেই")})
+                            </span>
+                          )}
                           {parentName && (
                             <span className="text-[11px] font-normal text-slate-400">
                               · {parentName}

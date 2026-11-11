@@ -39,9 +39,12 @@ export const UNRESTRICTED: PartyScope = { customers: null, suppliers: null, acco
 
 interface ScopeCtx {
   partyScope: PartyScope;
-  user: { id: string };
+  user: { id: string; isSuperAdmin?: boolean };
   business: { id: string };
+  isOwner?: boolean;
 }
+
+const isPrivileged = (ctx: ScopeCtx) => Boolean(ctx.user.isSuperAdmin || ctx.isOwner);
 
 /** Restriction keys only count when the role names them (an Owner / "*" role is never restricted). */
 export function restrictionsOf(rolePermissions: unknown, isOwner: boolean) {
@@ -92,9 +95,9 @@ export function getAllDescendantGroupIds(
 export async function loadPartyScope(
   businessId: string,
   userId: string,
-  r: { customers: boolean; suppliers: boolean; accounts?: boolean; isOwner?: boolean }
+  r: { customers: boolean; suppliers: boolean; accounts?: boolean; isOwner?: boolean; isSuperAdmin?: boolean }
 ): Promise<PartyScope> {
-  if (r.isOwner) return UNRESTRICTED;
+  if (r.isOwner || r.isSuperAdmin) return UNRESTRICTED;
   const [c, s, a, g, p] = await Promise.all([
     r.customers ? prisma.userCustomer.findMany({ where: { businessId, userId }, select: { customer: { select: { accountId: true } } } }) : null,
     r.suppliers ? prisma.userSupplier.findMany({ where: { businessId, userId }, select: { supplier: { select: { accountId: true } } } }) : null,
@@ -124,14 +127,16 @@ export async function loadPartyScope(
 }
 
 /** the assigned account heads (null = every head) */
-export const allowedAccounts = (ctx: ScopeCtx) => ctx.partyScope.accounts ?? null;
-const partyRestricted = (ctx: ScopeCtx) => ctx.partyScope.customers !== null || ctx.partyScope.suppliers !== null;
+export const allowedAccounts = (ctx: ScopeCtx) => (isPrivileged(ctx) ? null : (ctx.partyScope.accounts ?? null));
+const partyRestricted = (ctx: ScopeCtx) => !isPrivileged(ctx) && (ctx.partyScope.customers !== null || ctx.partyScope.suppliers !== null);
 export const isRestricted = (ctx: ScopeCtx) =>
-  partyRestricted(ctx) ||
-  allowedAccounts(ctx) !== null ||
-  !!ctx.partyScope.accountGroups ||
-  !!ctx.partyScope.paymentAccounts;
-const allowedOf = (ctx: ScopeCtx, kind: PartyKind) => (kind === "CUSTOMER" ? ctx.partyScope.customers : ctx.partyScope.suppliers);
+  !isPrivileged(ctx) &&
+  (partyRestricted(ctx) ||
+    allowedAccounts(ctx) !== null ||
+    !!ctx.partyScope.accountGroups ||
+    !!ctx.partyScope.paymentAccounts);
+const allowedOf = (ctx: ScopeCtx, kind: PartyKind) =>
+  isPrivileged(ctx) ? null : (kind === "CUSTOMER" ? ctx.partyScope.customers : ctx.partyScope.suppliers);
 
 /** Customer / supplier rows this user may see. */
 export function partyListWhere(ctx: ScopeCtx, kind: PartyKind): { accountId?: { in: string[] } } {
@@ -141,6 +146,7 @@ export function partyListWhere(ctx: ScopeCtx, kind: PartyKind): { accountId?: { 
 
 /** Party ledgers this user may not open: customer / supplier accounts outside the allowed lists. */
 function hiddenParties(ctx: ScopeCtx): Prisma.AccountWhereInput[] {
+  if (isPrivileged(ctx)) return [];
   const out: Prisma.AccountWhereInput[] = [];
   if (ctx.partyScope.customers) out.push({ customer: { isNot: null }, id: { notIn: ctx.partyScope.customers } });
   if (ctx.partyScope.suppliers) out.push({ supplier: { isNot: null }, id: { notIn: ctx.partyScope.suppliers } });
@@ -149,11 +155,21 @@ function hiddenParties(ctx: ScopeCtx): Prisma.AccountWhereInput[] {
 
 /** Ledger accounts this user may not open or use: hidden parties, general heads outside assigned list, groups outside allowed groups, cash/bank outside payment accounts. */
 function hiddenAccounts(ctx: ScopeCtx): Prisma.AccountWhereInput[] {
+  if (isPrivileged(ctx)) return [];
   const out = hiddenParties(ctx);
   const heads = allowedAccounts(ctx);
-  if (heads) out.push({ customer: { is: null }, supplier: { is: null }, id: { notIn: heads } });
-  if (ctx.partyScope.accountGroups) {
-    out.push({ kind: "GENERAL", groupId: { notIn: ctx.partyScope.accountGroups } });
+  const groups = ctx.partyScope.accountGroups;
+  if (heads && groups) {
+    out.push({
+      customer: { is: null },
+      supplier: { is: null },
+      id: { notIn: heads },
+      OR: [{ kind: { not: "GENERAL" } }, { groupId: { notIn: groups } }],
+    });
+  } else if (heads) {
+    out.push({ customer: { is: null }, supplier: { is: null }, id: { notIn: heads } });
+  } else if (groups) {
+    out.push({ kind: "GENERAL", groupId: { notIn: groups } });
   }
   if (ctx.partyScope.paymentAccounts) {
     out.push({ kind: { in: ["CASH", "BANK"] }, id: { notIn: ctx.partyScope.paymentAccounts } });
@@ -163,7 +179,7 @@ function hiddenAccounts(ctx: ScopeCtx): Prisma.AccountWhereInput[] {
 
 /** For filtering cash / bank accounts to the allowed payment sources */
 export function cashAccountScopeWhere(ctx: ScopeCtx): Prisma.AccountWhereInput {
-  if (ctx.partyScope.paymentAccounts) {
+  if (!isPrivileged(ctx) && ctx.partyScope.paymentAccounts) {
     return { id: { in: ctx.partyScope.paymentAccounts } };
   }
   return {};
@@ -189,6 +205,7 @@ const SUPPLIER_TRADE = ["PURCHASE", "PURCHASE_RETURN"] as const;
  * trade voucher of the restricted kind that someone else entered.
  */
 export function voucherScopeWhere(ctx: ScopeCtx): Prisma.VoucherWhereInput {
+  if (isPrivileged(ctx)) return {};
   const hidden = hiddenParties(ctx);
   const heads = allowedAccounts(ctx);
   const parts: Prisma.VoucherWhereInput[] = [];
@@ -236,7 +253,7 @@ export async function forbiddenAccounts(ctx: ScopeCtx, accountIds: (string | nul
 
 /** Refuses any cash / bank payment accounts outside the user's allowed list. */
 export async function assertPaymentAccountsAllowed(ctx: ScopeCtx, cashAccountIds: (string | null | undefined)[]) {
-  if (!ctx.partyScope.paymentAccounts) return;
+  if (isPrivileged(ctx) || !ctx.partyScope.paymentAccounts) return;
   const ids = [...new Set(cashAccountIds.filter((x): x is string => !!x))];
   const unauthorized = ids.filter((id) => !ctx.partyScope.paymentAccounts!.includes(id));
   if (unauthorized.length > 0) {
@@ -302,8 +319,15 @@ export async function canOpenLedger(ctx: ScopeCtx, accountId: string) {
   if (a.customer) return canSeeParty(ctx, "CUSTOMER", accountId);
   if (a.supplier) return canSeeParty(ctx, "SUPPLIER", accountId);
   const heads = allowedAccounts(ctx);
-  if (heads && !heads.includes(accountId)) return false;
-  if (ctx.partyScope.accountGroups && a.kind === "GENERAL" && !ctx.partyScope.accountGroups.includes(a.groupId)) return false;
+  const groups = ctx.partyScope.accountGroups;
+  if (heads && groups) {
+    const inHeads = heads.includes(accountId);
+    const inGroups = a.kind === "GENERAL" && groups.includes(a.groupId);
+    if (!inHeads && !inGroups) return false;
+  } else {
+    if (heads && !heads.includes(accountId)) return false;
+    if (groups && a.kind === "GENERAL" && !groups.includes(a.groupId)) return false;
+  }
   if (ctx.partyScope.paymentAccounts && (a.kind === "CASH" || a.kind === "BANK") && !ctx.partyScope.paymentAccounts.includes(accountId)) return false;
   return !partyRestricted(ctx); // party-restricted users: a sales / cash ledger lists every party
 }
@@ -313,6 +337,7 @@ export const allowedParties = (ctx: ScopeCtx, kind: PartyKind) => allowedOf(ctx,
 
 /** Alerts about a customer outside the user's list (overdue dues) are not shown to them. */
 export function notificationScopeWhere(ctx: ScopeCtx): Prisma.NotificationWhereInput {
+  if (isPrivileged(ctx)) return {};
   const allowed = ctx.partyScope.customers;
   return allowed ? { OR: [{ accountId: null }, { accountId: { in: allowed } }] } : {};
 }

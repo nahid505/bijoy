@@ -146,7 +146,7 @@ export function ancestorGroupIds(groups: GroupNode[], id: string): Set<string> {
   return out;
 }
 
-/** Returns group ids to display on the ledger overview: populated groups, their ancestor parents (so root/parent headers always render and stay editable), matching custom groups, or groups matching the search query. */
+/** Returns group ids to display on the ledger overview: all groups (including empty root & child groups) matching `nature` when `!q`, or populated/matching groups with their full ancestor & descendant sub-trees when `q` is given. */
 export function visibleLedgerGroupIds<T extends GroupNode & { name: string; nature: string; systemKey: string | null }>(
   groups: T[],
   populatedGroupIds: Set<string>,
@@ -154,6 +154,7 @@ export function visibleLedgerGroupIds<T extends GroupNode & { name: string; natu
 ): Set<string> {
   const visible = new Set<string>();
   const q = opts.q?.trim().toLowerCase();
+  const byId = new Map(groups.map((g) => [g.id, g]));
   const addWithAncestors = (id: string) => {
     visible.add(id);
     for (const aid of ancestorGroupIds(groups, id)) visible.add(aid);
@@ -165,10 +166,14 @@ export function visibleLedgerGroupIds<T extends GroupNode & { name: string; natu
       continue;
     }
     if (opts.nature && g.nature !== opts.nature) continue;
-    if (!q && !g.systemKey) {
+    if (!q) {
       addWithAncestors(g.id);
-    } else if (q && g.name.toLowerCase().includes(q)) {
+    } else if (g.name.toLowerCase().includes(q)) {
       addWithAncestors(g.id);
+      for (const did of descendantGroupIds(groups, g.id)) {
+        const desc = byId.get(did);
+        if (desc && (!opts.nature || desc.nature === opts.nature)) visible.add(did);
+      }
     }
   }
   return visible;
