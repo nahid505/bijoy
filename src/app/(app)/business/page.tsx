@@ -1,10 +1,11 @@
 import { normalizeThresholds } from "@/lib/expiry";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { prisma, num } from "@/lib/db";
 import { toDateInput } from "@/lib/format";
 import { NewBusinessForm } from "@/components/new-business-form";
 import { Badge, PageHeader } from "@/components/ui";
-import { requirePermission } from "@/server/auth";
+import { can, requirePermission } from "@/server/auth";
 import { BusinessForm } from "./business-form";
 import { BusinessTypesForm } from "./business-types-form";
 import { saveBusinessTypesAction } from "@/server/actions/business";
@@ -15,6 +16,7 @@ export const metadata: Metadata = { title: "ব্যবসা সেটিং" 
 export default async function BusinessPage() {
   const ctx = await requirePermission("business:manage");
   const b = await prisma.business.findUniqueOrThrow({ where: { id: ctx.business.id } });
+  const canManageAccounts = can(ctx, "accounts:manage");
   return (
     <>
       <PageHeader title="ব্যবসা সেটিং" description="প্রোফাইল, BIN/TIN, অর্থবছর, মুদ্রা ও ইনভয়েস সেটিং" />
@@ -54,6 +56,15 @@ export default async function BusinessPage() {
             <div className="panel-head"><h2 className="panel-title">নতুন ব্যবসা খুলুন</h2></div>
             <div className="p-4"><NewBusinessForm /></div>
           </section>
+          {canManageAccounts && (
+            <section className="panel">
+              <div className="panel-head"><h2 className="panel-title">হিসাব গ্রুপ সেটিং</h2></div>
+              <div className="space-y-2.5 p-4 text-sm text-slate-600">
+                <p>চার্ট অব অ্যাকাউন্টসের মূল প্যারেন্ট গ্রুপ ও সাব-গ্রুপগুলো দেখুন ও রিনেম করুন।</p>
+                <Link prefetch={false} href="/settings/account-groups" className="btn-secondary inline-flex">অ্যাকাউন্ট গ্রুপ তালিকা →</Link>
+              </div>
+            </section>
+          )}
         </div>
       </div>
     </>

@@ -121,6 +121,7 @@ export const NAV: NavEntry[] = [
     icon: I.book,
     children: [
       { href: "/accounts", label: "লেজার", permission: REPORT_ACCESS.ledgerView },
+      { href: "/settings/account-groups", label: "হিসাব গ্রুপ সেটিং", permission: "accounts:manage" },
       { href: "/accounts/cash", label: "ক্যাশ", permission: "accounts:view" },
       { href: "/accounts/bank", label: "ব্যাংক", permission: "accounts:view" },
       { href: "/accounts/debtors", label: "দেনাদার", permission: "accounts:view" },

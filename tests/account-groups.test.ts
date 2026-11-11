@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canHaveSubgroups, canMoveGroupUnder, descendantGroupIds, effectiveGroupKeys, groupDepth, MAX_GROUP_DEPTH, orderGroupTree, subtreeHeight } from "@/lib/account-groups";
+import { ancestorGroupIds, canHaveSubgroups, canMoveGroupUnder, descendantGroupIds, effectiveGroupKeys, groupDepth, MAX_GROUP_DEPTH, orderGroupTree, subtreeHeight, visibleLedgerGroupIds } from "@/lib/account-groups";
 import { accountGroupSchema } from "@/lib/validation";
 
 const g = (id: string, parentId: string | null = null, systemKey: string | null = null) => ({ id, parentId, systemKey });
@@ -67,5 +67,33 @@ describe("account group tree", () => {
     const deep = [g("d0"), g("d1", "d0"), g("d2", "d1"), ...tree];
     expect(canMoveGroupUnder(deep, "a", "d2")).toBe(false);
     expect(canMoveGroupUnder(deep, "a", "d1")).toBe(true);
+  });
+
+  it("ancestorGroupIds and visibleLedgerGroupIds keep parent headers visible even when only sub-groups hold ledgers", () => {
+    const groups = [
+      { id: "sysExp", parentId: null, systemKey: "INDIRECT_EXPENSES", name: "পরিচালন ব্যয়", nature: "EXPENSE" },
+      { id: "cocola", parentId: null, systemKey: null, name: "কোকোলা ডিপো খরচ", nature: "EXPENSE" },
+      { id: "fuel", parentId: "cocola", systemKey: null, name: "গাড়ি খরচ", nature: "EXPENSE" },
+      { id: "emptyCustom", parentId: null, systemKey: null, name: "অন্যান্য অফিস খরচ", nature: "EXPENSE" },
+      { id: "emptySys", parentId: null, systemKey: "FIXED_ASSETS", name: "স্থায়ী সম্পদ", nature: "ASSET" },
+    ];
+    expect([...ancestorGroupIds(groups, "fuel")]).toEqual(["cocola"]);
+
+    // Only leaf sub-group "fuel" directly contains accounts; parent "cocola" has 0 direct accounts
+    const visDefault = visibleLedgerGroupIds(groups, new Set(["fuel"]));
+    expect(visDefault.has("fuel")).toBe(true);
+    expect(visDefault.has("cocola")).toBe(true);
+    expect(visDefault.has("emptyCustom")).toBe(true);
+    expect(visDefault.has("emptySys")).toBe(false);
+
+    // Nature filter hides non-matching groups
+    const visAsset = visibleLedgerGroupIds(groups, new Set(["fuel"]), { nature: "ASSET" });
+    expect(visAsset.has("emptyCustom")).toBe(false);
+
+    // Search matches parent header by name along with ancestors
+    const visSearch = visibleLedgerGroupIds(groups, new Set(["fuel"]), { q: "কোকোলা" });
+    expect(visSearch.has("cocola")).toBe(true);
+    expect(visSearch.has("fuel")).toBe(true);
+    expect(visSearch.has("emptyCustom")).toBe(false);
   });
 });

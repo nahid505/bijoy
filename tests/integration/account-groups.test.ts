@@ -147,9 +147,16 @@ run("account groups (+ নতুন গ্রুপ)", () => {
     expect((await fails(update(invest.id, { name: "বিনিয়োগ", nature: "ASSET", parentId: invest.id })))?.fields?.parentId).toBeTruthy();
     expect((await fails(update(invest.id, { name: "বিনিয়োগ", nature: "ASSET", parentId: sub.id })))?.fields?.parentId).toBeTruthy();
 
-    // system group: can rename, cannot change parentId or nature
+    // system group: can rename, cannot change parentId or nature; preserves child groups and ledgers
     const sysExp = await key("INDIRECT_EXPENSES");
+    const vehicle = await create({ name: "গাড়ি খরচ", nature: "EXPENSE", parentId: sysExp });
+    const driverCost = await ledger("ড্রাইভার ভাতা", vehicle.id);
     expect((await fails(update(sysExp, { name: "পরিচালন ব্যয়", nature: "ASSET" })))?.fields?.nature).toBeTruthy();
     expect((await fails(update(sysExp, { name: "পরিচালন ব্যয়", nature: "EXPENSE", parentId: invest.id })))?.fields?.parentId).toBeTruthy();
+
+    const renamedSys = await update(sysExp, { name: "পরিচালন ও প্রশাসনিক ব্যয়", nature: "EXPENSE" });
+    expect(renamedSys.name).toBe("পরিচালন ও প্রশাসনিক ব্যয়");
+    expect((await prisma.accountGroup.findUniqueOrThrow({ where: { id: vehicle.id } })).parentId).toBe(sysExp);
+    expect((await prisma.account.findUniqueOrThrow({ where: { id: driverCost } })).groupId).toBe(vehicle.id);
   });
 });

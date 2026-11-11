@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { NATURE_LABELS, type Nature } from "@/lib/accounting";
-import { RESERVED_GROUPS } from "@/lib/account-groups";
+import { ancestorGroupIds, RESERVED_GROUPS, visibleLedgerGroupIds } from "@/lib/account-groups";
 import { FilterBar, FilterField, PageHeader } from "@/components/ui";
 import { can, requirePermission } from "@/server/auth";
 import { getT } from "@/server/i18n";
@@ -30,8 +30,15 @@ export default async function AccountsPage({ searchParams }: { searchParams: Sea
     listAccountGroups(ctx.business.id),
   ]);
 
+  const groupById = new Map(allGroups.map((g) => [g.id, g]));
+  const ancestorNames = (groupId: string) =>
+    [...ancestorGroupIds(allGroups, groupId)]
+      .map((aid) => groupById.get(aid)?.name ?? "")
+      .filter(Boolean)
+      .join(" ");
+
   const accounts = accountsRaw.filter(
-    (a) => !q || `${a.name} ${a.code ?? ""} ${a.groupName}`.toLowerCase().includes(q),
+    (a) => !q || `${a.name} ${a.code ?? ""} ${a.groupName} ${ancestorNames(a.groupId)}`.toLowerCase().includes(q),
   );
 
   const bal = await balancesBefore(ctx.business.id, undefined, accounts.map((a) => a.id));
@@ -42,12 +49,12 @@ export default async function AccountsPage({ searchParams }: { searchParams: Sea
     accountsByGroup.set(a.groupId, bucket);
   }
 
-  const groupNameById = new Map(allGroups.map((g) => [g.id, g.name]));
+  const visibleIds = visibleLedgerGroupIds(allGroups, new Set(accountsByGroup.keys()), { q, nature });
   const sections: LedgerGroupSection[] = allGroups
-    .filter((g) => accountsByGroup.has(g.id))
+    .filter((g) => visibleIds.has(g.id))
     .map((g) => ({
       group: g,
-      parentName: g.parentId ? (groupNameById.get(g.parentId) ?? null) : null,
+      parentName: g.parentId ? (groupById.get(g.parentId)?.name ?? null) : null,
       accounts: (accountsByGroup.get(g.id) ?? []).map((a) => ({
         id: a.id,
         name: a.name,
@@ -73,7 +80,7 @@ export default async function AccountsPage({ searchParams }: { searchParams: Sea
         title={t("সকল লেজার (হিসাব খাতের তালিকা)")}
         description={t("সকল হিসাব খাত, গ্রুপ ও বর্তমান ব্যালেন্স — ব্যালেন্স সরাসরি জার্নাল এন্ট্রি থেকে")}
         crumbs={[{ label: t("হিসাব") }, { label: t("লেজার") }]}
-        actions={canManage && <NewLedgerButton groups={groupOptions} />}
+        actions={canManage && <NewLedgerButton groups={groupOptions} allGroups={allGroups} />}
       />
 
       <section className="panel overflow-hidden border border-slate-200/80 shadow-xs">

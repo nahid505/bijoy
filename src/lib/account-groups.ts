@@ -133,3 +133,43 @@ export function canMoveGroupUnder(
   if (descendantGroupIds(groups, id).has(parentId)) return false;
   return groupDepth(groups, parentId) + 1 + subtreeHeight(groups, id) <= MAX_GROUP_DEPTH;
 }
+
+/** Ancestor group ids above `id` (excluding `id` itself; cycle-safe). */
+export function ancestorGroupIds(groups: GroupNode[], id: string): Set<string> {
+  const byId = new Map(groups.map((g) => [g.id, g]));
+  const out = new Set<string>();
+  const seen = new Set<string>([id]);
+  for (let g = byId.get(id); g?.parentId && byId.has(g.parentId) && !seen.has(g.parentId); g = byId.get(g.parentId)) {
+    seen.add(g.parentId);
+    out.add(g.parentId);
+  }
+  return out;
+}
+
+/** Returns group ids to display on the ledger overview: populated groups, their ancestor parents (so root/parent headers always render and stay editable), matching custom groups, or groups matching the search query. */
+export function visibleLedgerGroupIds<T extends GroupNode & { name: string; nature: string; systemKey: string | null }>(
+  groups: T[],
+  populatedGroupIds: Set<string>,
+  opts: { q?: string; nature?: string } = {},
+): Set<string> {
+  const visible = new Set<string>();
+  const q = opts.q?.trim().toLowerCase();
+  const addWithAncestors = (id: string) => {
+    visible.add(id);
+    for (const aid of ancestorGroupIds(groups, id)) visible.add(aid);
+  };
+
+  for (const g of groups) {
+    if (populatedGroupIds.has(g.id)) {
+      addWithAncestors(g.id);
+      continue;
+    }
+    if (opts.nature && g.nature !== opts.nature) continue;
+    if (!q && !g.systemKey) {
+      addWithAncestors(g.id);
+    } else if (q && g.name.toLowerCase().includes(q)) {
+      addWithAncestors(g.id);
+    }
+  }
+  return visible;
+}

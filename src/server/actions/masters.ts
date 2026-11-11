@@ -174,6 +174,8 @@ async function saveAccountGroupAction(
   });
   if (!r.ok) return { ok: false, message: r.message, errors: r.errors };
   revalidatePath("/accounts");
+  revalidatePath("/settings/account-groups");
+  revalidatePath("/expenses");
   return { ok: true, group: r.data };
 }
 

@@ -15,20 +15,24 @@ export interface AccountGroupDialogProps {
   groups: GroupOption[];
   /** When provided, edits this group; otherwise creates a new group. */
   group?: GroupOption;
+  /** Pre-selected parent group when creating a new sub-group. */
+  defaultParentId?: string;
   onCancel: () => void;
   onSaved: (g: GroupOption) => void;
 }
 
 /** Modal dialog to create or edit an account group (name, parent group, primary nature, description). */
-export function AccountGroupDialog({ groups, group, onCancel, onSaved }: AccountGroupDialogProps) {
+export function AccountGroupDialog({ groups, group, defaultParentId, onCancel, onSaved }: AccountGroupDialogProps) {
   const t = useT();
   const ref = useRef<HTMLDialogElement>(null);
   const isEdit = !!group;
   const isSystem = !!group?.systemKey;
+  const initialParent = group?.parentId ?? defaultParentId ?? "";
+  const initialParentGroup = initialParent ? groups.find((g) => g.id === initialParent) : undefined;
 
   const [name, setName] = useState(group?.name ?? "");
-  const [parentId, setParentId] = useState(group?.parentId ?? "");
-  const [nature, setNature] = useState<string>(group?.nature ?? "EXPENSE");
+  const [parentId, setParentId] = useState(initialParent);
+  const [nature, setNature] = useState<string>(group?.nature ?? initialParentGroup?.nature ?? "EXPENSE");
   const [description, setDescription] = useState(group?.description ?? "");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
