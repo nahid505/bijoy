@@ -140,29 +140,60 @@ export async function partyOpening(businessId: string, kind: PartyKind, accountI
 
 // ───────────────────────── chart of accounts ─────────────────────────
 
-const RESERVED_GROUPS = ["SUNDRY_DEBTORS", "SUNDRY_CREDITORS"];
-
 export interface AccountGroupOption {
   id: string;
   name: string;
   nature: string;
   systemKey: string | null;
   parentId: string | null;
+  description?: string | null;
   depth: number;
   /** a sub-group may be created under it */
   canParent: boolean;
 }
 
-/** Groups for the account form, in tree order (debtors / creditors left out: their ledgers come from the party pages). */
-export async function accountGroupOptions(businessId: string): Promise<AccountGroupOption[]> {
+/** All account groups of a business in tree order. */
+export async function listAccountGroups(businessId: string): Promise<AccountGroupOption[]> {
   const groups = await prisma.accountGroup.findMany({
     where: { businessId },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-    select: { id: true, name: true, nature: true, systemKey: true, parentId: true },
+    select: { id: true, name: true, nature: true, systemKey: true, parentId: true, description: true },
   });
-  return orderGroupTree(groups)
-    .filter((g) => !RESERVED_GROUPS.includes(g.systemKey ?? ""))
-    .map((g) => ({ ...g, canParent: canHaveSubgroups(groups, g.id) }));
+  return orderGroupTree(groups).map((g) => ({ ...g, canParent: canHaveSubgroups(groups, g.id) }));
+}
+
+/** Groups for the account form, in tree order (debtors / creditors left out: their ledgers come from the party pages). */
+export async function accountGroupOptions(businessId: string): Promise<AccountGroupOption[]> {
+  return (await listAccountGroups(businessId)).filter((g) => !RESERVED_GROUPS.includes(g.systemKey ?? ""));
+}
+
+async function resolveParentGroup(
+  tx: Tx,
+  businessId: string,
+  parentId: string,
+  nature: string,
+  opts: { selfId?: string; descendants?: Set<string>; subtreeDepth?: number } = {},
+) {
+  if (opts.selfId && parentId === opts.selfId) {
+    throw new UserError("গ্রুপ নিজেই নিজের প্যারেন্ট হতে পারে না", { parentId: ["গ্রুপ নিজেই নিজের প্যারেন্ট হতে পারে না"] });
+  }
+  if (opts.descendants?.has(parentId)) {
+    throw new UserError("নিজের সাব-গ্রুপকে প্যারেন্ট হিসেবে নির্বাচন করা যাবে না", { parentId: ["নিজের সাব-গ্রুপকে প্যারেন্ট হিসেবে নির্বাচন করা যাবে না"] });
+  }
+  const all = await tx.accountGroup.findMany({ where: { businessId }, select: { id: true, parentId: true, systemKey: true } });
+  const parent = await tx.accountGroup.findFirst({ where: { id: parentId, businessId } });
+  if (!parent) throw new UserError("প্যারেন্ট গ্রুপ পাওয়া যায়নি", { parentId: ["প্যারেন্ট গ্রুপ পাওয়া যায়নি"] });
+  if (NO_SUBGROUP_KEYS.includes(parent.systemKey ?? "")) {
+    throw new UserError(`"${parent.name}" এর অধীনে সাব-গ্রুপ খোলা যায় না — এর হিসাবগুলো নিজস্ব পাতা থেকে পরিচালিত হয়`, { parentId: ["এই গ্রুপের অধীনে সাব-গ্রুপ খোলা যায় না"] });
+  }
+  const depth = groupDepth(all, parent.id) + 1;
+  if (!canHaveSubgroups(all, parent.id) || depth + (opts.subtreeDepth ?? 0) > MAX_GROUP_DEPTH) {
+    throw new UserError(`সর্বোচ্চ ${MAX_GROUP_DEPTH} স্তর পর্যন্ত সাব-গ্রুপ খোলা যায়`, { parentId: ["এর নিচে আর স্তর খোলা যাবে না"] });
+  }
+  if (parent.nature !== nature) {
+    throw new UserError(`সাব-গ্রুপের মূল ধরন প্যারেন্ট গ্রুপের মতোই হতে হবে (${NATURE_LABELS[parent.nature]})`, { nature: [`প্যারেন্টের ধরন: ${NATURE_LABELS[parent.nature]}`] });
+  }
+  return { all, parent, depth };
 }
 
 /** A new account group (top level or a sub-group). A sub-group takes its parent's nature and P&L section. */
@@ -175,27 +206,107 @@ export async function createAccountGroup(ctx: Ctx, input: AccountGroupInput): Pr
     let sortOrder: number;
     let depth = 0;
     if (input.parentId) {
-      const all = await tx.accountGroup.findMany({ where: { businessId: ctx.businessId }, select: { id: true, parentId: true, systemKey: true } });
-      const parent = await tx.accountGroup.findFirst({ where: { id: input.parentId, businessId: ctx.businessId } });
-      if (!parent) throw new UserError("প্যারেন্ট গ্রুপ পাওয়া যায়নি", { parentId: ["প্যারেন্ট গ্রুপ পাওয়া যায়নি"] });
-      if (NO_SUBGROUP_KEYS.includes(parent.systemKey ?? "")) {
-        throw new UserError(`"${parent.name}" এর অধীনে সাব-গ্রুপ খোলা যায় না — এর হিসাবগুলো নিজস্ব পাতা থেকে পরিচালিত হয়`, { parentId: ["এই গ্রুপের অধীনে সাব-গ্রুপ খোলা যায় না"] });
-      }
-      if (!canHaveSubgroups(all, parent.id)) throw new UserError(`সর্বোচ্চ ${MAX_GROUP_DEPTH} স্তর পর্যন্ত সাব-গ্রুপ খোলা যায়`, { parentId: ["এর নিচে আর স্তর খোলা যাবে না"] });
-      if (parent.nature !== input.nature) {
-        throw new UserError(`সাব-গ্রুপের মূল ধরন প্যারেন্ট গ্রুপের মতোই হতে হবে (${NATURE_LABELS[parent.nature]})`, { nature: [`প্যারেন্টের ধরন: ${NATURE_LABELS[parent.nature]}`] });
-      }
-      isDirect = parent.isDirect;
-      sortOrder = parent.sortOrder; // listed with its parent in reports
-      depth = groupDepth(all, parent.id) + 1;
+      const resolved = await resolveParentGroup(tx, ctx.businessId, input.parentId, input.nature);
+      isDirect = resolved.parent.isDirect;
+      sortOrder = resolved.parent.sortOrder; // listed with its parent in reports
+      depth = resolved.depth;
     } else {
       sortOrder = ((await tx.accountGroup.aggregate({ where: { businessId: ctx.businessId }, _max: { sortOrder: true } }))._max.sortOrder ?? 0) + 1;
     }
     const g = await tx.accountGroup.create({
       data: { businessId: ctx.businessId, name: input.name, nature: input.nature, parentId: input.parentId, description: input.description, isDirect, sortOrder },
-      select: { id: true, name: true, nature: true, systemKey: true, parentId: true },
+      select: { id: true, name: true, nature: true, systemKey: true, parentId: true, description: true },
     });
     return { ...g, depth, canParent: depth < MAX_GROUP_DEPTH };
+  }, TX);
+}
+
+/** Updates an account group's name/description and, for custom groups, its parent and nature (propagating to descendants & accounts). */
+export async function updateAccountGroup(ctx: Ctx, id: string, input: AccountGroupInput): Promise<AccountGroupOption> {
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.accountGroup.findFirst({ where: { id, businessId: ctx.businessId } });
+    if (!existing) throw new UserError("গ্রুপ পাওয়া যায়নি");
+
+    if (await tx.accountGroup.findFirst({ where: { businessId: ctx.businessId, name: ciEquals(input.name), id: { not: id } }, select: { id: true } })) {
+      throw new UserError("এই নামে একটি গ্রুপ আগে থেকেই আছে", { name: ["এই নামে একটি গ্রুপ আগে থেকেই আছে"] });
+    }
+
+    const all = await tx.accountGroup.findMany({ where: { businessId: ctx.businessId }, select: { id: true, parentId: true, systemKey: true } });
+
+    if (existing.systemKey) {
+      if (input.parentId !== existing.parentId) {
+        throw new UserError("সিস্টেম গ্রুপের প্যারেন্ট পরিবর্তন করা যাবে না", { parentId: ["সিস্টেম গ্রুপের প্যারেন্ট পরিবর্তন করা যাবে না"] });
+      }
+      if (input.nature !== existing.nature) {
+        throw new UserError("সিস্টেম গ্রুপের মূল ধরন পরিবর্তন করা যাবে না", { nature: ["সিস্টেম গ্রুপের মূল ধরন পরিবর্তন করা যাবে না"] });
+      }
+      const g = await tx.accountGroup.update({
+        where: { id },
+        data: { name: input.name, description: input.description },
+        select: { id: true, name: true, nature: true, systemKey: true, parentId: true, description: true },
+      });
+      return { ...g, depth: groupDepth(all, g.id), canParent: canHaveSubgroups(all, g.id) };
+    }
+
+    const descendants = descendantGroupIds(all, id);
+    let isDirect = existing.isDirect;
+    let sortOrder = existing.sortOrder;
+
+    if (input.parentId) {
+      const resolved = await resolveParentGroup(tx, ctx.businessId, input.parentId, input.nature, {
+        selfId: id,
+        descendants,
+        subtreeDepth: subtreeHeight(all, id),
+      });
+      isDirect = resolved.parent.isDirect;
+      if (existing.parentId !== input.parentId) sortOrder = resolved.parent.sortOrder;
+    } else {
+      isDirect = false;
+      if (existing.parentId !== null) {
+        sortOrder = ((await tx.accountGroup.aggregate({ where: { businessId: ctx.businessId }, _max: { sortOrder: true } }))._max.sortOrder ?? 0) + 1;
+      }
+    }
+
+    const affectedIds = [id, ...descendants];
+    const natureChanged = existing.nature !== input.nature;
+    if (natureChanged) {
+      const hasSystemAccount = await tx.account.count({
+        where: { businessId: ctx.businessId, groupId: { in: affectedIds }, isSystem: true },
+      });
+      if (hasSystemAccount > 0) {
+        throw new UserError("এই গ্রুপে সিস্টেম হিসাব থাকায় মূল ধরন পরিবর্তন করা যাবে না", { nature: ["সিস্টেম হিসাব থাকায় ধরন পরিবর্তন করা যাবে না"] });
+      }
+    }
+
+    const g = await tx.accountGroup.update({
+      where: { id },
+      data: {
+        name: input.name,
+        nature: input.nature,
+        parentId: input.parentId,
+        description: input.description,
+        isDirect,
+        sortOrder,
+      },
+      select: { id: true, name: true, nature: true, systemKey: true, parentId: true, description: true },
+    });
+
+    if (descendants.size > 0 && (natureChanged || existing.isDirect !== isDirect || existing.sortOrder !== sortOrder)) {
+      await tx.accountGroup.updateMany({
+        where: { businessId: ctx.businessId, id: { in: [...descendants] } },
+        data: { nature: input.nature, isDirect, sortOrder },
+      });
+    }
+    if (natureChanged) {
+      await tx.account.updateMany({
+        where: { businessId: ctx.businessId, groupId: { in: affectedIds } },
+        data: { nature: input.nature },
+      });
+    }
+
+    const updatedAll = all.map((x) => (x.id === id ? { ...x, parentId: input.parentId } : x));
+    const depth = groupDepth(updatedAll, g.id);
+    return { ...g, depth, canParent: canHaveSubgroups(updatedAll, g.id) };
   }, TX);
 }
 

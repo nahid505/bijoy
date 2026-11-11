@@ -8,7 +8,7 @@ import { assertPermission, can, ForbiddenError, getContext } from "../auth";
 import { audit } from "../audit";
 import { formToObject, guard, parseForm, safeReturnPath, toResult, UserError, type ActionState } from "../action-utils";
 import { flash } from "../flash";
-import { createAccountGroup, deleteAccount, deleteParty, deleteProduct, saveAccount, saveParty, saveProduct, setPartyActive, type AccountGroupOption } from "../services/master";
+import { createAccountGroup, deleteAccount, deleteParty, deleteProduct, saveAccount, saveParty, saveProduct, setPartyActive, updateAccountGroup, type AccountGroupOption } from "../services/master";
 import { assertFeature } from "../features";
 import { assertPartyRecordAllowed, assignToCreator } from "../party-scope";
 import { DEPOT_ACCESS, isDepot } from "@/lib/depot";
@@ -152,18 +152,39 @@ export async function toggleAccountAction(id: string, active: boolean, _prev: Ac
   return toResult(result);
 }
 
-/** "+ নতুন গ্রুপ" on the account form: creates the group without leaving the page and returns it for the dropdown. */
-export async function createAccountGroupAction(input: { name: string; nature: string; parentId: string; description: string }): Promise<{ ok: true; group: AccountGroupOption } | { ok: false; message: string; errors?: Record<string, string[]> }> {
+type GroupActionResult = { ok: true; group: AccountGroupOption } | { ok: false; message: string; errors?: Record<string, string[]> };
+
+async function saveAccountGroupAction(
+  id: string | null,
+  input: { name: string; nature: string; parentId: string; description: string },
+): Promise<GroupActionResult> {
   const r = await guard(async () => {
     const ctx = await assertPermission("accounts:manage");
     const data = accountGroupSchema.parse(input);
-    const group = await createAccountGroup(ctx.svc, data);
-    await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: "CREATE", entity: "AccountGroup", entityId: group.id, details: { name: data.name, nature: data.nature, parentId: data.parentId } });
+    const group = id ? await updateAccountGroup(ctx.svc, id, data) : await createAccountGroup(ctx.svc, data);
+    await audit({
+      businessId: ctx.business.id,
+      userId: ctx.user.id,
+      action: id ? "UPDATE" : "CREATE",
+      entity: "AccountGroup",
+      entityId: group.id,
+      details: { name: data.name, nature: data.nature, parentId: data.parentId },
+    });
     return group;
   });
   if (!r.ok) return { ok: false, message: r.message, errors: r.errors };
   revalidatePath("/accounts");
   return { ok: true, group: r.data };
+}
+
+/** "+ নতুন গ্রুপ" on the account form: creates the group without leaving the page and returns it for the dropdown. */
+export async function createAccountGroupAction(input: { name: string; nature: string; parentId: string; description: string }): Promise<GroupActionResult> {
+  return saveAccountGroupAction(null, input);
+}
+
+/** Updates an existing account group from the chart of accounts page. */
+export async function updateAccountGroupAction(id: string, input: { name: string; nature: string; parentId: string; description: string }): Promise<GroupActionResult> {
+  return saveAccountGroupAction(id, input);
 }
 
 // ───────────────────────── products ─────────────────────────

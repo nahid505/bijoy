@@ -14,6 +14,7 @@ export interface GroupOption {
   nature: string;
   systemKey: string | null;
   parentId: string | null;
+  description?: string | null;
   /** 0 = top group; sub-groups are indented in the dropdown */
   depth: number;
   /** a sub-group may be created under it */

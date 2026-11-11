@@ -5,7 +5,7 @@ import { UserError } from "@/lib/errors";
 import { accountGroupSchema, accountSchema } from "@/lib/validation";
 import { createBusiness } from "@/server/services/bootstrap";
 import { systemAccounts, type Ctx } from "@/server/services/accounting";
-import { accountGroupOptions, createAccountGroup, saveAccount } from "@/server/services/master";
+import { accountGroupOptions, createAccountGroup, saveAccount, updateAccountGroup } from "@/server/services/master";
 import { saveCashVoucher } from "@/server/services/voucher";
 import { balanceSheet, profitAndLoss, trialBalance } from "@/server/services/report";
 import { EXTRA_REPORTS } from "@/server/reports/extra";
@@ -19,6 +19,7 @@ run("account groups (+ নতুন গ্রুপ)", () => {
   let acc: Awaited<ReturnType<typeof systemAccounts>>;
   const key = async (systemKey: string) => (await prisma.accountGroup.findFirstOrThrow({ where: { businessId: ctx.businessId, systemKey } })).id;
   const create = (o: Record<string, unknown>) => createAccountGroup(ctx, accountGroupSchema.parse({ parentId: "", description: "", ...o }));
+  const update = (id: string, o: Record<string, unknown>) => updateAccountGroup(ctx, id, accountGroupSchema.parse({ parentId: "", description: "", ...o }));
   const ledger = (name: string, groupId: string) => saveAccount(ctx, accountSchema.parse({ name, groupId, openingBalance: 0, openingSide: "DR" }));
   const fails = async (p: Promise<unknown>) => {
     try {
@@ -125,5 +126,30 @@ run("account groups (+ নতুন গ্রুপ)", () => {
     const bad = JSON.parse(JSON.stringify(file));
     bad.data.accountGroups.find((g: { name: string }) => g.name === "মেশিনারি").parentId = "does-not-exist";
     expect(validateBackup(bad).ok).toBe(false);
+  });
+
+  it("updateAccountGroup: rename, change nature/parent with propagation, and enforce system & cycle guards", async () => {
+    const invest = await create({ name: "বিনিয়োগ-পুরানো", nature: "EXPENSE", description: "বিবরণ" });
+    const sub = await create({ name: "শেয়ার বিনিয়োগ", nature: "EXPENSE", parentId: invest.id });
+    const accId = await ledger("ডিএসই বিনিয়োগ", sub.id);
+
+    // rename + change nature from EXPENSE to ASSET: propagates to child sub-group and accounts
+    const updated = await update(invest.id, { name: "বিনিয়োগ", nature: "ASSET", description: "দীর্ঘমেয়াদি" });
+    expect(updated).toMatchObject({ id: invest.id, name: "বিনিয়োগ", nature: "ASSET", description: "দীর্ঘমেয়াদি" });
+    expect((await prisma.accountGroup.findUniqueOrThrow({ where: { id: sub.id } })).nature).toBe("ASSET");
+    expect((await prisma.account.findUniqueOrThrow({ where: { id: accId } })).nature).toBe("ASSET");
+
+    // duplicate name rejected, self-rename allowed
+    expect((await fails(update(invest.id, { name: "নগদ তহবিল", nature: "ASSET" })))?.fields?.name).toBeTruthy();
+    expect((await update(invest.id, { name: "বিনিয়োগ", nature: "ASSET" })).name).toBe("বিনিয়োগ");
+
+    // cycle prevention: cannot pick self or child as parent
+    expect((await fails(update(invest.id, { name: "বিনিয়োগ", nature: "ASSET", parentId: invest.id })))?.fields?.parentId).toBeTruthy();
+    expect((await fails(update(invest.id, { name: "বিনিয়োগ", nature: "ASSET", parentId: sub.id })))?.fields?.parentId).toBeTruthy();
+
+    // system group: can rename, cannot change parentId or nature
+    const sysExp = await key("INDIRECT_EXPENSES");
+    expect((await fails(update(sysExp, { name: "পরিচালন ব্যয়", nature: "ASSET" })))?.fields?.nature).toBeTruthy();
+    expect((await fails(update(sysExp, { name: "পরিচালন ব্যয়", nature: "EXPENSE", parentId: invest.id })))?.fields?.parentId).toBeTruthy();
   });
 });

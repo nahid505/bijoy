@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canHaveSubgroups, effectiveGroupKeys, groupDepth, MAX_GROUP_DEPTH, orderGroupTree } from "@/lib/account-groups";
+import { canHaveSubgroups, canMoveGroupUnder, descendantGroupIds, effectiveGroupKeys, groupDepth, MAX_GROUP_DEPTH, orderGroupTree, subtreeHeight } from "@/lib/account-groups";
 import { accountGroupSchema } from "@/lib/validation";
 
 const g = (id: string, parentId: string | null = null, systemKey: string | null = null) => ({ id, parentId, systemKey });
@@ -41,5 +41,31 @@ describe("account group tree", () => {
     expect(issues({ nature: "STOCK" })).toContain("nature");
     expect(issues({ description: "x".repeat(501) })).toContain("description");
     expect(issues({ name: "x".repeat(101) })).toContain("name");
+  });
+
+  it("descendants, subtree height and valid move checks prevent cycles and depth overflow", () => {
+    const tree = [
+      g("root", null, "INDIRECT_EXPENSES"),
+      g("a", "root"),
+      g("b", "a"),
+      g("c", "b"),
+      g("other", null),
+      g("cash", null, "CASH_IN_HAND"),
+    ];
+    expect([...descendantGroupIds(tree, "a")].sort()).toEqual(["b", "c"]);
+    expect(subtreeHeight(tree, "a")).toBe(2);
+    expect(subtreeHeight(tree, "c")).toBe(0);
+    // self or descendant cannot be chosen as parent
+    expect(canMoveGroupUnder(tree, "a", "a")).toBe(false);
+    expect(canMoveGroupUnder(tree, "a", "b")).toBe(false);
+    expect(canMoveGroupUnder(tree, "a", "c")).toBe(false);
+    // reserved system group cannot be parent
+    expect(canMoveGroupUnder(tree, "a", "cash")).toBe(false);
+    // valid parent within depth limit
+    expect(canMoveGroupUnder(tree, "a", "other")).toBe(true);
+    // subtree height of "a" is 2, so moving under a depth-2 parent would put "c" at depth 5 > MAX_GROUP_DEPTH (4)
+    const deep = [g("d0"), g("d1", "d0"), g("d2", "d1"), ...tree];
+    expect(canMoveGroupUnder(deep, "a", "d2")).toBe(false);
+    expect(canMoveGroupUnder(deep, "a", "d1")).toBe(true);
   });
 });
