@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { toAsciiDigits } from "./digits";
-import { weighbridgeGross } from "./paddy";
+import { summarizePaddyLines, weighbridgeGross } from "./paddy";
 import { round2 } from "./calc";
 import { looksLikeEmail, normalizeBdMobile } from "./mobile";
 
@@ -420,30 +420,69 @@ export const depotFundSchema = z.object({
 });
 export type DepotFundInput = z.infer<typeof depotFundSchema>;
 
+const paddyBagInt = (msg: string, max = 1_000_000) =>
+  z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).int(msg).min(0, "ঋণাত্মক হতে পারবে না").max(max).default(0);
+
+const paddyItemShape = {
+  batchNo: optionalText(60),
+  bagCount: paddyBagInt("বস্তার সংখ্যা পূর্ণসংখ্যা হবে"),
+  juteBagQty: paddyBagInt("চটের বস্তার সংখ্যা পূর্ণসংখ্যা হবে"),
+  plasticBagQty: paddyBagInt("প্লাস্টিক বস্তার সংখ্যা পূর্ণসংখ্যা হবে"),
+  totalBags: paddyBagInt("মোট বস্তার সংখ্যা পূর্ণসংখ্যা হবে", 2_000_000),
+  grossKg: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).min(0, "ঋণাত্মক হতে পারবে না").max(100_000_000, "ওজন খুব বড়").default(0),
+  dhaltaKg: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).min(0, "ঋণাত্মক হতে পারবে না").max(100_000_000).default(0),
+  variety: optionalText(60),
+  moisturePct: z.preprocess((v) => (v === "" || v === null || v === undefined ? null : v), z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).min(0, "ঋণাত্মক হতে পারবে না").max(100, "সর্বোচ্চ ১০০%").nullable()).default(null),
+  vehicleGrossKg: z.preprocess((v) => (v === "" || v === null || v === undefined || v === 0 || v === "0" ? null : v), z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).positive().max(100_000_000).nullable()).default(null),
+  vehicleTareKg: z.preprocess((v) => (v === "" || v === null || v === undefined || v === 0 || v === "0" ? null : v), z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).positive().max(100_000_000).nullable()).default(null),
+};
+
+export const paddyPurchaseItemSchema = z.object({
+  productId: z.string().min(1, "ধান (পণ্য) নির্বাচন করুন"),
+  ratePerMon: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).positive("প্রতি মণের দর দিন").max(10_000_000, "দর খুব বড়"),
+  ...paddyItemShape,
+});
+export type PaddyPurchaseItemInput = z.infer<typeof paddyPurchaseItemSchema>;
+
+function validatePaddyLine(
+  v: {
+    productId: string;
+    ratePerMon: number;
+    vehicleGrossKg: number | null;
+    vehicleTareKg: number | null;
+    grossKg: number;
+    dhaltaKg: number;
+  },
+  ctx: z.RefinementCtx,
+  prefix: (string | number)[],
+) {
+  if (!v.productId.trim()) ctx.addIssue({ code: "custom", path: [...prefix, "productId"], message: "ধান (পণ্য) নির্বাচন করুন" });
+  if (!(v.ratePerMon > 0)) ctx.addIssue({ code: "custom", path: [...prefix, "ratePerMon"], message: "প্রতি মণের দর দিন" });
+  if ((v.vehicleGrossKg === null) !== (v.vehicleTareKg === null)) {
+    ctx.addIssue({ code: "custom", path: [...prefix, v.vehicleGrossKg === null ? "vehicleGrossKg" : "vehicleTareKg"], message: "গাড়িসহ ও খালি গাড়ির — দুটো ওজনই দিন (অথবা কোনোটিই নয়)" });
+  }
+  if (v.vehicleGrossKg !== null && v.vehicleTareKg !== null && v.vehicleTareKg >= v.vehicleGrossKg) {
+    ctx.addIssue({ code: "custom", path: [...prefix, "vehicleTareKg"], message: "খালি গাড়ির ওজন গাড়িসহ ওজনের চেয়ে কম হতে হবে" });
+  }
+  const gross = weighbridgeGross(v.vehicleGrossKg, v.vehicleTareKg) ?? v.grossKg;
+  if (!(gross > 0)) ctx.addIssue({ code: "custom", path: [...prefix, "grossKg"], message: "মোট ওজন দিন (অথবা গাড়িসহ ও খালি গাড়ির ওজন)" });
+  else if (v.dhaltaKg >= gross) ctx.addIssue({ code: "custom", path: [...prefix, "dhaltaKg"], message: "ঢলতা মোট ওজনের চেয়ে কম হতে হবে" });
+}
+
 export const paddyPurchaseSchema = z
   .object({
     ...voucherHeader,
-    partyAccountId: optionalId, // supplier (empty = cash purchase, paid in full)
-    productId: z.string().min(1, "ধান (পণ্য) নির্বাচন করুন"),
+    partyAccountId: optionalId, // supplier / party (empty = cash purchase, paid in full)
     warehouseId: optionalId,
-    batchNo: optionalText(60),
-    bagCount: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).int("বস্তার সংখ্যা পূর্ণসংখ্যা হবে").min(0, "ঋণাত্মক হতে পারবে না").max(1_000_000).default(0),
-    juteBagQty: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).int("চটের বস্তার সংখ্যা পূর্ণসংখ্যা হবে").min(0, "ঋণাত্মক হতে পারবে না").max(1_000_000).default(0),
-    plasticBagQty: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).int("প্লাস্টিক বস্তার সংখ্যা পূর্ণসংখ্যা হবে").min(0, "ঋণাত্মক হতে পারবে না").max(1_000_000).default(0),
-    totalBags: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).int("মোট বস্তার সংখ্যা পূর্ণসংখ্যা হবে").min(0, "ঋণাত্মক হতে পারবে না").max(2_000_000).default(0),
-    // typed directly, or (weighbridge) loaded − empty vehicle — see the transform below
-    grossKg: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).min(0, "ঋণাত্মক হতে পারবে না").max(100_000_000, "ওজন খুব বড়").default(0),
-    dhaltaKg: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).min(0, "ঋণাত্মক হতে পারবে না").max(100_000_000).default(0),
-    ratePerMon: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).positive("প্রতি মণের দর দিন").max(10_000_000, "দর খুব বড়"),
     paidAmount: money.default(0),
     cashAccountId: optionalId,
     notes: optionalText(500),
-    // auto rice mill: variety, moisture, weighbridge (loaded − empty vehicle = gross) and unloading labour
-    variety: optionalText(60),
-    moisturePct: z.preprocess((v) => (v === "" || v === null || v === undefined ? null : v), z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).min(0, "ঋণাত্মক হতে পারবে না").max(100, "সর্বোচ্চ ১০০%").nullable()).default(null),
-    vehicleGrossKg: z.preprocess((v) => (v === "" || v === null || v === undefined || v === 0 || v === "0" ? null : v), z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).positive().max(100_000_000).nullable()).default(null),
-    vehicleTareKg: z.preprocess((v) => (v === "" || v === null || v === undefined || v === 0 || v === "0" ? null : v), z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).positive().max(100_000_000).nullable()).default(null),
     labourCost: money.default(0),
+    // multi-variety cart lines (new UI sends items[]; legacy callers may pass flat single-item fields)
+    items: z.array(paddyPurchaseItemSchema).max(100, "এক চালানে সর্বোচ্চ ১০০টি আইটেম").optional(),
+    productId: z.string().trim().default(""),
+    ratePerMon: z.coerce.number({ invalid_type_error: "সঠিক সংখ্যা দিন" }).min(0, "ঋণাত্মক হতে পারবে না").max(10_000_000, "দর খুব বড়").default(0),
+    ...paddyItemShape,
     // logistics & driver tracking
     destination: optionalText(300).optional(),
     vehicleNo: optionalText(60).optional(),
@@ -452,26 +491,54 @@ export const paddyPurchaseSchema = z
     transportFare: money.default(0).optional(),
   })
   .superRefine((v, ctx) => {
-    if ((v.vehicleGrossKg === null) !== (v.vehicleTareKg === null)) ctx.addIssue({ code: "custom", path: [v.vehicleGrossKg === null ? "vehicleGrossKg" : "vehicleTareKg"], message: "গাড়িসহ ও খালি গাড়ির — দুটো ওজনই দিন (অথবা কোনোটিই নয়)" });
-    if (v.vehicleGrossKg !== null && v.vehicleTareKg !== null && v.vehicleTareKg >= v.vehicleGrossKg) ctx.addIssue({ code: "custom", path: ["vehicleTareKg"], message: "খালি গাড়ির ওজন গাড়িসহ ওজনের চেয়ে কম হতে হবে" });
+    if (v.items !== undefined) {
+      if (v.items.length === 0) ctx.addIssue({ code: "custom", path: ["items"], message: "অন্তত ১টি ধান তালিকায় যোগ করুন" });
+      else v.items.forEach((it, idx) => validatePaddyLine(it, ctx, ["items", idx]));
+    } else {
+      validatePaddyLine(v, ctx, []);
+    }
     if (v.labourCost > 0 && !v.cashAccountId) ctx.addIssue({ code: "custom", path: ["cashAccountId"], message: "লেবার খরচ কোন নগদ/ব্যাংক থেকে দেওয়া হলো তা নির্বাচন করুন" });
-    const gross = weighbridgeGross(v.vehicleGrossKg, v.vehicleTareKg) ?? v.grossKg;
-    if (!(gross > 0)) ctx.addIssue({ code: "custom", path: ["grossKg"], message: "মোট ওজন দিন (অথবা গাড়িসহ ও খালি গাড়ির ওজন)" });
-    else if (v.dhaltaKg >= gross) ctx.addIssue({ code: "custom", path: ["dhaltaKg"], message: "ঢলতা মোট ওজনের চেয়ে কম হতে হবে" });
     if (v.paidAmount > 0 && !v.cashAccountId) ctx.addIssue({ code: "custom", path: ["cashAccountId"], message: "পরিশোধের নগদ/ব্যাংক হিসাব নির্বাচন করুন" });
     if (!v.partyAccountId && !v.cashAccountId) ctx.addIssue({ code: "custom", path: ["cashAccountId"], message: "সরবরাহকারী ছাড়া নগদ ক্রয়ে নগদ/ব্যাংক হিসাব নির্বাচন করুন" });
   })
   .transform((v) => {
-    const sumBags = v.juteBagQty + v.plasticBagQty;
-    const totalBags = sumBags > 0 ? sumBags : (v.totalBags || v.bagCount || 0);
-    const bagCount = totalBags;
+    const rawItems: PaddyPurchaseItemInput[] = v.items?.length
+      ? v.items
+      : [{
+          productId: v.productId, batchNo: v.batchNo, bagCount: v.bagCount, juteBagQty: v.juteBagQty,
+          plasticBagQty: v.plasticBagQty, totalBags: v.totalBags, grossKg: v.grossKg, dhaltaKg: v.dhaltaKg,
+          ratePerMon: v.ratePerMon, variety: v.variety, moisturePct: v.moisturePct,
+          vehicleGrossKg: v.vehicleGrossKg, vehicleTareKg: v.vehicleTareKg,
+        }];
+    const normalizedItems: PaddyPurchaseItemInput[] = rawItems.map((it) => {
+      const sumBags = it.juteBagQty + it.plasticBagQty;
+      const totalBags = sumBags > 0 ? sumBags : (it.totalBags || it.bagCount || 0);
+      return {
+        ...it,
+        totalBags,
+        bagCount: totalBags,
+        grossKg: weighbridgeGross(it.vehicleGrossKg, it.vehicleTareKg) ?? it.grossKg,
+      };
+    });
+    const summary = summarizePaddyLines(normalizedItems);
+    const varieties = [...new Set(normalizedItems.map((it) => it.variety?.trim()).filter((x): x is string => Boolean(x)))];
+    const first = normalizedItems[0];
     return {
       ...v,
-      juteBagQty: v.juteBagQty,
-      plasticBagQty: v.plasticBagQty,
-      totalBags,
-      bagCount,
-      grossKg: weighbridgeGross(v.vehicleGrossKg, v.vehicleTareKg) ?? v.grossKg,
+      items: v.items ? normalizedItems : undefined,
+      productId: first.productId,
+      batchNo: normalizedItems.length === 1 ? first.batchNo : null,
+      juteBagQty: summary.juteBagQty,
+      plasticBagQty: summary.plasticBagQty,
+      totalBags: summary.totalBags,
+      bagCount: summary.bagCount,
+      grossKg: summary.grossKg,
+      dhaltaKg: summary.dhaltaKg,
+      ratePerMon: summary.ratePerMon,
+      variety: varieties.length ? varieties.join(", ") : null,
+      moisturePct: normalizedItems.length === 1 ? first.moisturePct : null,
+      vehicleGrossKg: normalizedItems.length === 1 ? first.vehicleGrossKg : null,
+      vehicleTareKg: normalizedItems.length === 1 ? first.vehicleTareKg : null,
     };
   });
 export type PaddyPurchaseInput = z.infer<typeof paddyPurchaseSchema>;

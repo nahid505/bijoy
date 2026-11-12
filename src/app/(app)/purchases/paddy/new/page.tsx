@@ -22,7 +22,7 @@ export default async function NewPaddyPurchasePage() {
   ]);
   return (
     <>
-      <PageHeader title="নতুন ধান ক্রয়" description="ওজন স্লিপ অনুযায়ী লিখুন — নিট ওজন, মণ ও মোট দাম সাথে সাথে হিসাব হবে" crumbs={[{ label: "ধান ক্রয়", href: "/purchases/paddy" }, { label: "নতুন" }]} />
+      <PageHeader title="নতুন ধান ক্রয়" description="একই চালানে এক বা একাধিক জাতের ধান যুক্ত করুন — নিট ওজন, মণ ও মোট দাম সাথে সাথে হিসাব হবে" crumbs={[{ label: "ধান ক্রয়", href: "/purchases/paddy" }, { label: "নতুন" }]} />
       <section className="panel p-5">
         <PaddyPurchaseForm
           action={savePaddyPurchaseAction.bind(null, null)}
@@ -33,11 +33,21 @@ export default async function NewPaddyPurchasePage() {
           dateLocked={!canChangeEntryDate(ctx)}
           companyVehicles={companyVehicles}
           defaults={{
-            date: toDateInput(), supplier: null, warehouseId: warehouses[0]?.id ?? null, batchNo: "",
-            product: paddy ? { ...paddy, salePrice: num(paddy.salePrice), wholesalePrice: num(paddy.wholesalePrice), purchasePrice: num(paddy.purchasePrice), avgCost: num(paddy.avgCost), stock: num(paddy.stock) } : null,
-            bagCount: "", juteBagQty: "", plasticBagQty: "", grossKg: "", dhaltaKg: "", ratePerMon: "", paidAmount: "", cashAccountId: cash?.id ?? "", reference: "", notes: "",
-            variety: "", moisturePct: "", vehicleGrossKg: "", vehicleTareKg: "", labourCost: "",
-            destination: "", vehicleNo: "", driverName: "", driverMobile: "", transportFare: "",
+            date: toDateInput(),
+            supplier: null,
+            warehouseId: warehouses[0]?.id ?? null,
+            initialProduct: paddy ? { ...paddy, salePrice: num(paddy.salePrice), wholesalePrice: num(paddy.wholesalePrice), purchasePrice: num(paddy.purchasePrice), avgCost: num(paddy.avgCost), stock: num(paddy.stock) } : null,
+            items: [],
+            paidAmount: "",
+            cashAccountId: cash?.id ?? "",
+            reference: "",
+            notes: "",
+            labourCost: "",
+            destination: "",
+            vehicleNo: "",
+            driverName: "",
+            driverMobile: "",
+            transportFare: "",
           }}
         />
       </section>

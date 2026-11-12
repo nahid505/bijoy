@@ -40,12 +40,19 @@ export default async function PaddyPurchasesPage({ searchParams }: { searchParam
         {rows.length === 0 ? <EmptyState message="এখনও কোনো ধান ক্রয় নেই" /> : (
           <TableWrap>
             <table className="table">
-              <thead><tr><th>নং / তারিখ</th><th>সরবরাহকারী</th><th className="text-right">বস্তা</th><th className="text-right">মোট ওজন</th><th className="text-right">ঢলতা</th><th className="text-right">নিট (কেজি)</th><th className="text-right">মণ</th><th className="text-right">দর / মণ</th><th className="text-right">মোট দাম</th><th>নোট</th></tr></thead>
+              <thead><tr><th>নং / তারিখ</th><th>সরবরাহকারী</th><th>ধান</th><th className="text-right">বস্তা</th><th className="text-right">মোট ওজন</th><th className="text-right">ঢলতা</th><th className="text-right">নিট (কেজি)</th><th className="text-right">মণ</th><th className="text-right">দর / মণ</th><th className="text-right">মোট দাম</th><th>নোট</th></tr></thead>
               <tbody>
-                {rows.map((r) => (
+                {rows.map((r) => {
+                  const itemNames = r.items.map((it) => it.variety?.trim() ? `${it.product.name} (${it.variety})` : it.product.name);
+                  const productLabel = itemNames.length > 0 ? [...new Set(itemNames)].join(", ") : (r.variety || "—");
+                  return (
                   <tr key={r.id}>
                     <td><Link prefetch={false} href={`/vouchers/v/${r.voucher.id}`} className="font-semibold text-brand-700 hover:underline">{r.voucher.voucherNo}</Link><span className="block text-xs text-slate-500">{formatDate(r.voucher.date)}</span></td>
                     <td className="text-sm">{r.voucher.partyAccount?.name ?? "নগদ ক্রয়"}</td>
+                    <td className="max-w-[14rem] truncate text-xs text-slate-700" title={productLabel}>
+                      {productLabel}
+                      {r.items.length > 1 && <span className="ml-1 rounded bg-sky-50 px-1 py-0.5 text-[10px] font-medium text-sky-700">{toBnDigits(r.items.length)}টি</span>}
+                    </td>
                     <td className="num">
                       <span className="font-semibold">{toBnDigits(r.totalBags || r.bagCount)}</span>
                       {((r.juteBagQty ?? 0) > 0 || (r.plasticBagQty ?? 0) > 0) && (
@@ -58,11 +65,12 @@ export default async function PaddyPurchasesPage({ searchParams }: { searchParam
                     <td className="num">{formatQty(num(r.dhaltaKg))}</td>
                     <td className="num">{formatQty(num(r.netKg))}</td>
                     <td className="num">{toBnDigits(num(r.mon).toFixed(2))}</td>
-                    <td className="num">{formatMoney(num(r.ratePerMon), cur)}</td>
+                    <td className="num">{formatMoney(num(r.ratePerMon), cur)}{r.items.length > 1 ? <span className="block text-[10px] text-slate-400">গড়</span> : null}</td>
                     <td className="num font-semibold">{formatMoney(num(r.totalPrice), cur)}</td>
                     <td className="max-w-[16rem] truncate text-sm text-slate-600" title={r.notes ?? ""}>{r.notes ?? "—"}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </TableWrap>

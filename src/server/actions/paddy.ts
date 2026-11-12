@@ -27,7 +27,7 @@ export async function savePaddyPurchaseAction(id: string | null, _prev: ActionSt
     const v = await savePaddyPurchase(ctx.svc, input, id ?? undefined);
     await audit({
       businessId: ctx.business.id, userId: ctx.user.id, action: id ? "UPDATE" : "CREATE", entity: "Voucher", entityId: v.id,
-      details: { type: "PURCHASE", paddy: { bagCount: input.bagCount, grossKg: input.grossKg, dhaltaKg: input.dhaltaKg, ratePerMon: input.ratePerMon, notes: input.notes }, voucherNo: v.voucherNo, ...(before ? { before } : {}) },
+      details: { type: "PURCHASE", paddy: { bagCount: input.bagCount, grossKg: input.grossKg, dhaltaKg: input.dhaltaKg, ratePerMon: input.ratePerMon, itemsCount: input.items?.length ?? 1, notes: input.notes }, voucherNo: v.voucherNo, ...(before ? { before } : {}) },
     });
     return v;
   });

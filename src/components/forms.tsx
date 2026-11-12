@@ -54,15 +54,18 @@ export function SubmitButton({
   children,
   className = "btn-primary",
   pendingText = "সংরক্ষণ হচ্ছে…",
+  disabled = false,
 }: {
   children: React.ReactNode;
   className?: string;
   pendingText?: string;
+  disabled?: boolean;
 }) {
   const { pending } = useFormCtx();
   const t = useT();
+  const off = pending || disabled;
   return (
-    <button type="submit" className={className} disabled={pending} aria-disabled={pending}>
+    <button type="submit" className={className} disabled={off} aria-disabled={off}>
       {pending ? t(pendingText) : typeof children === "string" ? t(children) : children}
     </button>
   );

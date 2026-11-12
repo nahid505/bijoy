@@ -15,6 +15,8 @@ import { trialBalance } from "@/server/services/report";
 import { createRiceMillTemplate } from "@/server/services/production";
 import { listPaddyPurchases, loadPaddyPurchase, savePaddyPurchase } from "@/server/services/paddy";
 import { exportBusiness, restoreBackup, validateBackup } from "@/server/services/backup";
+import { dailyPurchase } from "@/server/reports/daily-purchase";
+import { millSummary } from "@/server/services/rice-mill";
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const D = (s: string) => new Date(`${s}T00:00:00.000Z`);
@@ -151,5 +153,119 @@ run("paddy purchase (weighbridge slip)", () => {
     await deleteVoucher(ctx, voucherId);
     expect(await prisma.paddyPurchase.count({ where: { voucherId } })).toBe(0);
     expect(await stock()).toBe(400);
+  });
+
+  it("multi-variety paddy cart: creates PaddyPurchaseItem rows, adds each paddy stock separately, posts single combined supplier voucher, supports edit, reports & backup", async () => {
+    const kgUnit = (await prisma.unit.findFirstOrThrow({ where: { businessId: ctx.businessId, baseUnitId: null, name: { contains: "কেজি" } } })).id;
+    const [sumon, guti, dhan51] = await Promise.all([
+      prisma.product.create({ data: { businessId: ctx.businessId, name: "সুমন ধান", unitId: kgUnit } }),
+      prisma.product.create({ data: { businessId: ctx.businessId, name: "গুটি ধান", unitId: kgUnit } }),
+      prisma.product.create({ data: { businessId: ctx.businessId, name: "৫১ ধান", unitId: kgUnit } }),
+    ]);
+
+    const supplierBefore = await balance(supplier.accountId);
+    const cashBefore = await balance(acc.CASH);
+    const vCountBefore = await prisma.voucher.count({ where: { businessId: ctx.businessId, type: "PURCHASE" } });
+
+    // Save multi-variety paddy purchase under 1 voucher:
+    //   1) সুমন: 10 jute + 5 plastic (15 bags), gross 1050, dhalta 13 -> net 1037 -> 25.93 mon × 1250 = 32412.50
+    //   2) গুটি: 12 jute + 0 plastic (12 bags), gross 800, dhalta 0 -> net 800 -> 20.00 mon × 1100 = 22000.00
+    //   3) ৫১:   0 jute + 8 plastic (8 bags), gross 420, dhalta 20 -> net 400 -> 10.00 mon × 1150 = 11500.00
+    //   Total: 35 bags, net 2237 kg, 55.93 mon, bill = 65912.50, paid 20000, labour 500
+    const parsed = paddyPurchaseSchema.parse({
+      date: "2026-10-15",
+      partyAccountId: supplier.accountId,
+      warehouseId,
+      paidAmount: 20000,
+      cashAccountId: acc.CASH,
+      labourCost: 500,
+      notes: "মাল্টি-ভ্যারাইটি চালান টেস্ট",
+      items: [
+        { productId: sumon.id, variety: "সুমন", moisturePct: 14, juteBagQty: 10, plasticBagQty: 5, grossKg: 1050, dhaltaKg: 13, ratePerMon: 1250 },
+        { productId: guti.id, variety: "গুটি স্বর্ণা", juteBagQty: 12, plasticBagQty: 0, grossKg: 800, dhaltaKg: 0, ratePerMon: 1100 },
+        { productId: dhan51.id, variety: "ব্রি-৫১", juteBagQty: 0, plasticBagQty: 8, grossKg: 420, dhaltaKg: 20, ratePerMon: 1150 },
+      ],
+    });
+
+    const v = await savePaddyPurchase(ctx, parsed);
+    expect(await prisma.voucher.count({ where: { businessId: ctx.businessId, type: "PURCHASE" } })).toBe(vCountBefore + 1);
+    expect(Number(v.amount)).toBe(65912.5);
+    expect(Number(v.paidAmount)).toBe(20000);
+
+    // Individual product stocks received exact net kg per variety
+    const stocks = await prisma.product.findMany({ where: { id: { in: [sumon.id, guti.id, dhan51.id] } } });
+    const stockOf = (id: string) => Number(stocks.find((s) => s.id === id)!.stock);
+    expect(stockOf(sumon.id)).toBe(1037);
+    expect(stockOf(guti.id)).toBe(800);
+    expect(stockOf(dhan51.id)).toBe(400);
+
+    // Supplier ledger credited for unpaid remainder (65912.50 - 20000 = 45912.50) and cash credited for paid + labour (20500)
+    expect(await balance(supplier.accountId)).toBeCloseTo(supplierBefore - 45912.5, 2);
+    expect(await balance(acc.CASH)).toBeCloseTo(cashBefore - 20500, 2);
+
+    // PaddyPurchase + 3 PaddyPurchaseItem + 3 VoucherItem created cleanly
+    const loaded = (await loadPaddyPurchase(ctx.businessId, v.id))!;
+    expect(loaded.items).toHaveLength(3);
+    expect(loaded.items.map((it) => [it.product.name, it.totalBags, Number(it.netKg), Number(it.totalPrice)])).toEqual([
+      ["সুমন ধান", 15, 1037, 32412.5],
+      ["গুটি ধান", 12, 800, 22000],
+      ["৫১ ধান", 8, 400, 11500],
+    ]);
+    expect(loaded.voucher.items).toHaveLength(3);
+    expect(loaded.totalBags).toBe(35);
+    expect(loaded.juteBagQty).toBe(22);
+    expect(loaded.plasticBagQty).toBe(13);
+    expect(Number(loaded.netKg)).toBe(2237);
+    expect(Number(loaded.mon)).toBe(55.93);
+    expect(Number(loaded.totalPrice)).toBe(65912.5);
+    expect((await trialBalance(ctx.businessId, {})).balanced).toBe(true);
+
+    // Daily purchase report and rice-mill variety summary include all 3 items accurately
+    const dp = await dailyPurchase(ctx.businessId, { date: "2026-10-15" });
+    expect(dp.paddy.map((l) => [l.product, l.netKg, l.totalPrice])).toEqual([
+      ["সুমন ধান", 1037, 32412.5],
+      ["গুটি ধান", 800, 22000],
+      ["৫১ ধান", 400, 11500],
+    ]);
+    expect(dp.paddyTotals.total).toBe(65912.5);
+
+    const ms = await millSummary(ctx.businessId, {});
+    expect(ms.purchase.byVariety.find((x) => x.variety === "সুমন")?.amount).toBe(32412.5);
+    expect(ms.purchase.byVariety.find((x) => x.variety === "গুটি স্বর্ণা")?.amount).toBe(22000);
+    expect(ms.purchase.byVariety.find((x) => x.variety === "ব্রি-৫১")?.amount).toBe(11500);
+
+    // Edit: remove ৫১ ধান, update সুমন ধান to 400 kg @ 1200 (12000), keep গুটি ধান (22000) -> new total 34000
+    const edited = await savePaddyPurchase(ctx, paddyPurchaseSchema.parse({
+      date: "2026-10-15",
+      partyAccountId: supplier.accountId,
+      warehouseId,
+      paidAmount: 20000,
+      cashAccountId: acc.CASH,
+      labourCost: 500,
+      items: [
+        { productId: sumon.id, variety: "সুমন", juteBagQty: 8, plasticBagQty: 0, grossKg: 400, dhaltaKg: 0, ratePerMon: 1200 },
+        { productId: guti.id, variety: "গুটি স্বর্ণা", juteBagQty: 12, plasticBagQty: 0, grossKg: 800, dhaltaKg: 0, ratePerMon: 1100 },
+      ],
+    }), v.id);
+    expect(edited.voucherNo).toBe(v.voucherNo);
+    const afterEditStocks = await prisma.product.findMany({ where: { id: { in: [sumon.id, guti.id, dhan51.id] } } });
+    const stockAfter = (id: string) => Number(afterEditStocks.find((s) => s.id === id)!.stock);
+    expect(stockAfter(sumon.id)).toBe(400);
+    expect(stockAfter(guti.id)).toBe(800);
+    expect(stockAfter(dhan51.id)).toBe(0);
+    expect((await loadPaddyPurchase(ctx.businessId, v.id))!.items).toHaveLength(2);
+    expect((await trialBalance(ctx.businessId, {})).balanced).toBe(true);
+
+    // Backup & Restore preserves PaddyPurchaseItem rows and product stocks
+    const backup = await exportBusiness(ctx.businessId);
+    const validation = validateBackup(backup);
+    expect(validation.ok).toBe(true);
+    expect(validation.stats.paddyPurchaseItems).toBe(3);
+    const restored = await restoreBackup(backup, ctx.userId);
+    const restoredItems = await prisma.paddyPurchaseItem.findMany({ where: { businessId: restored.businessId } });
+    expect(restoredItems).toHaveLength(3);
+    const restoredSumon = await prisma.product.findFirstOrThrow({ where: { businessId: restored.businessId, name: "সুমন ধান" } });
+    expect(Number(restoredSumon.stock)).toBe(400);
+    expect((await trialBalance(restored.businessId, {})).balanced).toBe(true);
   });
 });

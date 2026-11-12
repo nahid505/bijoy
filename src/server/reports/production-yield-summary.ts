@@ -138,16 +138,22 @@ export async function productionYieldSummary(
         },
       },
       include: {
+        items: {
+          orderBy: { lineNo: "asc" },
+          include: { product: { select: { name: true } } },
+        },
         voucher: {
           select: {
             id: true,
             voucherNo: true,
             date: true,
+            narration: true,
             partyAccount: { select: { name: true } },
             items: {
-              take: 1,
-              select: {
-                product: { select: { name: true, unit: { select: { name: true } } } },
+              orderBy: { lineNo: "asc" },
+              include: {
+                product: { select: { id: true, name: true, unit: { select: { id: true, name: true } } } },
+                unit: { select: { name: true, baseUnitId: true } },
               },
             },
           },
@@ -188,13 +194,33 @@ export async function productionYieldSummary(
   ]);
 
   // Total raw material purchased
-  const rawPurchases: RawMaterialRow[] = slips.map((s) => {
+  const rawPurchases: RawMaterialRow[] = slips.flatMap((s) => {
+    const party = s.voucher.partyAccount?.name ?? CASH_PURCHASE;
+    if (s.items.length > 0) {
+      return s.items.map((it) => {
+        const netKg = num(it.netKg);
+        const mon = num(it.mon);
+        const totalPrice = num(it.totalPrice);
+        const variety = it.variety?.trim() || it.product.name || "ধান";
+        return {
+          date: s.voucher.date,
+          lotDescription: `${variety} (লট #${s.voucher.voucherNo} · ${party})`,
+          variety,
+          voucherNo: s.voucher.voucherNo,
+          voucherId: s.voucher.id,
+          party,
+          purchaseKg: netKg,
+          purchaseMon: mon,
+          purchaseCost: totalPrice,
+          milledKg: 0,
+        };
+      });
+    }
     const netKg = num(s.netKg);
     const mon = num(s.mon);
     const totalPrice = num(s.totalPrice);
     const variety = s.variety?.trim() || s.voucher.items[0]?.product.name || "ধান";
-    const party = s.voucher.partyAccount?.name ?? CASH_PURCHASE;
-    return {
+    return [{
       date: s.voucher.date,
       lotDescription: `${variety} (লট #${s.voucher.voucherNo} · ${party})`,
       variety,
@@ -205,7 +231,7 @@ export async function productionYieldSummary(
       purchaseMon: mon,
       purchaseCost: totalPrice,
       milledKg: 0,
-    };
+    }];
   });
 
   const totalPurchaseKg = round3(rawPurchases.reduce((s, r) => s + r.purchaseKg, 0));

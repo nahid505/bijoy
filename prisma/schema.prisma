@@ -251,6 +251,7 @@ model Business {
   recipes             Recipe[]
   productionRuns      ProductionRun[]
   paddyPurchases      PaddyPurchase[]
+  paddyPurchaseItems  PaddyPurchaseItem[]
   depotDeliveries     DepotDelivery[]
   bagReturnVouchers   BagReturnVoucher[]
   bankTransfers       BankTransferLog[]
@@ -829,9 +830,10 @@ model Product {
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
 
-  stockMovements StockMovement[]
-  voucherItems   VoucherItem[]
-  batches        ProductBatch[]
+  stockMovements     StockMovement[]
+  voucherItems       VoucherItem[]
+  paddyPurchaseItems PaddyPurchaseItem[]
+  batches            ProductBatch[]
   notifications  Notification[]
   recipeLines    RecipeLine[]
 
@@ -1961,7 +1963,40 @@ model PaddyPurchase {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  items PaddyPurchaseItem[]
+
   @@index([businessId])
+}
+
+/// Individual paddy variety line item inside a paddy purchase slip (allows multi-variety paddy cart).
+model PaddyPurchaseItem {
+  id              String        @id @default(cuid())
+  businessId      String
+  business        Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  paddyPurchaseId String
+  paddyPurchase   PaddyPurchase @relation(fields: [paddyPurchaseId], references: [id], onDelete: Cascade)
+  lineNo          Int           @default(0)
+  productId       String
+  product         Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+  bagCount        Int           @default(0)
+  juteBagQty      Int           @default(0)
+  plasticBagQty   Int           @default(0)
+  totalBags       Int           @default(0)
+  variety         String?
+  moisturePct     Decimal?      @db.Decimal(5, 2)
+  batchNo         String?
+  vehicleGrossKg  Decimal?      @db.Decimal(14, 3)
+  vehicleTareKg   Decimal?      @db.Decimal(14, 3)
+  grossKg         Decimal       @db.Decimal(14, 3)
+  dhaltaKg        Decimal       @default(0) @db.Decimal(14, 3)
+  netKg           Decimal       @db.Decimal(14, 3)
+  mon             Decimal       @db.Decimal(14, 2)
+  ratePerMon      Decimal       @db.Decimal(14, 2)
+  totalPrice      Decimal       @db.Decimal(14, 2)
+
+  @@index([businessId])
+  @@index([paddyPurchaseId])
+  @@index([productId])
 }
 
 /// Bag return voucher (খালি বস্তা ফেরত চালান) for Auto Rice Mill:

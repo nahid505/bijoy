@@ -84,7 +84,12 @@ async function ledgerBalance(tx: Tx, businessId: string, accountId: string, book
  * larger unit (paddy: 25.93 মণ for 1 037 kg on the scale). Only server code can set it (the public
  * form schema strips it), and only within the rounding of the entered quantity (±0.005 × factor).
  */
-export type TradeLineInput = TradeVoucherInput["items"][number] & { baseQuantity?: number };
+export type TradeLineInput = TradeVoucherInput["items"][number] & {
+  baseQuantity?: number;
+  juteBagQty?: number;
+  plasticBagQty?: number;
+  totalBags?: number;
+};
 export type TradeInputWithBase = Omit<TradeVoucherInput, "items" | "destination" | "vehicleNo" | "driverName" | "driverMobile" | "transportFare"> & {
   destination?: string | null;
   vehicleNo?: string | null;
@@ -172,6 +177,9 @@ export async function tradeVoucherTx(tx: Tx, ctx: Ctx, type: TradeType, input: T
         baseQuantity: item.baseQuantity !== undefined ? round3(item.baseQuantity) : computedBase,
         freeQuantity,
         freeBase: round3(freeQuantity * factor),
+        juteBagQty: Math.max(0, Math.trunc(item.juteBagQty ?? 0)),
+        plasticBagQty: Math.max(0, Math.trunc(item.plasticBagQty ?? 0)),
+        totalBags: Math.max(0, Math.trunc(item.totalBags ?? ((item.juteBagQty ?? 0) + (item.plasticBagQty ?? 0)))),
         rate: item.rate,
         discount: item.discount,
         amount: lineAmount({ quantity: item.quantity, unitPrice: item.rate, discount: item.discount }),
@@ -305,7 +313,9 @@ export async function tradeVoucherTx(tx: Tx, ctx: Ctx, type: TradeType, input: T
         const b = single(l.id);
         return {
           id: l.id, voucherId: voucher.id, productId: l.product.id, warehouseId, unitId: l.unitId, unitFactor: l.factor,
-          quantity: l.quantity, baseQuantity: l.baseQuantity, freeQuantity: l.freeQuantity, rate: l.rate, discount: l.discount, amount: l.amount,
+          quantity: l.quantity, baseQuantity: l.baseQuantity, freeQuantity: l.freeQuantity,
+          juteBagQty: l.juteBagQty, plasticBagQty: l.plasticBagQty, totalBags: l.totalBags,
+          rate: l.rate, discount: l.discount, amount: l.amount,
           costRate: round4(purchaseCost), costAmount: round2(purchaseCost * stockBase(l)),
           batchId: b?.batchId ?? null, batchNo: b?.batchNo ?? null, expiryDate: b?.expiryDate ?? null, lineNo: i,
         };

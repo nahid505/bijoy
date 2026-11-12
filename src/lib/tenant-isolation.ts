@@ -58,6 +58,7 @@ export const TENANT_SCOPED_MODELS = new Set([
   "Recipe",
   "ProductionRun",
   "PaddyPurchase",
+  "PaddyPurchaseItem",
   "DepotDelivery",
   "BankTransferLog",
   "BankDisbursementBatch",

@@ -44,6 +44,45 @@ export default async function EditPaddyPurchasePage({ params }: { params: Promis
   const dec = (d: unknown) => (d === null || d === undefined ? "" : String(num(d as never)));
   const partyAddress = v.partyAccount?.supplier?.address || v.partyAccount?.customer?.address || null;
   const initialParty = initialParties[0] ?? (v.partyAccount ? { id: v.partyAccount.id, name: v.partyAccount.name, group: "", address: partyAddress } : null);
+  const toProductOpt = (p: NonNullable<typeof product>) => ({
+    ...p,
+    salePrice: num(p.salePrice),
+    wholesalePrice: num(p.wholesalePrice),
+    purchasePrice: num(p.purchasePrice),
+    avgCost: num(p.avgCost),
+    stock: num(p.stock),
+  });
+  const initialItems = pp.items.length > 0
+    ? pp.items.map((it) => ({
+        key: it.id,
+        product: toProductOpt(it.product),
+        batchNo: it.batchNo ?? "",
+        variety: it.variety ?? "",
+        moisturePct: dec(it.moisturePct),
+        bagCount: String(it.totalBags || it.bagCount),
+        juteBagQty: it.juteBagQty ? String(it.juteBagQty) : "",
+        plasticBagQty: it.plasticBagQty ? String(it.plasticBagQty) : "",
+        vehicleGrossKg: dec(it.vehicleGrossKg),
+        vehicleTareKg: dec(it.vehicleTareKg),
+        grossKg: String(num(it.grossKg)),
+        dhaltaKg: String(num(it.dhaltaKg)),
+        ratePerMon: String(num(it.ratePerMon)),
+      }))
+    : [{
+        key: pp.id,
+        product: product ? toProductOpt(product) : null,
+        batchNo: item?.batchNo ?? "",
+        variety: pp.variety ?? "",
+        moisturePct: dec(pp.moisturePct),
+        bagCount: String(pp.totalBags || pp.bagCount),
+        juteBagQty: pp.juteBagQty ? String(pp.juteBagQty) : "",
+        plasticBagQty: pp.plasticBagQty ? String(pp.plasticBagQty) : "",
+        vehicleGrossKg: dec(pp.vehicleGrossKg),
+        vehicleTareKg: dec(pp.vehicleTareKg),
+        grossKg: String(num(pp.grossKg)),
+        dhaltaKg: String(num(pp.dhaltaKg)),
+        ratePerMon: String(num(pp.ratePerMon)),
+      }];
   return (
     <>
       <PageHeader title={`সম্পাদনা: ধান ক্রয় ${v.voucherNo}`} description="সংরক্ষণ করলে আগের স্টক ও হিসাব বাতিল হয়ে নতুনভাবে পোস্ট হবে (একই নম্বর থাকবে)" crumbs={[{ label: "ধান ক্রয়", href: "/purchases/paddy" }, { label: v.voucherNo, href: `/vouchers/v/${v.id}` }, { label: "সম্পাদনা" }]} />
@@ -57,16 +96,20 @@ export default async function EditPaddyPurchasePage({ params }: { params: Promis
           dateLocked={!canChangeEntryDate(ctx)}
           companyVehicles={companyVehicles}
           defaults={{
-            date: toDateInput(v.date), warehouseId: v.warehouseId, batchNo: item?.batchNo ?? "",
+            date: toDateInput(v.date),
+            warehouseId: v.warehouseId,
             supplier: initialParty,
-            product: product ? { ...product, salePrice: num(product.salePrice), wholesalePrice: num(product.wholesalePrice), purchasePrice: num(product.purchasePrice), avgCost: num(product.avgCost), stock: num(product.stock) } : null,
-            bagCount: String(pp.totalBags || pp.bagCount),
-            juteBagQty: pp.juteBagQty ? String(pp.juteBagQty) : "",
-            plasticBagQty: pp.plasticBagQty ? String(pp.plasticBagQty) : "",
-            grossKg: String(num(pp.grossKg)), dhaltaKg: String(num(pp.dhaltaKg)), ratePerMon: String(num(pp.ratePerMon)),
-            paidAmount: String(num(v.paidAmount)), cashAccountId: cashAccount?.id ?? "", reference: v.reference ?? "", notes: pp.notes ?? "",
-            variety: pp.variety ?? "", moisturePct: dec(pp.moisturePct), vehicleGrossKg: dec(pp.vehicleGrossKg), vehicleTareKg: dec(pp.vehicleTareKg), labourCost: num(pp.labourCost) ? String(num(pp.labourCost)) : "",
-            destination: v.destination ?? "", vehicleNo: v.vehicleNo ?? "", driverName: v.driverName ?? "", driverMobile: v.driverMobile ?? "", transportFare: num(v.transportFare) ? String(num(v.transportFare)) : "",
+            items: initialItems,
+            paidAmount: String(num(v.paidAmount)),
+            cashAccountId: cashAccount?.id ?? "",
+            reference: v.reference ?? "",
+            notes: pp.notes ?? "",
+            labourCost: num(pp.labourCost) ? String(num(pp.labourCost)) : "",
+            destination: v.destination ?? "",
+            vehicleNo: v.vehicleNo ?? "",
+            driverName: v.driverName ?? "",
+            driverMobile: v.driverMobile ?? "",
+            transportFare: num(v.transportFare) ? String(num(v.transportFare)) : "",
           }}
         />
       </section>

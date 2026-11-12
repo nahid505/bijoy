@@ -141,7 +141,13 @@ export interface MillYieldLine {
 export async function millSummary(businessId: string, range: DateRange) {
   const dateWhere = range.gte || range.lt ? { date: range } : {};
   const [slips, labour, runs, items] = await Promise.all([
-    prisma.paddyPurchase.findMany({ where: { businessId, voucher: dateWhere }, select: { variety: true, netKg: true, mon: true, totalPrice: true, labourCost: true } }),
+    prisma.paddyPurchase.findMany({
+      where: { businessId, voucher: dateWhere },
+      select: {
+        variety: true, netKg: true, mon: true, totalPrice: true, labourCost: true,
+        items: { select: { variety: true, netKg: true, mon: true, totalPrice: true } },
+      },
+    }),
     prisma.voucher.aggregate({ where: { businessId, sourceKey: { startsWith: "paddy-labour:" }, ...dateWhere }, _sum: { amount: true } }),
     prisma.productionRun.findMany({ where: { businessId, voucher: dateWhere }, select: { extraCost: true } }),
     prisma.voucherItem.findMany({
@@ -152,13 +158,20 @@ export async function millSummary(businessId: string, range: DateRange) {
   // purchases by variety
   const varieties = new Map<string, { variety: string; slips: number; netKg: number; mon: number; amount: number }>();
   for (const s of slips) {
-    const key = s.variety?.trim() || "—";
-    const v = varieties.get(key) ?? { variety: key, slips: 0, netKg: 0, mon: 0, amount: 0 };
-    v.slips++;
-    v.netKg = round3(v.netKg + num(s.netKg));
-    v.mon = round2(v.mon + num(s.mon));
-    v.amount = round2(v.amount + num(s.totalPrice));
-    varieties.set(key, v);
+    const lines = s.items.length > 0 ? s.items : [s];
+    const countedForSlip = new Set<string>();
+    for (const line of lines) {
+      const key = line.variety?.trim() || "—";
+      const v = varieties.get(key) ?? { variety: key, slips: 0, netKg: 0, mon: 0, amount: 0 };
+      if (!countedForSlip.has(key)) {
+        v.slips++;
+        countedForSlip.add(key);
+      }
+      v.netKg = round3(v.netKg + num(line.netKg));
+      v.mon = round2(v.mon + num(line.mon));
+      v.amount = round2(v.amount + num(line.totalPrice));
+      varieties.set(key, v);
+    }
   }
   // milling: inputs and outputs per product
   const sum = (dir: number) => {

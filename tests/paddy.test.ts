@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { KG_PER_MON, monAndKg, paddyFigures } from "@/lib/paddy";
+import { KG_PER_MON, monAndKg, paddyFigures, summarizePaddyLines } from "@/lib/paddy";
 import { paddyPurchaseSchema } from "@/lib/validation";
 
 describe("paddy purchase calculations", () => {
@@ -42,5 +42,53 @@ describe("paddy purchase calculations", () => {
     expect(path({ paidAmount: "500" })).toContain("cashAccountId");
     expect(path({ notes: "x".repeat(501) })).toContain("notes");
     expect(path({ bagCount: "" })).toEqual([]);
+  });
+
+  it("summarizePaddyLines & multi-variety paddyPurchaseSchema validation", () => {
+    const sum = summarizePaddyLines([
+      { juteBagQty: 10, plasticBagQty: 5, grossKg: 1050, dhaltaKg: 13, ratePerMon: 1250 }, // net 1037 -> 25.93 mon -> 32412.5
+      { juteBagQty: 0, plasticBagQty: 8, vehicleGrossKg: 2500, vehicleTareKg: 2100, grossKg: 0, dhaltaKg: 0, ratePerMon: 1100 }, // gross 400 -> 10 mon -> 11000
+    ]);
+    expect(sum.juteBagQty).toBe(10);
+    expect(sum.plasticBagQty).toBe(13);
+    expect(sum.totalBags).toBe(23);
+    expect(sum.grossKg).toBe(1450);
+    expect(sum.dhaltaKg).toBe(13);
+    expect(sum.netKg).toBe(1437);
+    expect(sum.mon).toBe(35.93);
+    expect(sum.totalPrice).toBe(43412.5);
+
+    const validMulti = paddyPurchaseSchema.safeParse({
+      date: "2026-11-12",
+      partyAccountId: "s1",
+      paidAmount: "15000",
+      cashAccountId: "c1",
+      items: [
+        { productId: "p-sumon", variety: "সুমন ধান", juteBagQty: "10", plasticBagQty: "5", grossKg: "1050", dhaltaKg: "13", ratePerMon: "1250" },
+        { productId: "p-guti", variety: "গুটি ধান", juteBagQty: "0", plasticBagQty: "8", vehicleGrossKg: "2500", vehicleTareKg: "2100", dhaltaKg: "0", ratePerMon: "1100" },
+      ],
+    });
+    expect(validMulti.success).toBe(true);
+    if (validMulti.success) {
+      expect(validMulti.data.items).toHaveLength(2);
+      expect(validMulti.data.totalBags).toBe(23);
+      expect(validMulti.data.grossKg).toBe(1450);
+      expect(validMulti.data.variety).toBe("সুমন ধান, গুটি ধান");
+    }
+
+    const emptyItems = paddyPurchaseSchema.safeParse({ date: "2026-11-12", partyAccountId: "s1", items: [] });
+    expect(emptyItems.success).toBe(false);
+    if (!emptyItems.success) expect(emptyItems.error.issues.map((i) => i.path.join("."))).toContain("items");
+
+    const badLine = paddyPurchaseSchema.safeParse({
+      date: "2026-11-12",
+      partyAccountId: "s1",
+      items: [
+        { productId: "p1", grossKg: "400", dhaltaKg: "0", ratePerMon: "1200" },
+        { productId: "p2", grossKg: "400", dhaltaKg: "400", ratePerMon: "1200" },
+      ],
+    });
+    expect(badLine.success).toBe(false);
+    if (!badLine.success) expect(badLine.error.issues.map((i) => i.path.join("."))).toContain("items.1.dhaltaKg");
   });
 });

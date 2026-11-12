@@ -78,7 +78,10 @@ export async function dailyPurchase(businessId: string, params: { date?: string;
     prisma.paddyPurchase.findMany({
       where: { businessId, voucher: { book: "GENERAL", date: range, ...params.scope } },
       orderBy: [{ voucher: { createdAt: "asc" } }],
-      include: { voucher: { select: { id: true, voucherNo: true, partyAccount: { select: { name: true } }, items: { orderBy: { lineNo: "asc" }, take: 1, select: { product: { select: { name: true } } } } } } },
+      include: {
+        items: { orderBy: { lineNo: "asc" }, include: { product: { select: { name: true } } } },
+        voucher: { select: { id: true, voucherNo: true, partyAccount: { select: { name: true } }, items: { orderBy: { lineNo: "asc" }, take: 1, select: { product: { select: { name: true } } } } } },
+      },
     }),
   ]);
 
@@ -100,20 +103,39 @@ export async function dailyPurchase(businessId: string, params: { date?: string;
   const otherDiscount = round2(vouchers.reduce((s, v) => s + num(v.discount), 0));
   const otherVat = round2(vouchers.reduce((s, v) => s + num(v.vatAmount), 0));
 
-  const paddy: PaddyLine[] = slips.map((p) => ({
-    voucherId: p.voucher.id,
-    voucherNo: p.voucher.voucherNo,
-    party: p.voucher.partyAccount?.name ?? CASH,
-    product: p.voucher.items[0]?.product.name ?? "ধান",
-    bagCount: p.bagCount,
-    grossKg: num(p.grossKg),
-    dhaltaKg: num(p.dhaltaKg),
-    netKg: num(p.netKg),
-    mon: num(p.mon),
-    ratePerMon: num(p.ratePerMon),
-    totalPrice: num(p.totalPrice),
-    notes: p.notes,
-  }));
+  const paddy: PaddyLine[] = slips.flatMap((p) => {
+    const party = p.voucher.partyAccount?.name ?? CASH;
+    if (p.items.length > 0) {
+      return p.items.map((it) => ({
+        voucherId: p.voucher.id,
+        voucherNo: p.voucher.voucherNo,
+        party,
+        product: it.product.name,
+        bagCount: it.totalBags || it.bagCount,
+        grossKg: num(it.grossKg),
+        dhaltaKg: num(it.dhaltaKg),
+        netKg: num(it.netKg),
+        mon: num(it.mon),
+        ratePerMon: num(it.ratePerMon),
+        totalPrice: num(it.totalPrice),
+        notes: [it.variety, p.notes].filter(Boolean).join(" · ") || null,
+      }));
+    }
+    return [{
+      voucherId: p.voucher.id,
+      voucherNo: p.voucher.voucherNo,
+      party,
+      product: p.voucher.items[0]?.product.name ?? "ধান",
+      bagCount: p.bagCount,
+      grossKg: num(p.grossKg),
+      dhaltaKg: num(p.dhaltaKg),
+      netKg: num(p.netKg),
+      mon: num(p.mon),
+      ratePerMon: num(p.ratePerMon),
+      totalPrice: num(p.totalPrice),
+      notes: p.notes,
+    }];
+  });
   const sum = (f: (l: PaddyLine) => number) => paddy.reduce((s, l) => s + f(l), 0);
   const paddyTotals = {
     bags: sum((l) => l.bagCount),

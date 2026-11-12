@@ -39,7 +39,7 @@ function remapSystemKey(key: string | null, must: (old: unknown) => string): str
   return key;
 }
 
-export type BackupData = { business: Row; smsTemplates?: Row[]; smsSettings?: Row | null; payroll?: PayrollData; features?: Row[]; production?: ProductionData; paddyPurchases?: Row[]; depotDeliveries?: Row[] } & Record<Table, Row[]>;
+export type BackupData = { business: Row; smsTemplates?: Row[]; smsSettings?: Row | null; payroll?: PayrollData; features?: Row[]; production?: ProductionData; paddyPurchases?: Row[]; paddyPurchaseItems?: Row[]; depotDeliveries?: Row[] } & Record<Table, Row[]>;
 
 async function exportPayroll(businessId: string): Promise<PayrollData> {
   const where = { businessId };
@@ -85,7 +85,7 @@ export async function exportBusiness(businessId: string) {
       prisma.productBatch.findMany({ where }),
       prisma.notification.findMany({ where, orderBy: { createdAt: "asc" } }),
     ]);
-  const [smsTemplates, smsSettingsRow, payroll, features, recipes, recipeLines, runs, paddyPurchases, depotDeliveries] = await Promise.all([
+  const [smsTemplates, smsSettingsRow, payroll, features, recipes, recipeLines, runs, paddyPurchases, paddyPurchaseItems, depotDeliveries] = await Promise.all([
     prisma.smsTemplate.findMany({ where }),
     // the encrypted API key, balance and on/off state are NOT exported (secrets stay on the server)
     prisma.smsSettings.findUnique({ where: { businessId }, select: { provider: true, senderId: true, lowBalanceThreshold: true, events: true, alertMobiles: true, expiryAlertDays: true, dueReminderEveryDays: true } }),
@@ -95,10 +95,11 @@ export async function exportBusiness(businessId: string) {
     prisma.recipeLine.findMany({ where: { recipe: { businessId } } }),
     prisma.productionRun.findMany({ where }),
     prisma.paddyPurchase.findMany({ where }),
+    prisma.paddyPurchaseItem.findMany({ where }),
     prisma.depotDelivery.findMany({ where }),
   ]);
   const data = JSON.parse(
-    JSON.stringify({ business, accountGroups, accounts, units, categories, brands, warehouses, products, customers, suppliers, vouchers, journalEntries, voucherItems, voucherPayments, stockMovements, counters, productBatches, notifications, smsTemplates, smsSettings: smsSettingsRow, payroll, features, production: { recipes, recipeLines, runs }, paddyPurchases, depotDeliveries }),
+    JSON.stringify({ business, accountGroups, accounts, units, categories, brands, warehouses, products, customers, suppliers, vouchers, journalEntries, voucherItems, voucherPayments, stockMovements, counters, productBatches, notifications, smsTemplates, smsSettings: smsSettingsRow, payroll, features, production: { recipes, recipeLines, runs }, paddyPurchases, paddyPurchaseItems, depotDeliveries }),
   ) as BackupData;
   return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: new Date().toISOString(), checksum: checksumOf(data), data };
 }
@@ -170,7 +171,14 @@ export function validateBackup(raw: unknown): ValidationReport {
   }
   if (Array.isArray(data.paddyPurchases)) {
     stats.paddyPurchases = data.paddyPurchases.length;
+    const ppIds = new Set(data.paddyPurchases.map((x) => x.id as string));
     for (const x of data.paddyPurchases) ref(voucherIds.has(x.voucherId as string), "ধান ক্রয়ের ভাউচার পাওয়া যায়নি");
+    if (Array.isArray(data.paddyPurchaseItems)) {
+      stats.paddyPurchaseItems = data.paddyPurchaseItems.length;
+      for (const it of data.paddyPurchaseItems) {
+        ref(ppIds.has(it.paddyPurchaseId as string) && productIds.has(it.productId as string), "ধান ক্রয়ের আইটেম/পণ্য পাওয়া যায়নি");
+      }
+    }
   }
   if ((file.version ?? 0) >= 5) {
     const pd = data.production;
@@ -380,7 +388,12 @@ export async function restoreBackup(raw: unknown, userId: string): Promise<{ bus
       if (Array.isArray(data.paddyPurchases) && data.paddyPurchases.length) {
         await tx.paddyPurchase.createMany({
           data: data.paddyPurchases.map((x) => ({
-            id: must(x.id), businessId, voucherId: must(x.voucherId), bagCount: Number(x.bagCount ?? 0), grossKg: Number(x.grossKg), dhaltaKg: Number(x.dhaltaKg ?? 0), netKg: Number(x.netKg),
+            id: must(x.id), businessId, voucherId: must(x.voucherId),
+            bagCount: Number(x.bagCount ?? 0),
+            juteBagQty: Number(x.juteBagQty ?? 0),
+            plasticBagQty: Number(x.plasticBagQty ?? 0),
+            totalBags: Number(x.totalBags ?? x.bagCount ?? 0),
+            grossKg: Number(x.grossKg), dhaltaKg: Number(x.dhaltaKg ?? 0), netKg: Number(x.netKg),
             mon: Number(x.mon), ratePerMon: Number(x.ratePerMon), totalPrice: Number(x.totalPrice), notes: (x.notes as string) ?? null, createdAt: date(x.createdAt) ?? undefined,
             variety: (x.variety as string) ?? null, labourCost: Number(x.labourCost ?? 0),
             moisturePct: x.moisturePct === null || x.moisturePct === undefined ? null : Number(x.moisturePct),
@@ -388,6 +401,32 @@ export async function restoreBackup(raw: unknown, userId: string): Promise<{ bus
             vehicleTareKg: x.vehicleTareKg === null || x.vehicleTareKg === undefined ? null : Number(x.vehicleTareKg),
           })),
         });
+        if (Array.isArray(data.paddyPurchaseItems) && data.paddyPurchaseItems.length) {
+          await tx.paddyPurchaseItem.createMany({
+            data: data.paddyPurchaseItems.map((it) => ({
+              id: must(it.id),
+              businessId,
+              paddyPurchaseId: must(it.paddyPurchaseId),
+              lineNo: Number(it.lineNo ?? 0),
+              productId: must(it.productId),
+              bagCount: Number(it.bagCount ?? 0),
+              juteBagQty: Number(it.juteBagQty ?? 0),
+              plasticBagQty: Number(it.plasticBagQty ?? 0),
+              totalBags: Number(it.totalBags ?? it.bagCount ?? 0),
+              variety: (it.variety as string) ?? null,
+              moisturePct: it.moisturePct === null || it.moisturePct === undefined ? null : Number(it.moisturePct),
+              batchNo: (it.batchNo as string) ?? null,
+              vehicleGrossKg: it.vehicleGrossKg === null || it.vehicleGrossKg === undefined ? null : Number(it.vehicleGrossKg),
+              vehicleTareKg: it.vehicleTareKg === null || it.vehicleTareKg === undefined ? null : Number(it.vehicleTareKg),
+              grossKg: Number(it.grossKg),
+              dhaltaKg: Number(it.dhaltaKg ?? 0),
+              netKg: Number(it.netKg),
+              mon: Number(it.mon),
+              ratePerMon: Number(it.ratePerMon),
+              totalPrice: Number(it.totalPrice),
+            })),
+          });
+        }
       }
       if (data.production) {
         const pd = data.production;
