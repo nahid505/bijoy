@@ -62,7 +62,7 @@ export async function smsForVoucher(db: PrismaClient, businessId: string, vouche
     const bal = await ledgerBalance(db, businessId, v.partyAccount.id, v.book);
     const due = customer ? bal : -bal; // customer: receivable; supplier: payable
     const vars: SmsVars = {
-      customer_name: customer?.name, supplier_name: supplier?.name, business_name: v.business.name, invoice_no: v.voucherNo,
+      customer_name: customer?.name ?? supplier?.name, supplier_name: supplier?.name ?? customer?.name, business_name: v.business.name, invoice_no: v.voucherNo,
       total: money(Number(v.amount)), paid: money(Number(v.paidAmount)), due: money(Math.max(0, due)), date: formatDate(v.date),
     };
     const r = await enqueueSms(db, {

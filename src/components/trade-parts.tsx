@@ -12,7 +12,22 @@ export interface AccountOption {
   group: string;
   balance?: number;
 }
-export type PartyType = "CUSTOMER" | "SUPPLIER" | "BOTH";
+export type PartyType = "CUSTOMER" | "SUPPLIER" | "BOTH" | "OWNER";
+
+export function partyBadgeMeta(partyType?: PartyType) {
+  switch (partyType) {
+    case "BOTH":
+      return { label: "উভয়", className: "bg-emerald-50 text-emerald-700 border border-emerald-200/80" };
+    case "SUPPLIER":
+      return { label: "সরবরাহকারী", className: "bg-purple-50 text-purple-700 border border-purple-200/80" };
+    case "CUSTOMER":
+      return { label: "কাস্টমার", className: "bg-sky-50 text-sky-700 border border-sky-200/80" };
+    case "OWNER":
+      return { label: "মালিক", className: "bg-amber-50 text-amber-800 border border-amber-200/80" };
+    default:
+      return null;
+  }
+}
 
 export interface PartyOption extends AccountOption {
   mobile?: string | null;
@@ -77,22 +92,16 @@ export function PartyInfo({ party, currency, projectedDue }: { party?: PartyOpti
   const t = useT();
   if (!party) return null;
   const over = party.creditLimit && projectedDue !== undefined && projectedDue > party.creditLimit;
-  const partyType = party.partyType;
-  const badgeLabel = partyType === "BOTH" ? t("উভয়") : partyType === "SUPPLIER" ? t("সরবরাহকারী") : partyType === "CUSTOMER" ? t("কাস্টমার") : null;
-  const badgeClass =
-    partyType === "BOTH"
-      ? "bg-emerald-50 text-emerald-700 border border-emerald-200/80"
-      : partyType === "SUPPLIER"
-        ? "bg-purple-50 text-purple-700 border border-purple-200/80"
-        : "bg-sky-50 text-sky-700 border border-sky-200/80";
+  const badge = partyBadgeMeta(party.partyType);
 
   return (
     <div className="mt-1 space-y-0.5 text-xs">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {party.mobile && <span className="text-slate-500">📞 {party.mobile}</span>}
-        {badgeLabel && (
-          <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium leading-none ${badgeClass}`}>
-            {badgeLabel}
+        {!party.mobile && party.partyType === "OWNER" && party.group && <span className="text-slate-500">{party.group}</span>}
+        {badge && (
+          <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium leading-none ${badge.className}`}>
+            ({t(badge.label)})
           </span>
         )}
       </div>

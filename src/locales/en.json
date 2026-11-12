@@ -5190,5 +5190,10 @@
   "🧾 চালান প্রিন্ট": "🧾 Print Challan",
   "🧾 চালান সংরক্ষণ ও প্রিন্ট (F9)": "🧾 Save Challan & Print (F9)",
   "🧾 ডিপো চালান সংরক্ষণ ও প্রিন্ট (F9)": "🧾 Save Depot Challan & Print (F9)",
-  "🧾 সংরক্ষণ ও প্রিন্ট (F9)": "🧾 Save & Print (F9)"
+  "🧾 সংরক্ষণ ও প্রিন্ট (F9)": "🧾 Save & Print (F9)",
+  "সরবরাহকারী / পার্টি (কৃষক / ব্যাপারী)": "Supplier / Party (Farmer / Trader)",
+  "নগদ ক্রয় (পার্টি ছাড়া)": "Cash purchase (no party)",
+  "নাম, মোবাইল বা কোড দিয়ে খুঁজুন — সরবরাহকারী, কাস্টমার, মালিক": "Search by name, mobile or code — supplier, customer, owner",
+  "ডিলার / পার্টি খুঁজুন — নাম, মোবাইল, কোড": "Search dealer / party — name, mobile, code",
+  "নাম, মোবাইল বা কোড দিয়ে খুঁজুন — কাস্টমার, সরবরাহকারী, মালিক": "Search by name, mobile or code — customer, supplier, owner"
 }

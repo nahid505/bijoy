@@ -118,7 +118,11 @@ export async function tradeVoucherTx(tx: Tx, ctx: Ctx, type: TradeType, input: T
     // ── parties & ledgers (tenant + kind checks)
     let partyTerms: { creditLimit: number; creditDays: number } | null = null;
     if (input.partyAccountId) {
-      await assertAccounts(tx, ctx.businessId, [input.partyAccountId], { kinds: ["CUSTOMER", "SUPPLIER"], label: "পার্টি" });
+      await assertAccounts(tx, ctx.businessId, [input.partyAccountId], {
+        kinds: ["CUSTOMER", "SUPPLIER"],
+        allowOwnerEquity: vBook === "GENERAL",
+        label: "পার্টি",
+      });
       const [customerRecord, supplierRecord] = await Promise.all([
         tx.customer.findUnique({ where: { accountId: input.partyAccountId }, select: { creditLimit: true, creditDays: true } }),
         tx.supplier.findUnique({ where: { accountId: input.partyAccountId }, select: { creditDays: true } }),

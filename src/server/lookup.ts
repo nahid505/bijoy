@@ -53,7 +53,63 @@ async function mobileMatches(businessId: string, kind: "CUSTOMER" | "SUPPLIER", 
 }
 export type PartyHit = PartyOption & { partyId: string; code: string | null };
 
-/** Customers / suppliers matching name, mobile, ledger code or id (or exactly the given account ids). */
+// English ↔ Bangla words used in account names, so "cash", "bkash", "rent" find Bangla-named ledgers and back.
+const ALIASES: [string, string[]][] = [
+  ["cash", ["ক্যাশ", "নগদ"]], ["bank", ["ব্যাংক"]], ["bkash", ["বিকাশ"]], ["nagad", ["নগদ"]], ["rocket", ["রকেট"]], ["upay", ["উপায়"]],
+  ["mobile", ["মোবাইল"]], ["sales", ["বিক্রয়", "বিক্রি"]], ["purchase", ["ক্রয়"]], ["rent", ["ভাড়া"]], ["salary", ["বেতন"]],
+  ["wage", ["মজুরি"]], ["electricity", ["বিদ্যুৎ"]], ["utility", ["বিল", "বিদ্যুৎ"]], ["water", ["পানি"]], ["gas", ["গ্যাস"]],
+  ["expense", ["খরচ", "ব্যয়"]], ["cost", ["খরচ", "ব্যয়"]], ["income", ["আয়"]], ["capital", ["মূলধন"]], ["drawing", ["উত্তোলন"]],
+  ["owner", ["মালিক", "স্বত্বাধিকারী"]], ["partner", ["পার্টনার", "অংশীদার"]], ["proprietor", ["স্বত্বাধিকারী", "মালিক"]],
+  ["discount", ["ছাড়", "ডিসকাউন্ট"]], ["vat", ["ভ্যাট"]], ["tax", ["কর"]], ["transport", ["পরিবহন"]], ["loan", ["ঋণ"]],
+  ["advance", ["অগ্রিম"]], ["stock", ["মজুদ", "স্টক"]], ["inventory", ["মজুদ"]], ["furniture", ["আসবাব"]], ["commission", ["কমিশন"]],
+  ["service", ["সেবা"]], ["office", ["অফিস"]], ["entertainment", ["আপ্যায়ন"]], ["interest", ["সুদ"]], ["customer", ["কাস্টমার", "গ্রাহক"]],
+  ["supplier", ["সরবরাহকারী"]], ["return", ["ফেরত"]], ["loss", ["ক্ষতি"]], ["profit", ["লাভ", "মুনাফা"]],
+];
+function aliasTerms(q: string): string[] {
+  const n = q.toLowerCase();
+  if (n.length < 2) return [];
+  const out = new Set<string>();
+  for (const [en, bn] of ALIASES) {
+    if (en.startsWith(n) || (n.length >= 4 && n.startsWith(en))) bn.forEach((b) => out.add(b));
+    if (bn.some((b) => b.startsWith(q))) out.add(en);
+  }
+  return [...out];
+}
+
+/**
+ * Picks up to `take` initial rows when the search box is empty, prioritizing `preferredKind` while
+ * keeping Owner equity accounts and opposite-role parties immediately reachable without typing.
+ */
+function pickInitialPartySlice<T extends { hasCustomer: boolean; hasSupplier: boolean; hasOwner: boolean }>(
+  allRows: T[],
+  take: number,
+  preferredKind?: "CUSTOMER" | "SUPPLIER",
+): T[] {
+  const owners = allRows.filter((r) => r.hasOwner && !r.hasCustomer && !r.hasSupplier);
+  const suppliers = allRows.filter((r) => r.hasSupplier);
+  const customers = allRows.filter((r) => r.hasCustomer && !r.hasSupplier);
+
+  const ordered =
+    preferredKind === "SUPPLIER"
+      ? { primary: suppliers, owners, secondary: customers }
+      : preferredKind === "CUSTOMER"
+        ? { primary: customers, owners, secondary: suppliers }
+        : null;
+
+  if (!ordered) return allRows.slice(0, take);
+  const full = [...ordered.primary, ...ordered.owners, ...ordered.secondary];
+  if (full.length <= take) return full;
+
+  const ownerKeep = ordered.owners.slice(0, Math.min(ordered.owners.length, 4));
+  const secondaryReserve = ordered.secondary.length ? Math.min(ordered.secondary.length, 4) : 0;
+  const primaryBudget = Math.max(0, take - ownerKeep.length - secondaryReserve);
+  const primaryPick = ordered.primary.slice(0, primaryBudget);
+  const remaining = Math.max(0, take - primaryPick.length - ownerKeep.length);
+  const secondaryPick = ordered.secondary.slice(0, remaining);
+  return [...primaryPick, ...ownerKeep, ...secondaryPick].slice(0, take);
+}
+
+/** Customers / suppliers (and Owner equity ledgers for ALL / includeAll) matching name, mobile, ledger code or id. */
 /**
  * opts.allowed: the party accounts the user may see (ctx.partyScope; null / undefined = all).
  * opts.dealer: customers = depot dealers only (depot forms); otherwise general customers only. Balances are
@@ -69,8 +125,11 @@ export async function searchParties(
     allowed?: string[] | null;
     customerAllowed?: string[] | null;
     supplierAllowed?: string[] | null;
+    ownerScopeWhere?: Prisma.AccountWhereInput;
     dealer?: boolean;
     book?: BookKey;
+    includeAll?: boolean;
+    preferredKind?: "CUSTOMER" | "SUPPLIER";
   } = {}
 ): Promise<PartyHit[]> {
   const book: BookKey = opts.book ?? (opts.dealer ? "DEPOT" : "GENERAL");
@@ -78,16 +137,34 @@ export async function searchParties(
   const digits = mobileDigits(query);
   const take = opts.take ?? LOOKUP_LIMIT;
 
-  const searchCust = kind === "CUSTOMER" || kind === "ALL";
-  const searchSupp = kind === "SUPPLIER" || kind === "ALL";
+  const searchAll = kind === "ALL" || Boolean(opts.includeAll);
+  const searchCust = kind === "CUSTOMER" || searchAll;
+  const searchSupp = kind === "SUPPLIER" || searchAll;
+  const searchOwner = searchAll && !opts.dealer && book !== "DEPOT";
 
-  const [custByMobile, suppByMobile] =
+  const [custByMobile, suppByMobile, ownerMobMatches] =
     digits && !opts.accountIds
       ? await Promise.all([
           searchCust ? mobileMatches(businessId, "CUSTOMER", digits.replace(/^0/, ""), take * 3) : Promise.resolve([]),
           searchSupp ? mobileMatches(businessId, "SUPPLIER", digits.replace(/^0/, ""), take * 3) : Promise.resolve([]),
+          searchOwner
+            ? (async () => {
+                const cleanDigits = digits.replace(/^0/, "");
+                const biz = await prisma.business.findUnique({
+                  where: { id: businessId },
+                  select: {
+                    mobile: true,
+                    memberships: { where: { isActive: true, role: { isSystem: true } }, select: { user: { select: { mobile: true } } } },
+                  },
+                });
+                const ownerMobs = [biz?.mobile, ...(biz?.memberships.map((m) => m.user.mobile) ?? [])]
+                  .filter((x): x is string => Boolean(x))
+                  .map((m) => asciiDigits(m).replace(/\D/g, "").replace(/^880/, "0").replace(/^0/, ""));
+                return ownerMobs.some((m) => m.includes(cleanDigits));
+              })()
+            : Promise.resolve(false),
         ])
-      : [[], []];
+      : [[], [], false];
 
   const custAllowed = opts.customerAllowed !== undefined ? opts.customerAllowed : opts.allowed;
   const suppAllowed = opts.supplierAllowed !== undefined ? opts.supplierAllowed : opts.allowed;
@@ -139,7 +216,37 @@ export async function searchParties(
           : {}),
       };
 
-  const [custRows, suppRows] = await Promise.all([
+  const ownerNames = query ? [query, ...aliasTerms(query)] : [];
+  const ownerWhere: Prisma.AccountWhereInput = {
+    businessId,
+    nature: "EQUITY",
+    customer: { is: null },
+    supplier: { is: null },
+    AND: [
+      bookAccountWhere(book),
+      { OR: [{ systemKey: null }, { systemKey: { notIn: ["OPENING_EQUITY"] } }] },
+      ...(opts.ownerScopeWhere ? [opts.ownerScopeWhere] : []),
+    ],
+    ...(opts.accountIds
+      ? { id: { in: opts.accountIds } }
+      : {
+          isActive: true,
+          ...(query && !ownerMobMatches
+            ? {
+                OR: [
+                  ...ownerNames.flatMap(digitVariants).map((v) => ({ name: ci(v) })),
+                  { code: ci(asciiDigits(query)) },
+                  { accountNumber: ci(asciiDigits(query)) },
+                  { id: query },
+                  { systemKey: { contains: query.toUpperCase().replace(/\s+/g, "_") } },
+                  ...digitVariants(query).flatMap((v) => [{ group: { name: ci(v) } }, { description: ci(v) }]),
+                ],
+              }
+            : {}),
+        }),
+  };
+
+  const [custRows, suppRows, ownerRows] = await Promise.all([
     searchCust
       ? prisma.customer.findMany({
           where: custWhere,
@@ -186,10 +293,25 @@ export async function searchParties(
           take: opts.accountIds ? undefined : take * 3,
         })
       : Promise.resolve([]),
+    searchOwner
+      ? prisma.account.findMany({
+          where: ownerWhere,
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            accountNumber: true,
+            systemKey: true,
+            group: { select: { name: true } },
+          },
+          orderBy: { name: "asc" },
+          take: opts.accountIds ? undefined : take * 2,
+        })
+      : Promise.resolve([]),
   ]);
 
   type MergedItem = {
-    id: string; // party id
+    id: string; // party id (or account id for owner)
     name: string;
     ownerName?: string | null;
     mobile: string | null;
@@ -197,9 +319,10 @@ export async function searchParties(
     accountId: string;
     creditDays: number;
     creditLimit: number;
-    account: { code: string | null; group: { name: string } };
+    account: { code: string | null; group: { name: string }; systemKey?: string | null };
     hasCustomer: boolean;
     hasSupplier: boolean;
+    hasOwner: boolean;
   };
 
   const merged = new Map<string, MergedItem>();
@@ -217,6 +340,7 @@ export async function searchParties(
       account: c.account,
       hasCustomer: true,
       hasSupplier: Boolean(c.account.supplier),
+      hasOwner: false,
     });
   }
 
@@ -239,20 +363,40 @@ export async function searchParties(
         account: s.account,
         hasCustomer: Boolean(s.account.customer),
         hasSupplier: true,
+        hasOwner: false,
+      });
+    }
+  }
+
+  for (const o of ownerRows) {
+    if (!merged.has(o.id)) {
+      merged.set(o.id, {
+        id: o.id,
+        name: o.name,
+        ownerName: null,
+        mobile: o.accountNumber ?? null,
+        address: null,
+        accountId: o.id,
+        creditDays: 0,
+        creditLimit: 0,
+        account: { code: o.code, group: o.group, systemKey: o.systemKey },
+        hasCustomer: false,
+        hasSupplier: false,
+        hasOwner: true,
       });
     }
   }
 
   const allRows = Array.from(merged.values());
-  const top = (
-    query
+  const top = opts.accountIds
+    ? allRows
+    : query
       ? rank(allRows, query, (r) => ({
           name: r.name,
-          exact: [r.account.code, r.mobile?.replace(/\D/g, ""), r.id, r.accountId],
+          exact: [r.account.code, r.account.systemKey, r.mobile?.replace(/\D/g, ""), r.id, r.accountId],
           partial: [r.mobile?.replace(/\D/g, ""), r.account.code, r.ownerName],
-        }))
-      : allRows
-  ).slice(0, opts.accountIds ? undefined : take);
+        })).slice(0, take)
+      : pickInitialPartySlice(allRows, take, opts.preferredKind);
 
   if (top.length === 0) return [];
   const ids = top.map((r) => r.accountId);
@@ -284,19 +428,24 @@ export async function searchParties(
   return top.map((r) => {
     const hasSales = salesAccounts.has(r.accountId);
     const hasPurchases = purchaseAccounts.has(r.accountId);
+    const isOwnerOnly = r.hasOwner && !r.hasCustomer && !r.hasSupplier;
     const isBoth =
-      (r.hasCustomer && r.hasSupplier) ||
-      (hasSales && hasPurchases) ||
-      (r.hasCustomer && hasPurchases) ||
-      (r.hasSupplier && hasSales);
+      !isOwnerOnly && (
+        (r.hasCustomer && r.hasSupplier) ||
+        (hasSales && hasPurchases) ||
+        (r.hasCustomer && hasPurchases) ||
+        (r.hasSupplier && hasSales)
+      );
 
-    const partyType: PartyType = isBoth
-      ? "BOTH"
-      : r.hasCustomer
-        ? "CUSTOMER"
-        : r.hasSupplier
-          ? "SUPPLIER"
-          : "BOTH";
+    const partyType: PartyType = isOwnerOnly
+      ? "OWNER"
+      : isBoth
+        ? "BOTH"
+        : r.hasCustomer
+          ? "CUSTOMER"
+          : r.hasSupplier
+            ? "SUPPLIER"
+            : "OWNER";
 
     return {
       id: r.accountId,
@@ -382,28 +531,6 @@ export interface AccountHit {
   /** bank / account number, or the customer / supplier mobile */
   detail: string | null;
   balance: number;
-}
-
-// English ↔ Bangla words used in account names, so "cash", "bkash", "rent" find Bangla-named ledgers and back.
-const ALIASES: [string, string[]][] = [
-  ["cash", ["ক্যাশ", "নগদ"]], ["bank", ["ব্যাংক"]], ["bkash", ["বিকাশ"]], ["nagad", ["নগদ"]], ["rocket", ["রকেট"]], ["upay", ["উপায়"]],
-  ["mobile", ["মোবাইল"]], ["sales", ["বিক্রয়", "বিক্রি"]], ["purchase", ["ক্রয়"]], ["rent", ["ভাড়া"]], ["salary", ["বেতন"]],
-  ["wage", ["মজুরি"]], ["electricity", ["বিদ্যুৎ"]], ["utility", ["বিল", "বিদ্যুৎ"]], ["water", ["পানি"]], ["gas", ["গ্যাস"]],
-  ["expense", ["খরচ", "ব্যয়"]], ["cost", ["খরচ", "ব্যয়"]], ["income", ["আয়"]], ["capital", ["মূলধন"]], ["drawing", ["উত্তোলন"]],
-  ["discount", ["ছাড়", "ডিসকাউন্ট"]], ["vat", ["ভ্যাট"]], ["tax", ["কর"]], ["transport", ["পরিবহন"]], ["loan", ["ঋণ"]],
-  ["advance", ["অগ্রিম"]], ["stock", ["মজুদ", "স্টক"]], ["inventory", ["মজুদ"]], ["furniture", ["আসবাব"]], ["commission", ["কমিশন"]],
-  ["service", ["সেবা"]], ["office", ["অফিস"]], ["entertainment", ["আপ্যায়ন"]], ["interest", ["সুদ"]], ["customer", ["কাস্টমার", "গ্রাহক"]],
-  ["supplier", ["সরবরাহকারী"]], ["return", ["ফেরত"]], ["loss", ["ক্ষতি"]], ["profit", ["লাভ", "মুনাফা"]],
-];
-function aliasTerms(q: string): string[] {
-  const n = q.toLowerCase();
-  if (n.length < 2) return [];
-  const out = new Set<string>();
-  for (const [en, bn] of ALIASES) {
-    if (en.startsWith(n) || (n.length >= 4 && n.startsWith(en))) bn.forEach((b) => out.add(b));
-    if (bn.some((b) => b.startsWith(q))) out.add(en);
-  }
-  return [...out];
 }
 
 /**

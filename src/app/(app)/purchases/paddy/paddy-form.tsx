@@ -10,6 +10,7 @@ import { ActionForm, Field, FieldError, SubmitButton, type FormAction } from "@/
 import { SearchSelect } from "@/components/search-select";
 import { SearchableAccountSelect } from "@/components/account-select";
 import type { AccountOption, PartyOption, ProductOption, WarehouseOption } from "@/components/trade-parts";
+import { PartyInfo } from "@/components/trade-parts";
 import { formatMoney, formatQty, toBnDigits } from "@/lib/format";
 import { KG_PER_MON, monAndKg, PADDY_VARIETIES, paddyFigures, weighbridgeGross } from "@/lib/paddy";
 import { useT } from "@/components/lang";
@@ -104,8 +105,19 @@ export function PaddyPurchaseForm({ action, defaults, warehouses, cashAccounts, 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="তারিখ *" name="date"><EntryDateInput id="date" value={f.date} onChange={(v) => set("date", v)} locked={dateLocked} /></Field>
         <div className="sm:col-span-2">
-          <label className="mb-1 block text-sm font-medium text-ink-800" htmlFor="supplier">{t("সরবরাহকারী (কৃষক / ব্যাপারী)")}</label>
-          <SearchSelect kind="suppliers" id="supplier" value={f.supplier} onChange={handleSupplierChange} noneLabel={t("নগদ ক্রয় (সরবরাহকারী ছাড়া)")} placeholder={t("নাম বা মোবাইল দিয়ে খুঁজুন")} create={{}} currency={currency} />
+          <label className="mb-1 block text-sm font-medium text-ink-800" htmlFor="supplier">{t("সরবরাহকারী / পার্টি (কৃষক / ব্যাপারী)")}</label>
+          <SearchSelect
+            kind="parties"
+            partyKind="SUPPLIER"
+            id="supplier"
+            value={f.supplier}
+            onChange={handleSupplierChange}
+            noneLabel={t("নগদ ক্রয় (পার্টি ছাড়া)")}
+            placeholder={t("নাম, মোবাইল বা কোড দিয়ে খুঁজুন — সরবরাহকারী, কাস্টমার, মালিক")}
+            create={{}}
+            currency={currency}
+          />
+          <PartyInfo party={f.supplier ?? undefined} currency={currency} />
           <FieldError name="partyAccountId" />
         </div>
         <Field label="রেফারেন্স / স্লিপ নং" name="reference"><input id="reference" className="input" value={f.reference} onChange={(e) => set("reference", e.target.value)} /></Field>

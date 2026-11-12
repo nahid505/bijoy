@@ -337,7 +337,9 @@ export function TradeVoucherForm({
             create={lockedToInvoice ? false : {}}
             currency={currency}
             ariaLabel={t(isSale ? "কাস্টমার" : "সরবরাহকারী")}
-            placeholder={t(isSale ? "কাস্টমার / পার্টি খুঁজুন — নাম, মোবাইল, কোড" : "সরবরাহকারী / পার্টি খুঁজুন — নাম, মোবাইল, কোড")}
+            placeholder={t(book === "depot"
+              ? (isSale ? "ডিলার / পার্টি খুঁজুন — নাম, মোবাইল, কোড" : "সরবরাহকারী / পার্টি খুঁজুন — নাম, মোবাইল, কোড")
+              : "নাম, মোবাইল বা কোড দিয়ে খুঁজুন — কাস্টমার, সরবরাহকারী, মালিক")}
           />
           <PartyInfo party={party ?? undefined} currency={currency} projectedDue={projectedDue} />
           <FieldError name="partyAccountId" />

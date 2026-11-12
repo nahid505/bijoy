@@ -58,15 +58,22 @@ export async function GET(req: Request, { params }: { params: Promise<{ kind: st
     const url = new URL(req.url);
     const q = (url.searchParams.get("q") ?? "").slice(0, 100);
     const ids = url.searchParams.get("ids")?.split(",").filter(Boolean).slice(0, 50);
-    // a depot picker creates depot products (depot:products_manage or inventory:manage)
-    const canCreate =
-      kind === "products" && url.searchParams.get("book") === "depot"
-        ? hasPermission(ctx.permissions, DEPOT_ACCESS.products)
-        : kind === "parties"
-          ? hasPermission(ctx.permissions, "customers:manage") || hasPermission(ctx.permissions, "suppliers:manage")
-          : hasPermission(ctx.permissions, CREATE[kind]);
+    const includeAll = url.searchParams.get("includeAll") === "1" || url.searchParams.get("includeAll") === "true";
+    const pk = url.searchParams.get("partyKind");
+    const preferredKind = pk === "CUSTOMER" || pk === "SUPPLIER" ? pk : undefined;
     // ?book=depot: the depot forms — dealers (not general customers), depot ledgers and depot-book balances
     const depot = url.searchParams.get("book") === "depot";
+    // a depot picker creates depot products (depot:products_manage or inventory:manage)
+    const canCreate =
+      kind === "products" && depot
+        ? hasPermission(ctx.permissions, DEPOT_ACCESS.products)
+        : kind === "parties"
+          ? preferredKind === "SUPPLIER"
+            ? hasPermission(ctx.permissions, "suppliers:manage")
+            : preferredKind === "CUSTOMER"
+              ? hasPermission(ctx.permissions, depot ? DEPOT_ACCESS.dealerQuickCreate : "customers:manage")
+              : hasPermission(ctx.permissions, ["customers:manage", "suppliers:manage"])
+          : hasPermission(ctx.permissions, CREATE[kind]);
     if (kind === "accounts") {
       // ?scope=all|cash|expense  &offset=N (pages of 30)
       const scope = (ACCOUNT_SCOPES as string[]).includes(url.searchParams.get("scope") ?? "") ? (url.searchParams.get("scope") as AccountScope) : "all";
@@ -82,13 +89,16 @@ export async function GET(req: Request, { params }: { params: Promise<{ kind: st
     const items =
       kind === "products"
         ? await searchProducts(ctx.business.id, q, { ids, batchOnly: url.searchParams.get("batchOnly") === "1", book: depot ? "DEPOT" : "GENERAL" })
-        : kind === "parties"
+        : kind === "parties" || includeAll
           ? await searchParties(ctx.business.id, "ALL", q, {
               accountIds: ids,
               customerAllowed: ctx.partyScope.customers,
               supplierAllowed: ctx.partyScope.suppliers,
+              ownerScopeWhere: accountScopeWhere(ctx),
               dealer: depot,
               book: depot ? "DEPOT" : "GENERAL",
+              includeAll: true,
+              preferredKind,
             })
           : await searchParties(ctx.business.id, kind === "customers" ? "CUSTOMER" : "SUPPLIER", q, {
               accountIds: ids,

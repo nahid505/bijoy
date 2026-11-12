@@ -215,6 +215,7 @@ export async function VoucherEditor({
             accountIds: [defaults.partyAccountId],
             customerAllowed: ctx.partyScope.customers,
             supplierAllowed: ctx.partyScope.suppliers,
+            ownerScopeWhere: accountScopeWhere(ctx),
             dealer: depot && partyKind === "CUSTOMER",
             book,
           })

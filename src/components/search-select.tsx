@@ -10,7 +10,7 @@ import { formatDrCr, formatMoney, formatQty } from "@/lib/format";
 import { quickCreatePartyAction, quickCreateProductAction } from "@/server/actions/lookup";
 import { anchoredStyle, useAnchoredPosition, useDebounced } from "./popover-utils";
 import { useT } from "./lang";
-import type { PartyOption, ProductOption, UnitOption } from "./trade-parts";
+import { partyBadgeMeta, type PartyOption, type ProductOption, type UnitOption } from "./trade-parts";
 
 export type LookupKind = "customers" | "suppliers" | "products" | "employees" | "parties";
 /** an employee in the payroll pickers */
@@ -58,7 +58,7 @@ function describe(kind: LookupKind, item: Item, ctx: { currency: string; unitNam
   const isDr = hasBal && a.balance! > 0.005;
   const isCr = hasBal && a.balance! < -0.005;
   return {
-    sub: [a.mobile && `📞 ${a.mobile}`, a.code && `${t("কোড")} ${a.code}`].filter(Boolean).join(" · "),
+    sub: [a.mobile && `📞 ${a.mobile}`, a.code && `${t("কোড")} ${a.code}`, a.partyType === "OWNER" && a.group ? t(a.group) : null].filter(Boolean).join(" · "),
     right: hasBal ? formatDrCr(a.balance, ctx.currency) : "",
     right2: a.overdue ? `${t("মেয়াদোত্তীর্ণ")} ${formatMoney(a.overdue, ctx.currency)}` : "",
     warn: !!a.overdue,
@@ -89,11 +89,13 @@ export interface SearchSelectProps<T extends Item> {
   /** "depot": a depot form — customers are depot DEALERS ("ডিলার"), balances from the depot book */
   book?: "depot";
   partyKind?: "CUSTOMER" | "SUPPLIER";
+  /** load all party roles (customers, suppliers, both, owners) even on customer/supplier pickers */
+  includeAll?: boolean;
 }
 
 export function SearchSelect<T extends Item>({
   kind, value, onChange, id, name, placeholder, noneLabel, disabled = false, create = false, batchOnly = false,
-  currency = "৳", unitName, priceOf, ariaLabel, className = "", book, partyKind = "CUSTOMER",
+  currency = "৳", unitName, priceOf, ariaLabel, className = "", book, partyKind = "CUSTOMER", includeAll = false,
 }: SearchSelectProps<T>) {
   const t = useT();
   const uid = useId();
@@ -129,7 +131,12 @@ export function SearchSelect<T extends Item>({
     setLoading(true);
     setError(null);
     const q = typed ? debounced : "";
-    fetch(`/api/lookup/${kind}?q=${encodeURIComponent(q)}${batchOnly ? "&batchOnly=1" : ""}${book ? `&book=${book}` : ""}`, { signal: ctrl.signal, headers: { accept: "application/json" } })
+    const qs = new URLSearchParams({ q });
+    if (batchOnly) qs.set("batchOnly", "1");
+    if (book) qs.set("book", book);
+    if (includeAll) qs.set("includeAll", "1");
+    if (kind === "parties" || includeAll) qs.set("partyKind", partyKind);
+    fetch(`/api/lookup/${kind}?${qs.toString()}`, { signal: ctrl.signal, headers: { accept: "application/json" } })
       .then(async (r) => {
         if (!r.ok) throw new Error(r.status === 403 ? "খোঁজার অনুমতি নেই" : "খোঁজা যায়নি");
         const body = (await r.json()) as { items: T[]; canCreate?: boolean };
@@ -278,22 +285,16 @@ export function SearchSelect<T extends Item>({
             const d = describe(kind, e.item, { currency, unitName, priceOf, t });
             const party = e.item as PartyOption;
             const partyType = party.partyType ?? (kind === "customers" ? "CUSTOMER" : kind === "suppliers" ? "SUPPLIER" : undefined);
-            const badgeLabel = partyType === "BOTH" ? t("উভয়") : partyType === "SUPPLIER" ? t("সরবরাহকারী") : partyType === "CUSTOMER" ? t("কাস্টমার") : null;
-            const badgeClass =
-              partyType === "BOTH"
-                ? "bg-emerald-50 text-emerald-700 border border-emerald-200/80"
-                : partyType === "SUPPLIER"
-                  ? "bg-purple-50 text-purple-700 border border-purple-200/80"
-                  : "bg-sky-50 text-sky-700 border border-sky-200/80";
+            const badge = partyBadgeMeta(partyType);
 
             return (
               <li key={e.item.id} id={`${listId}-${i}`} role="option" aria-selected={value?.id === e.item.id} className={`${base} flex items-start justify-between gap-3`} onMouseEnter={() => setActive(i)} onClick={() => choose(i)}>
                 <span className="min-w-0">
                   <span className="flex items-center gap-1.5 font-medium text-ink-900">
                     <span className="truncate">{e.item.name}</span>
-                    {badgeLabel && (
-                      <span className={`inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[10px] font-medium leading-none ${badgeClass}`}>
-                        {badgeLabel}
+                    {badge && (
+                      <span className={`inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[10px] font-medium leading-none ${badge.className}`}>
+                        ({t(badge.label)})
                       </span>
                     )}
                   </span>

@@ -28,7 +28,10 @@ import { accountGroupsForCreateAction, quickCreateAccountAction, quickCreatePart
 import { BUSINESS_COOKIE, getContext } from "@/server/auth";
 import { searchAccounts, searchParties, searchProducts } from "@/server/lookup";
 import { saveAccount, saveParty, saveProduct } from "@/server/services/master";
+import { savePaddyPurchase } from "@/server/services/paddy";
 import { saveTradeVoucher } from "@/server/services/voucher";
+import { paddyPurchaseSchema } from "@/lib/validation";
+import { trialBalance } from "@/server/services/report";
 import { createSession } from "@/server/services/sessions";
 import { GET as lookupGet } from "@/app/api/lookup/[kind]/route";
 
@@ -385,5 +388,148 @@ run("searchable pickers (lookup)", () => {
     const updatedRahim = updatedParties.find((p) => p.id === ids.rahim);
     expect(updatedMeghna?.partyType).toBe("BOTH");
     expect(updatedRahim?.partyType).toBe("BOTH");
+  });
+
+  it("owner & capital accounts in party lookup + cross-party and owner posting in paddy purchase and sales", async () => {
+    const biz = A.ctx.business.id;
+    const warehouse = (await prisma.warehouse.findFirstOrThrow({ where: { businessId: biz } })).id;
+    const capitalGroup = await prisma.accountGroup.findFirstOrThrow({ where: { businessId: biz, systemKey: "CAPITAL" } });
+    const capitalAcc = await prisma.account.findFirstOrThrow({ where: { businessId: biz, systemKey: "CAPITAL" } });
+    const drawingsAcc = await prisma.account.findFirstOrThrow({ where: { businessId: biz, systemKey: "DRAWINGS" } });
+    const openingEqAcc = await prisma.account.findFirstOrThrow({ where: { businessId: biz, systemKey: "OPENING_EQUITY" } });
+    const cashAcc = await prisma.account.findFirstOrThrow({ where: { businessId: biz, systemKey: "CASH" } });
+
+    // Create a custom partner/owner equity ledger
+    const partnerOwnerId = await saveAccount(A.ctx.svc, {
+      name: "নাহিদ হাসান",
+      code: "OWN-01",
+      groupId: capitalGroup.id,
+      description: "অংশীদার / মালিক চলতি হিসাব",
+      bankName: null,
+      accountNumber: null,
+      openingBalance: 0,
+      openingSide: "CR",
+    });
+
+    // 1. ALL lookup includes Owners alongside Customers & Suppliers, never OPENING_EQUITY
+    const all = await searchParties(biz, "ALL", "");
+    const allById = new Map(all.map((p) => [p.id, p]));
+    expect(allById.get(capitalAcc.id)?.partyType).toBe("OWNER");
+    expect(allById.get(drawingsAcc.id)?.partyType).toBe("OWNER");
+    expect(allById.get(partnerOwnerId)?.partyType).toBe("OWNER");
+    expect(allById.has(openingEqAcc.id)).toBe(false);
+
+    // 2. Route GET /api/lookup/parties and GET /api/lookup/suppliers?includeAll=true both find Owner & Customer
+    const byName = await get("parties", `q=${encodeURIComponent("নাহিদ")}`);
+    expect(byName.status).toBe(200);
+    expect(byName.body.items!.map((i) => i.id)).toContain(partnerOwnerId);
+
+    const byAlias = await get("parties", "q=owner");
+    expect(byAlias.status).toBe(200);
+    expect(byAlias.body.items!.map((i) => i.id)).toContain(capitalAcc.id);
+
+    const suppIncludeAll = await get("suppliers", `includeAll=1&q=${encodeURIComponent("নাহিদ")}`);
+    expect(suppIncludeAll.status).toBe(200);
+    expect(suppIncludeAll.body.items!.map((i) => i.id)).toContain(partnerOwnerId);
+
+    const suppStrict = await get("suppliers", `q=${encodeURIComponent("নাহিদ")}`);
+    expect(suppStrict.status).toBe(200);
+    expect(suppStrict.body.items!.map((i) => i.id)).not.toContain(partnerOwnerId);
+
+    // 3. Create paddy product (kg base unit)
+    const kgUnit = await prisma.unit.findFirstOrThrow({ where: { businessId: biz, name: "কেজি" } });
+    const paddyProdId = await saveProduct(A.ctx.svc, {
+      name: "ধান (আমোন)",
+      code: "PADDY-1",
+      barcode: null,
+      categoryId: null,
+      brandId: null,
+      unitId: kgUnit.id,
+      purchasePrice: 1200,
+      salePrice: 1300,
+      wholesalePrice: 0,
+      minStock: 0,
+      openingStock: 0,
+      openingRate: 0,
+      trackBatch: false,
+    });
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    // 4. Paddy purchase from a CUSTOMER (ids.karim): net amount credited to Customer ledger
+    const paddyFromCust = await savePaddyPurchase(
+      A.ctx.svc,
+      paddyPurchaseSchema.parse({
+        date: todayStr,
+        partyAccountId: ids.karim,
+        warehouseId: warehouse,
+        productId: paddyProdId,
+        grossKg: 420,
+        dhaltaKg: 20, // net 400 kg = 10 mon
+        ratePerMon: 1200, // total 12,000
+        paidAmount: 2000,
+        cashAccountId: cashAcc.id,
+        notes: "কাস্টমার থেকে ধান ক্রয়",
+      }),
+    );
+    const custEntries = await prisma.journalEntry.findMany({ where: { voucherId: paddyFromCust.id, accountId: ids.karim } });
+    const custNet = custEntries.reduce((s, e) => s + Number(e.credit) - Number(e.debit), 0);
+    expect(custNet).toBe(10000); // 12,000 total - 2,000 paid = 10,000 Cr payable adjustment
+
+    // 5. Paddy purchase with OWNER (partnerOwnerId): directly linked & credited to Owner Capital/Current ledger
+    const paddyFromOwner = await savePaddyPurchase(
+      A.ctx.svc,
+      paddyPurchaseSchema.parse({
+        date: todayStr,
+        partyAccountId: partnerOwnerId,
+        warehouseId: warehouse,
+        productId: paddyProdId,
+        grossKg: 200,
+        dhaltaKg: 0, // 5 mon
+        ratePerMon: 1000, // total 5,000
+        paidAmount: 0,
+        notes: "মালিক নিজস্ব তহবিল হতে ধান সরবরাহ",
+      }),
+    );
+    expect(paddyFromOwner.partyAccountId).toBe(partnerOwnerId);
+    const ownerPurchaseEntries = await prisma.journalEntry.findMany({ where: { voucherId: paddyFromOwner.id, accountId: partnerOwnerId } });
+    expect(Number(ownerPurchaseEntries[0]?.credit)).toBe(5000);
+
+    // Selecting Owner on Sales voucher also posts & stays classified as OWNER (never BOTH)
+    const saleToOwner = await saveTradeVoucher(A.ctx.svc, "SALES", {
+      date: new Date(),
+      partyAccountId: partnerOwnerId,
+      warehouseId: warehouse,
+      items: [{ productId: ids.sugar, quantity: 1, rate: 130, discount: 0, batchNo: null, expiryDate: null, unitId: null, mfgDate: null }],
+      payments: [],
+      discount: 0,
+      vatPercent: 0,
+      dueDate: null,
+      reference: "SALE-OWNER-TEST",
+      narration: "মালিকের নিজস্ব উত্তোলন",
+      returnOfId: null,
+    });
+    expect(saleToOwner.partyAccountId).toBe(partnerOwnerId);
+    const [ownerAfter] = await searchParties(biz, "ALL", "", { accountIds: [partnerOwnerId] });
+    expect(ownerAfter?.partyType).toBe("OWNER");
+
+    // 6. System OPENING_EQUITY and CASH must still be rejected as trade party accounts
+    await expect(
+      saveTradeVoucher(A.ctx.svc, "PURCHASE", {
+        date: new Date(),
+        partyAccountId: openingEqAcc.id,
+        warehouseId: warehouse,
+        items: [{ productId: ids.sugar, quantity: 1, rate: 100, discount: 0, batchNo: null, expiryDate: null, unitId: null, mfgDate: null }],
+        payments: [],
+        discount: 0,
+        vatPercent: 0,
+        dueDate: null,
+        reference: null,
+        narration: null,
+        returnOfId: null,
+      }),
+    ).rejects.toThrow(/উপযুক্ত হিসাব নয়/);
+
+    expect((await trialBalance(biz, {})).balanced).toBe(true);
   });
 });
