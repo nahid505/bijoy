@@ -4,7 +4,7 @@ import { formatDateTime, formatNumber } from "@/lib/format";
 import { PageHeader } from "@/components/ui";
 import { ActionButton, ActionForm, Field, SubmitButton } from "@/components/forms";
 import { requireContext } from "@/server/auth";
-import { resolveMillRole } from "@/lib/custom-milling";
+import { getRiceMillSettings, resolveMillRole } from "@/lib/custom-milling";
 import { createExpenseAction, deleteExpenseAction } from "@/server/actions/custom-milling";
 import { CustomMillingTabs, MainSyncBadge } from "../custom-milling-ui";
 
@@ -33,7 +33,8 @@ export default async function CustomMillingExpensesPage({
 }) {
   const ctx = await requireContext();
   const sp = await searchParams;
-  const role = resolveMillRole(ctx, sp.role);
+  const settings = await getRiceMillSettings();
+  const role = resolveMillRole(ctx, sp.role, settings);
 
   const expenses = await prisma.millExpense.findMany({
     orderBy: { date: "desc" },

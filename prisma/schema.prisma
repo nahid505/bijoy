@@ -2201,6 +2201,8 @@ model RiceMillSettings {
   branRatePerKg       Float    @default(22.0)
   huskRatePerKg       Float    @default(8.0)
   invoiceFooterNote   String   @default("বিঃদ্রঃ ৭৫ কেজি = ১ স্ট্যান্ডার্ড বস্তা হিসেবে বিল গণনা করা হয়েছে।")
+  accountantUserId    String?
+  partnerUserId       String?
   updatedAt           DateTime @updatedAt
 }
 

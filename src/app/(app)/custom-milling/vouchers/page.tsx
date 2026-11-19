@@ -4,7 +4,7 @@ import { formatDateTime, formatNumber } from "@/lib/format";
 import { PageHeader } from "@/components/ui";
 import { ActionButton, ActionForm, Field, SubmitButton } from "@/components/forms";
 import { requireContext } from "@/server/auth";
-import { calculateJVSettlement, resolveMillRole } from "@/lib/custom-milling";
+import { calculateJVSettlement, getRiceMillSettings, resolveMillRole } from "@/lib/custom-milling";
 import { createVoucherAction, deleteVoucherAction } from "@/server/actions/custom-milling";
 import { CustomMillingTabs } from "../custom-milling-ui";
 
@@ -19,7 +19,8 @@ export default async function CustomMillingVouchersPage({
 }) {
   const ctx = await requireContext();
   const sp = await searchParams;
-  const role = resolveMillRole(ctx, sp.role);
+  const settings = await getRiceMillSettings();
+  const role = resolveMillRole(ctx, sp.role, settings);
   const jv = await calculateJVSettlement();
 
   const parties = await prisma.millParty.findMany({

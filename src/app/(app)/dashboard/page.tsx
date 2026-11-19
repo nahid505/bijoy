@@ -60,6 +60,22 @@ function QuickActions({ quick, label }: { quick: ReturnType<typeof quickActions>
 export default async function DashboardPage() {
   const ctx = await requireContext();
   const t = await getT();
+
+  // Custom Milling (Rented Mill) Accountant or Partner auto-redirect:
+  // Super Admin / Owner stays on the main business dashboard; assigned accountant/partner is directed to custom-milling
+  try {
+    const millSettings = await prisma.riceMillSettings.findUnique({ where: { id: 1 } });
+    if (millSettings && !ctx.user.isSuperAdmin && !ctx.isOwner && ctx.user.email !== "nahid21506@gmail.com") {
+      if (millSettings.accountantUserId === ctx.user.id || millSettings.partnerUserId === ctx.user.id) {
+        redirect("/custom-milling");
+      }
+    }
+  } catch (err) {
+    if (err && typeof err === "object" && "digest" in err && String((err as any).digest).startsWith("NEXT_REDIRECT")) {
+      throw err;
+    }
+  }
+
   if (!can(ctx, "dashboard:view")) {
     // depot-only role: the depot dashboard alone — no sales, profit, ledger or cash figures
     if (isDepot(ctx.business.businessType) && can(ctx, "depot:view")) {

@@ -26,8 +26,8 @@ export default async function CustomMillingDashboardPage({
 }) {
   const ctx = await requireContext();
   const sp = await searchParams;
-  const role = resolveMillRole(ctx, sp.role);
   const settings = await getRiceMillSettings();
+  const role = resolveMillRole(ctx, sp.role, settings);
   const jv = await calculateJVSettlement();
 
   // Today's Date Range (Dhaka timezone midnight to end of day)

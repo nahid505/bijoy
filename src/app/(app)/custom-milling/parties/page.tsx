@@ -5,7 +5,7 @@ import { formatNumber } from "@/lib/format";
 import { PageHeader } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/forms";
 import { requireContext } from "@/server/auth";
-import { resolveMillRole } from "@/lib/custom-milling";
+import { getRiceMillSettings, resolveMillRole } from "@/lib/custom-milling";
 import { createPartyAction } from "@/server/actions/custom-milling";
 import { CustomMillingTabs } from "../custom-milling-ui";
 
@@ -20,7 +20,8 @@ export default async function CustomMillingPartiesPage({
 }) {
   const ctx = await requireContext();
   const sp = await searchParams;
-  const role = resolveMillRole(ctx, sp.role);
+  const settings = await getRiceMillSettings();
+  const role = resolveMillRole(ctx, sp.role, settings);
 
   const parties = await prisma.millParty.findMany({
     orderBy: [{ isOwnerSelfParty: "desc" }, { name: "asc" }],

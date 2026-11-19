@@ -2,9 +2,11 @@ import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/forms";
 import { requireContext } from "@/server/auth";
+import { prisma } from "@/lib/db";
 import { getRiceMillSettings, resolveMillRole } from "@/lib/custom-milling";
 import { saveSettingsAction } from "@/server/actions/custom-milling";
 import { CustomMillingTabs } from "../custom-milling-ui";
+import { MillUserAssignmentSection } from "./user-assignment";
 
 export const metadata: Metadata = {
   title: "কাস্টম মিলিং সেটিংস ও রেট কনফিগারেশন",
@@ -17,7 +19,8 @@ export default async function CustomMillingSettingsPage({
 }) {
   const ctx = await requireContext();
   const sp = await searchParams;
-  const role = resolveMillRole(ctx, sp.role);
+  const settings = await getRiceMillSettings();
+  const role = resolveMillRole(ctx, sp.role, settings);
 
   // RBAC: MILL_ACCOUNTANT has no access to settings
   if (role === "MILL_ACCOUNTANT") {
@@ -36,8 +39,19 @@ export default async function CustomMillingSettingsPage({
     );
   }
 
-  const settings = await getRiceMillSettings();
   const isReadOnly = role === "MILL_PARTNER";
+
+  const users = await prisma.user.findMany({
+    where: { isActive: true },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      mobile: true,
+      isSuperAdmin: true,
+    },
+    orderBy: { name: "asc" },
+  });
 
   return (
     <div className="space-y-6">
@@ -183,6 +197,14 @@ export default async function CustomMillingSettingsPage({
               </div>
             </div>
           </section>
+
+          {/* Section: User and Role Assignment (Accountant & Partner) */}
+          <MillUserAssignmentSection
+            users={users}
+            initialAccountantId={settings.accountantUserId}
+            initialPartnerId={settings.partnerUserId}
+            isReadOnly={isReadOnly}
+          />
 
           {/* Section 3: Bag Calculation & Standard Formula */}
           <section className="panel p-5 sm:p-6 space-y-4">

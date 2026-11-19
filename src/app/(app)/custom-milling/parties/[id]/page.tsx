@@ -34,8 +34,8 @@ export default async function CustomMillingPartyLedgerPage({
   const ctx = await requireContext();
   const { id } = await params;
   const sp = await searchParams;
-  const role = resolveMillRole(ctx, sp.role);
   const settings = await getRiceMillSettings();
+  const role = resolveMillRole(ctx, sp.role, settings);
 
   const party = await prisma.millParty.findUnique({
     where: { id },

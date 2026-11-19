@@ -22,8 +22,30 @@ export default async function NewCustomMillingBatchPage({
 }) {
   const ctx = await requireContext();
   const sp = await searchParams;
-  const role = resolveMillRole(ctx, sp.role);
   const settings = await getRiceMillSettings();
+  const role = resolveMillRole(ctx, sp.role, settings);
+
+  // RBAC: Partner has Read-Only access
+  if (role === "MILL_PARTNER") {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="নতুন ধান গ্রহণ ও ওজন স্কেল" description="প্রবেশাধিকার সংরক্ষিত" />
+        <CustomMillingTabs role={role} />
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-8 text-center text-blue-900">
+          <span className="text-4xl">👁️</span>
+          <h2 className="mt-2 text-lg font-bold">শুধুমাত্র দেখার অনুমতি (Read-Only)</h2>
+          <p className="mt-1 text-sm text-blue-700">
+            মিল পার্টনার (৪০%) হিসেবে আপনার অ্যাকাউন্টে নতুন ধান এন্ট্রি করার অনুমতি নেই। আপনি ব্যাচ তালিকা ও প্রতিবেদন দেখতে পারবেন।
+          </p>
+          <div className="mt-4">
+            <Link href="/custom-milling/batches" className="btn-primary text-xs">
+              ব্যাচ তালিকা দেখুন →
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Ensure owner self party exists
   await getOrCreateOwnerParty();

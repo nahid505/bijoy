@@ -46,13 +46,17 @@ export interface JVSettlementResult {
  * MILL_PARTNER: Partner (40% share) - read-only with 60:40 view.
  * MILL_ACCOUNTANT: Staff / Accountant - create today only, no 60:40 view, no settings, no delete.
  */
-export function resolveMillRole(ctx: AppContext, simulateRole?: string | null): MillRoleType {
+export function resolveMillRole(
+  ctx: AppContext,
+  simulateRole?: string | null,
+  settings?: { accountantUserId?: string | null; partnerUserId?: string | null } | null
+): MillRoleType {
   // If Super Admin simulates a role to test views
   if (
     simulateRole &&
     (simulateRole === "SUPER_ADMIN" || simulateRole === "MILL_ACCOUNTANT" || simulateRole === "MILL_PARTNER")
   ) {
-    if (ctx.user.isSuperAdmin || ctx.isOwner || ctx.user.name?.includes("নাহিদ")) {
+    if (ctx.user.isSuperAdmin || ctx.isOwner || ctx.user.name?.includes("নাহিদ") || ctx.user.email === "nahid21506@gmail.com") {
       return simulateRole as MillRoleType;
     }
   }
@@ -68,14 +72,29 @@ export function resolveMillRole(ctx: AppContext, simulateRole?: string | null): 
     return "SUPER_ADMIN";
   }
 
-  // 2. Mill Partner (40% Partner - Read-only)
+  // 2. Direct Settings Assignment
+  if (settings) {
+    if (settings.partnerUserId && settings.partnerUserId === ctx.user.id) {
+      return "MILL_PARTNER";
+    }
+    if (settings.accountantUserId && settings.accountantUserId === ctx.user.id) {
+      return "MILL_ACCOUNTANT";
+    }
+  }
+
+  // 3. Mill Partner (40% Partner - Read-only) fallback by role or user name
   const roleLower = (ctx.roleName || "").toLowerCase();
   const userNameLower = (ctx.user.name || "").toLowerCase();
-  if (roleLower.includes("partner") || roleLower.includes("পার্টনার") || userNameLower.includes("partner") || userNameLower.includes("পার্টনার")) {
+  if (
+    roleLower.includes("partner") ||
+    roleLower.includes("পার্টনার") ||
+    userNameLower.includes("partner") ||
+    userNameLower.includes("পার্টনার")
+  ) {
     return "MILL_PARTNER";
   }
 
-  // 3. Mill Accountant (Create today only)
+  // 4. Mill Accountant (Create today only)
   return "MILL_ACCOUNTANT";
 }
 

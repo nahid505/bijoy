@@ -2,10 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { guard, toResult, UserError, type ActionState } from "@/server/action-utils";
 import { requireContext } from "@/server/auth";
 import { audit } from "@/server/audit";
+import { looksLikeEmail, normalizeBdMobile } from "@/lib/mobile";
 import {
   calculateMillingBill,
   calculateStandardBags,
@@ -14,6 +16,13 @@ import {
   isTodayDate,
   resolveMillRole,
 } from "@/lib/custom-milling";
+
+async function getContextAndMillRole() {
+  const ctx = await requireContext();
+  const settings = await getRiceMillSettings();
+  const role = resolveMillRole(ctx, null, settings);
+  return { ctx, settings, role };
+}
 
 const batchSchema = z.object({
   partyId: z.string().min(1, "পার্টি নির্বাচন করুন"),
@@ -32,8 +41,7 @@ const batchSchema = z.object({
  */
 export async function createBatchAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const result = await guard(async () => {
-    const ctx = await requireContext();
-    const role = resolveMillRole(ctx);
+    const { ctx, settings, role } = await getContextAndMillRole();
 
     if (role === "MILL_PARTNER") {
       throw new UserError("পার্টনার অ্যাকাউন্টে শুধুমাত্র দেখার অনুমতি আছে — নতুন এন্ট্রি করা যাবে না।");
@@ -56,7 +64,6 @@ export async function createBatchAction(_prev: ActionState, fd: FormData): Promi
       throw new UserError("হিসাবরক্ষক শুধুমাত্র আজকের তারিখের নতুন এন্ট্রি করতে পারবেন। পেছনের তারিখে এন্ট্রি অনুমোদিত নয়।");
     }
 
-    const settings = await getRiceMillSettings();
     const { dhaltaKg, netWeightKg, standardBags75Kg } = calculateStandardBags({
       grossWeightKg: input.grossWeightKg,
       tareWeightKg: input.tareWeightKg,
@@ -119,8 +126,7 @@ export async function createBatchAction(_prev: ActionState, fd: FormData): Promi
  */
 export async function updateBatchStatusAction(batchId: string, status: string): Promise<ActionState> {
   const result = await guard(async () => {
-    const ctx = await requireContext();
-    const role = resolveMillRole(ctx);
+    const { ctx, settings, role } = await getContextAndMillRole();
 
     if (role === "MILL_PARTNER") {
       throw new UserError("পার্টনার অ্যাকাউন্টে শুধুমাত্র দেখার অনুমতি আছে।");
@@ -169,8 +175,7 @@ const billingSchema = z.object({
  */
 export async function saveBatchBillingAction(batchId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const result = await guard(async () => {
-    const ctx = await requireContext();
-    const role = resolveMillRole(ctx);
+    const { ctx, settings, role } = await getContextAndMillRole();
 
     if (role === "MILL_PARTNER") {
       throw new UserError("পার্টনার অ্যাকাউন্টে শুধুমাত্র দেখার অনুমতি আছে।");
@@ -263,8 +268,7 @@ export async function saveBatchBillingAction(batchId: string, _prev: ActionState
  */
 export async function deleteBatchAction(batchId: string): Promise<ActionState> {
   const result = await guard(async () => {
-    const ctx = await requireContext();
-    const role = resolveMillRole(ctx);
+    const { ctx, settings, role } = await getContextAndMillRole();
 
     if (role !== "SUPER_ADMIN") {
       throw new UserError("শুধুমাত্র সুপার অ্যাডমিন (নাহিদ হাসান) রেকর্ড ডিলিট করতে পারবেন।");
@@ -310,8 +314,7 @@ const expenseSchema = z.object({
  */
 export async function createExpenseAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const result = await guard(async () => {
-    const ctx = await requireContext();
-    const role = resolveMillRole(ctx);
+    const { ctx, settings, role } = await getContextAndMillRole();
 
     if (role === "MILL_PARTNER") {
       throw new UserError("পার্টনার অ্যাকাউন্টে শুধুমাত্র দেখার অনুমতি আছে।");
@@ -366,8 +369,7 @@ export async function createExpenseAction(_prev: ActionState, fd: FormData): Pro
  */
 export async function deleteExpenseAction(expenseId: string): Promise<ActionState> {
   const result = await guard(async () => {
-    const ctx = await requireContext();
-    const role = resolveMillRole(ctx);
+    const { ctx, settings, role } = await getContextAndMillRole();
 
     if (role !== "SUPER_ADMIN") {
       throw new UserError("শুধুমাত্র সুপার অ্যাডমিন (নাহিদ হাসান) খরচ মুছে ফেলতে পারবেন।");
@@ -404,8 +406,7 @@ const voucherSchema = z.object({
  */
 export async function createVoucherAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const result = await guard(async () => {
-    const ctx = await requireContext();
-    const role = resolveMillRole(ctx);
+    const { ctx, settings, role } = await getContextAndMillRole();
 
     if (role === "MILL_PARTNER") {
       throw new UserError("পার্টনার অ্যাকাউন্টে শুধুমাত্র দেখার অনুমতি আছে।");
@@ -488,8 +489,7 @@ export async function createVoucherAction(_prev: ActionState, fd: FormData): Pro
  */
 export async function deleteVoucherAction(voucherId: string): Promise<ActionState> {
   const result = await guard(async () => {
-    const ctx = await requireContext();
-    const role = resolveMillRole(ctx);
+    const { ctx, settings, role } = await getContextAndMillRole();
 
     if (role !== "SUPER_ADMIN") {
       throw new UserError("শুধুমাত্র সুপার অ্যাডমিন (নাহিদ হাসান) ভাউচার মুছে ফেলতে পারবেন।");
@@ -534,8 +534,7 @@ const partySchema = z.object({
  */
 export async function createPartyAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const result = await guard(async () => {
-    const ctx = await requireContext();
-    const role = resolveMillRole(ctx);
+    const { ctx, settings, role } = await getContextAndMillRole();
 
     if (role === "MILL_PARTNER") {
       throw new UserError("পার্টনার অ্যাকাউন্টে শুধুমাত্র দেখার অনুমতি আছে।");
@@ -592,6 +591,8 @@ const settingsSchema = z.object({
   branRatePerKg: z.coerce.number().min(0),
   huskRatePerKg: z.coerce.number().min(0),
   invoiceFooterNote: z.string().trim().min(1),
+  accountantUserId: z.string().nullish(),
+  partnerUserId: z.string().nullish(),
 });
 
 /**
@@ -599,12 +600,16 @@ const settingsSchema = z.object({
  */
 export async function saveSettingsAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const result = await guard(async () => {
-    const ctx = await requireContext();
-    const role = resolveMillRole(ctx);
+    const { ctx, role } = await getContextAndMillRole();
 
     if (role !== "SUPER_ADMIN") {
       throw new UserError("শুধুমাত্র সুপার অ্যাডমিন (নাহিদ হাসান) সেটিংস পরিবর্তন করতে পারবেন।");
     }
+
+    const rawAccountantId = fd.get("accountantUserId");
+    const rawPartnerId = fd.get("partnerUserId");
+    const accountantUserId = rawAccountantId && String(rawAccountantId).trim() !== "" ? String(rawAccountantId).trim() : null;
+    const partnerUserId = rawPartnerId && String(rawPartnerId).trim() !== "" ? String(rawPartnerId).trim() : null;
 
     const input = settingsSchema.parse({
       millName: fd.get("millName"),
@@ -622,6 +627,8 @@ export async function saveSettingsAction(_prev: ActionState, fd: FormData): Prom
       branRatePerKg: fd.get("branRatePerKg"),
       huskRatePerKg: fd.get("huskRatePerKg"),
       invoiceFooterNote: fd.get("invoiceFooterNote"),
+      accountantUserId,
+      partnerUserId,
     });
 
     const updated = await prisma.riceMillSettings.upsert({
@@ -636,14 +643,165 @@ export async function saveSettingsAction(_prev: ActionState, fd: FormData): Prom
       action: "UPDATE",
       entity: "RiceMillSettings",
       entityId: "1",
-      details: { millName: input.millName, bagStandardKg: input.bagStandardKg },
+      details: {
+        millName: input.millName,
+        bagStandardKg: input.bagStandardKg,
+        accountantUserId: input.accountantUserId,
+        partnerUserId: input.partnerUserId,
+      },
     });
 
     return updated;
   });
 
   revalidatePath("/custom-milling", "layout");
-  return result.ok ? { ok: true, message: "রাইস মিল সেটিংস সংরক্ষণ হয়েছে" } : toResult(result);
+  return result.ok ? { ok: true, message: "রাইস মিল সেটিংস ও ইউজার অ্যাসাইনমেন্ট সংরক্ষণ হয়েছে" } : toResult(result);
+}
+
+/**
+ * Creates and immediately assigns a new User as either Accountant or Partner for the custom mill.
+ * Super Admin (Nahid Hasan) ONLY.
+ */
+export async function createAndAssignMillUserAction(
+  _prev: ActionState,
+  fd: FormData
+): Promise<ActionState> {
+  const result = await guard(async () => {
+    const { ctx, role } = await getContextAndMillRole();
+
+    if (role !== "SUPER_ADMIN") {
+      throw new UserError("শুধুমাত্র সুপার অ্যাডমিন (নাহিদ হাসান) নতুন ইউজার তৈরি ও অ্যাসাইন করতে পারবেন।");
+    }
+
+    const name = String(fd.get("name") || "").trim();
+    const identifier = String(fd.get("identifier") || "").trim();
+    const password = String(fd.get("password") || "").trim();
+    const targetRole = String(fd.get("targetRole") || "ACCOUNTANT").trim().toUpperCase();
+
+    if (!name) throw new UserError("ব্যবহারকারীর পুরো নাম আবশ্যক");
+    if (!identifier) throw new UserError("মোবাইল নম্বর অথবা ইমেইল ঠিকানা আবশ্যক");
+    if (!password || password.length < 6) throw new UserError("পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে");
+
+    const isEmail = looksLikeEmail(identifier);
+    const mobile = !isEmail ? normalizeBdMobile(identifier) : null;
+    if (!isEmail && !mobile) {
+      throw new UserError("সঠিক মোবাইল নম্বর (যেমন: 017XXXXXXXX) অথবা বৈধ ইমেইল ঠিকানা দিন");
+    }
+    const email = isEmail ? identifier.toLowerCase() : null;
+
+    // Check if user already exists
+    let user = await prisma.user.findFirst({
+      where: isEmail ? { email } : { mobile: mobile! },
+    });
+
+    if (!user) {
+      const passwordHash = await bcrypt.hash(password, 12);
+      user = await prisma.user.create({
+        data: {
+          name,
+          email,
+          mobile,
+          passwordHash,
+          isActive: true,
+        },
+      });
+    }
+
+    // Ensure user has membership in the business
+    let membership = await prisma.membership.findUnique({
+      where: { userId_businessId: { userId: user.id, businessId: ctx.business.id } },
+    });
+
+    if (!membership) {
+      // Find suitable role or create dedicated role
+      let roleRecord = await prisma.role.findFirst({
+        where: {
+          businessId: ctx.business.id,
+          name: targetRole === "PARTNER" ? { contains: "পার্টনার" } : { contains: "হিসাবরক্ষক" },
+        },
+      });
+
+      if (!roleRecord) {
+        // Find default non-system staff role
+        roleRecord = await prisma.role.findFirst({
+          where: { businessId: ctx.business.id, isSystem: false },
+        });
+      }
+
+      if (!roleRecord) {
+        // Fallback: create role
+        roleRecord = await prisma.role.create({
+          data: {
+            businessId: ctx.business.id,
+            name: targetRole === "PARTNER" ? "মিল পার্টনার (৪০%)" : "মিলের হিসাবরক্ষক (Accountant)",
+            permissions: targetRole === "PARTNER"
+              ? ["reports:view"]
+              : ["paddy:create", "paddy:view", "expenses:create", "expenses:view", "vouchers:create", "vouchers:view", "reports:view"],
+          },
+        });
+      }
+
+      membership = await prisma.membership.create({
+        data: {
+          userId: user.id,
+          businessId: ctx.business.id,
+          roleId: roleRecord.id,
+          isActive: true,
+        },
+      });
+    } else if (!membership.isActive) {
+      await prisma.membership.update({
+        where: { id: membership.id },
+        data: { isActive: true },
+      });
+    }
+
+    // Assign in RiceMillSettings
+    if (targetRole === "PARTNER") {
+      await prisma.riceMillSettings.update({
+        where: { id: 1 },
+        data: { partnerUserId: user.id },
+      });
+    } else {
+      await prisma.riceMillSettings.update({
+        where: { id: 1 },
+        data: { accountantUserId: user.id },
+      });
+    }
+
+    await audit({
+      businessId: ctx.business.id,
+      userId: ctx.user.id,
+      action: "UPDATE",
+      entity: "RiceMillUser",
+      entityId: user.id,
+      details: {
+        role: targetRole,
+        userName: user.name,
+        identifier,
+      },
+    });
+
+    return {
+      userId: user.id,
+      name: user.name,
+      identifier,
+      targetRole,
+    };
+  });
+
+  revalidatePath("/custom-milling", "layout");
+  revalidatePath("/custom-milling/settings");
+
+  return result.ok
+    ? {
+        ok: true,
+        message: `${(result as any).data?.name || "ব্যবহারকারী"} সফলভাবে তৈরি এবং ${
+          (result as any).data?.targetRole === "PARTNER" ? "পার্টনার (৪০%)" : "হিসাবরক্ষক"
+        } হিসেবে যুক্ত করা হয়েছে।`,
+        data: (result as any).data,
+      }
+    : toResult(result);
 }
 
 /**
@@ -652,8 +810,7 @@ export async function saveSettingsAction(_prev: ActionState, fd: FormData): Prom
  */
 export async function postToMainAccountAction(type: "BATCH" | "EXPENSE", id: string): Promise<ActionState> {
   const result = await guard(async () => {
-    const ctx = await requireContext();
-    const role = resolveMillRole(ctx);
+    const { ctx, settings, role } = await getContextAndMillRole();
 
     if (role !== "SUPER_ADMIN") {
       throw new UserError("শুধুমাত্র সুপার অ্যাডমিন (নাহিদ হাসান) মূল ব্যবসায় এন্ট্রি পোস্ট করতে পারবেন।");
@@ -719,8 +876,7 @@ export async function postToMainAccountAction(type: "BATCH" | "EXPENSE", id: str
  */
 export async function rejectBridgeSyncAction(type: "BATCH" | "EXPENSE", id: string): Promise<ActionState> {
   const result = await guard(async () => {
-    const ctx = await requireContext();
-    const role = resolveMillRole(ctx);
+    const { ctx, settings, role } = await getContextAndMillRole();
 
     if (role !== "SUPER_ADMIN") {
       throw new UserError("শুধুমাত্র সুপার অ্যাডমিন (নাহিদ হাসান) ব্রিজ সিঙ্ক বাতিল করতে পারবেন।");

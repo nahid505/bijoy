@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { PageHeader } from "@/components/ui";
 import { requireContext } from "@/server/auth";
-import { resolveMillRole } from "@/lib/custom-milling";
+import { getRiceMillSettings, resolveMillRole } from "@/lib/custom-milling";
 import { deleteBatchAction, updateBatchStatusAction } from "@/server/actions/custom-milling";
 import { ActionButton } from "@/components/forms";
 import {
@@ -24,7 +24,8 @@ export default async function CustomMillingBatchesPage({
 }) {
   const ctx = await requireContext();
   const sp = await searchParams;
-  const role = resolveMillRole(ctx, sp.role);
+  const settings = await getRiceMillSettings();
+  const role = resolveMillRole(ctx, sp.role, settings);
   const q = sp.q?.trim();
   const status = sp.status?.trim();
 

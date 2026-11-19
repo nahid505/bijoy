@@ -17,7 +17,8 @@ export default async function CustomMillingJVReportPage({
 }) {
   const ctx = await requireContext();
   const sp = await searchParams;
-  const role = resolveMillRole(ctx, sp.role);
+  const settings = await getRiceMillSettings();
+  const role = resolveMillRole(ctx, sp.role, settings);
 
   // RBAC: MILL_ACCOUNTANT cannot access JV report
   if (role === "MILL_ACCOUNTANT") {
@@ -53,10 +54,7 @@ export default async function CustomMillingJVReportPage({
     toDate = new Date(sp.to);
   }
 
-  const [jv, settings] = await Promise.all([
-    calculateJVSettlement({ from: fromDate, to: toDate }),
-    getRiceMillSettings(),
-  ]);
+  const jv = await calculateJVSettlement({ from: fromDate, to: toDate });
 
   const CATEGORY_NAMES: Record<string, string> = {
     MILL_RENT: "মিলের ভাড়া (Rent)",
