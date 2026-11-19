@@ -36,6 +36,15 @@ function NavTree({ entries, onNavigate }: { entries: SidebarEntry[]; onNavigate?
     Object.fromEntries(entries.filter((e) => e.highlight || e.children?.some((c) => isActive(pathname, c.href))).map((e) => [e.key, true])),
   );
 
+  // Auto-expand menu section when navigating to any of its children
+  useEffect(() => {
+    entries.forEach((e) => {
+      if (e.children?.some((c) => isActive(pathname, c.href))) {
+        setOpen((o) => (o[e.key] ? o : { ...o, [e.key]: true }));
+      }
+    });
+  }, [pathname, entries]);
+
   return (
     <nav className="flex-1 overflow-y-auto px-2 py-3 text-[13.5px]">
       <ul className="space-y-0.5">
@@ -47,7 +56,7 @@ function NavTree({ entries, onNavigate }: { entries: SidebarEntry[]; onNavigate?
                 <Link prefetch={false}
                   href={e.href}
                   onClick={onNavigate}
-                  className={`flex items-center gap-2.5 rounded-md px-3 py-2 ${active ? "bg-brand-600 font-semibold text-white" : "text-ink-100 hover:bg-white/8 hover:text-white"}`}
+                  className={`flex items-center gap-2.5 rounded-md px-3 py-2 transition-colors ${active ? "bg-brand-600 font-semibold text-white" : "text-ink-100 hover:bg-white/8 hover:text-white"}`}
                 >
                   <Icon d={e.icon} />
                   {e.label}
@@ -63,11 +72,17 @@ function NavTree({ entries, onNavigate }: { entries: SidebarEntry[]; onNavigate?
                 type="button"
                 onClick={() => setOpen((o) => ({ ...o, [e.key]: !expanded }))}
                 aria-expanded={expanded}
-                className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left ${childActive || e.highlight ? "text-white" : "text-ink-100"} ${e.highlight ? "bg-amber-400/15 font-semibold ring-1 ring-inset ring-amber-300/40" : ""} hover:bg-white/8`}
+                className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left transition-colors ${
+                  childActive
+                    ? "bg-white/12 font-semibold text-white ring-1 ring-inset ring-white/15"
+                    : e.highlight
+                    ? "bg-amber-400/15 font-semibold text-white ring-1 ring-inset ring-amber-300/40"
+                    : "text-ink-100 hover:bg-white/8 hover:text-white"
+                }`}
               >
                 <Icon d={e.icon} />
                 <span className="flex-1">{e.label}</span>
-                <svg viewBox="0 0 20 20" className={`h-3.5 w-3.5 transition-transform ${expanded ? "rotate-90" : ""}`} fill="currentColor" aria-hidden>
+                <svg viewBox="0 0 20 20" className={`h-3.5 w-3.5 transition-transform duration-200 ${expanded ? "rotate-90" : ""}`} fill="currentColor" aria-hidden>
                   <path d="M7 5l6 5-6 5V5z" />
                 </svg>
               </button>
@@ -82,7 +97,7 @@ function NavTree({ entries, onNavigate }: { entries: SidebarEntry[]; onNavigate?
                         <Link prefetch={false}
                           href={c.href}
                           onClick={onNavigate}
-                          className={`flex items-center gap-2 rounded px-2.5 py-1.5 ${active ? "bg-white/12 font-semibold text-white" : "text-ink-200 hover:text-white"}`}
+                          className={`flex items-center gap-2 rounded px-2.5 py-1.5 transition-colors ${active ? "bg-brand-600 font-semibold text-white shadow-xs" : "text-ink-200 hover:text-white hover:bg-white/6"}`}
                         >
                           {c.icon && <Icon d={c.icon} className="h-3.5 w-3.5 shrink-0 opacity-70" />}
                           <span className="truncate">{c.label}</span>

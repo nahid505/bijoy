@@ -49,6 +49,7 @@ const I = {
   db: "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zm0 0v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3",
   fileText: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
   search: "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z",
+  scale: "M12 3v18M3 7h18M6 7l-3 7h6l-3-7zm12 0l-3 7h6l-3-7zM8 21h8",
 };
 
 export const NAV: NavEntry[] = [
@@ -86,18 +87,27 @@ export const NAV: NavEntry[] = [
     module: "RICE_MILL",
     highlight: true,
     children: [
-      { href: "/purchases/paddy", label: "ধান ক্রয় ও স্কেল", permission: RICE_MILL_ACCESS.paddyView },
+      { href: "/purchases/paddy", label: "ধান ক্রয় ও স্কেল", permission: RICE_MILL_ACCESS.paddyView },
       { href: "/auto-rice-mill/bag-returns", label: "খালি বস্তা ফেরত", permission: "auto_rice_mill:bag_return:view" },
       { href: "/auto-rice-mill/bag-inventory", label: "চালের খালি বস্তা স্টক", permission: RICE_MILL_ACCESS.stock },
       { href: "/production", label: "মিলিং ও প্রসেসিং", permission: RICE_MILL_ACCESS.millingView },
       { href: "/rice-mill/stock", label: "চাল ও উপজাত স্টক", permission: RICE_MILL_ACCESS.stock },
-      { href: "/rice-mill/sales", label: "চাল ও কুঁড়া/ভূসি বিক্রয়", permission: RICE_MILL_ACCESS.salesView },
-      { href: "/custom-milling", label: "কাস্টম মিলিং (৬০:৪০ জেভি)", permission: RICE_MILL_ACCESS.millingView },
+      { href: "/rice-mill/sales", label: "চাল ও কুঁড়া/ভুসি বিক্রয়", permission: RICE_MILL_ACCESS.salesView },
+    ],
+  },
+  {
+    key: "custom-milling",
+    label: "ভাড়া অটো মিল ব্যবস্থাপনা",
+    icon: I.scale,
+    module: "RICE_MILL",
+    highlight: true,
+    children: [
+      { href: "/custom-milling", label: "কাস্টম মিলিং (৬০:৪০)", permission: RICE_MILL_ACCESS.millingView },
       { href: "/custom-milling/batches/new", label: "ধান গ্রহণ ও ওজন স্কেল", permission: RICE_MILL_ACCESS.millingView },
       { href: "/custom-milling/expenses", label: "মিলিং খরচ ও হিসাব", permission: RICE_MILL_ACCESS.millingView },
       { href: "/custom-milling/parties", label: "পার্টি লেজার (কাস্টম মিলিং)", permission: RICE_MILL_ACCESS.millingView },
       { href: "/custom-milling/reports", label: "৬০:৪০ পার্টনারশিপ হিসাব", permission: RICE_MILL_ACCESS.millingView },
-      { href: "/reports/rice-mill", label: "মিল লাভ-ক্ষতি ও স্টক রিপোর্ট", permission: "reports:view" },
+      { href: "/reports/rice-mill", label: "মিল লাভ-ক্ষতি ও স্টক", permission: "reports:view" },
     ],
   },
   { key: "pos", label: "পস বিক্রয়", icon: I.receipt, href: "/pos", permission: "sales:create", module: "TRADING" },
@@ -259,6 +269,20 @@ export const NAV_LABEL_EN: Record<string, string> = {
   "সম্মিলিত গ্রুপ রিপোর্ট": "Consolidated Group Financials",
   "কোম্পানি গ্রুপ": "Company Group",
   "চালের খালি বস্তা স্টক": "Rice Bag Inventory",
+  "অটো রাইস মিল ব্যবস্থাপনা": "Auto Rice Mill",
+  "ভাড়া অটো মিল ব্যবস্থাপনা": "Custom Auto Mill",
+  "ভাড়া অটো মিল ব্যবস্থাপনা": "Custom Auto Mill",
+  "ধান ক্রয় ও স্কেল": "Paddy Purchase & Scale",
+  "খালি বস্তা ফেরত": "Empty Bag Returns",
+  "মিলিং ও প্রসেসিং": "Milling & Processing",
+  "চাল ও উপজাত স্টক": "Rice & By-product Stock",
+  "চাল ও কুঁড়া/ভুসি বিক্রয়": "Rice & Bran Sales",
+  "কাস্টম মিলিং (৬০:৪০)": "Custom Milling (60:40)",
+  "ধান গ্রহণ ও ওজন স্কেল": "Paddy Weighing & Scale",
+  "মিলিং খরচ ও হিসাব": "Milling Expenses",
+  "পার্টি লেজার (কাস্টম মিলিং)": "Party Ledger (Custom Milling)",
+  "৬০:৪০ পার্টনারশিপ হিসাব": "60:40 Partnership Accounts",
+  "মিল লাভ-ক্ষতি ও স্টক": "Mill P&L & Stock",
 };
 
 export const MOBILE_TABS = [
