@@ -687,6 +687,10 @@ CREATE TABLE `SmsSettings` (
     `lowBalanceThreshold` DECIMAL(12, 2) NOT NULL DEFAULT 100,
     `balance` DECIMAL(12, 2) NULL,
     `balanceCheckedAt` DATETIME(3) NULL,
+    `whatsappUrl` TEXT NULL,
+    `whatsappTokenEnc` TEXT NULL,
+    `whatsappTokenHint` TEXT NULL,
+    `whatsappCountryCode` VARCHAR(191) NULL DEFAULT '88',
     `events` JSON NOT NULL DEFAULT (json_array('SALE_INVOICE', 'PAYMENT_RECEIVED', 'SALES_RETURN', 'INVOICE_CANCELLED', 'DUE_REMINDER', 'PURCHASE', 'SUPPLIER_PAYMENT', 'PURCHASE_RETURN', 'LOW_STOCK', 'EXPIRY_WARNING', 'EXPIRED')),
     `alertMobiles` JSON NOT NULL DEFAULT (json_array()),
     `expiryAlertDays` JSON NOT NULL DEFAULT (json_array(90, 60, 30, 15, 7)),
@@ -718,6 +722,7 @@ CREATE TABLE `SmsMessage` (
     `encoding` TEXT NOT NULL,
     `parts` INTEGER NOT NULL,
     `status` ENUM('QUEUED', 'SENDING', 'SENT', 'DELIVERED', 'FAILED') NOT NULL DEFAULT 'QUEUED',
+    `channel` VARCHAR(191) NULL DEFAULT 'SMS',
     `priority` INTEGER NOT NULL DEFAULT 0,
     `dedupeKey` VARCHAR(191) NULL,
     `provider` VARCHAR(191) NULL,
@@ -1430,6 +1435,35 @@ CREATE TABLE `PaddyPurchase` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
+CREATE TABLE `PaddyPurchaseItem` (
+    `id` VARCHAR(191) NOT NULL,
+    `businessId` VARCHAR(191) NOT NULL,
+    `paddyPurchaseId` VARCHAR(191) NOT NULL,
+    `lineNo` INTEGER NOT NULL DEFAULT 0,
+    `productId` VARCHAR(191) NOT NULL,
+    `bagCount` INTEGER NOT NULL DEFAULT 0,
+    `juteBagQty` INTEGER NOT NULL DEFAULT 0,
+    `plasticBagQty` INTEGER NOT NULL DEFAULT 0,
+    `totalBags` INTEGER NOT NULL DEFAULT 0,
+    `variety` TEXT NULL,
+    `moisturePct` DECIMAL(5, 2) NULL,
+    `batchNo` TEXT NULL,
+    `vehicleGrossKg` DECIMAL(14, 3) NULL,
+    `vehicleTareKg` DECIMAL(14, 3) NULL,
+    `grossKg` DECIMAL(14, 3) NOT NULL,
+    `dhaltaKg` DECIMAL(14, 3) NOT NULL DEFAULT 0,
+    `netKg` DECIMAL(14, 3) NOT NULL,
+    `mon` DECIMAL(14, 2) NOT NULL,
+    `ratePerMon` DECIMAL(14, 2) NOT NULL,
+    `totalPrice` DECIMAL(14, 2) NOT NULL,
+
+    INDEX `PaddyPurchaseItem_businessId_idx`(`businessId`),
+    INDEX `PaddyPurchaseItem_paddyPurchaseId_idx`(`paddyPurchaseId`),
+    INDEX `PaddyPurchaseItem_productId_idx`(`productId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
 CREATE TABLE `BagReturnVoucher` (
     `id` VARCHAR(191) NOT NULL,
     `voucherNo` VARCHAR(191) NOT NULL,
@@ -1555,6 +1589,123 @@ CREATE TABLE `DriverTripPayment` (
     INDEX `DriverTripPayment_businessId_driverName_idx`(`businessId`, `driverName`),
     INDEX `DriverTripPayment_businessId_date_idx`(`businessId`, `date`),
     INDEX `DriverTripPayment_tripId_idx`(`tripId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `RiceMillSettings` (
+    `id` INTEGER NOT NULL DEFAULT 1,
+    `millName` VARCHAR(191) NOT NULL DEFAULT 'বিজয় অটো রাইস মিল (জয়েন্ট ভেঞ্চার)',
+    `millAddress` VARCHAR(191) NOT NULL DEFAULT 'বীরগঞ্জ, দিনাজপুর',
+    `millPhone` VARCHAR(191) NOT NULL DEFAULT '01763921505',
+    `partner1Name` VARCHAR(191) NOT NULL DEFAULT 'নাহিদ হাসান',
+    `partner1SharePct` DOUBLE NOT NULL DEFAULT 60.0,
+    `partner2Name` VARCHAR(191) NOT NULL DEFAULT 'পার্টনার (৪০%)',
+    `partner2SharePct` DOUBLE NOT NULL DEFAULT 40.0,
+    `monthlyRent` DOUBLE NOT NULL DEFAULT 120000,
+    `bagStandardKg` DOUBLE NOT NULL DEFAULT 75.0,
+    `defaultDhaltaPerBag` DOUBLE NOT NULL DEFAULT 1.5,
+    `defaultDryerRate` DOUBLE NOT NULL DEFAULT 50.0,
+    `defaultMillingRate` DOUBLE NOT NULL DEFAULT 120.0,
+    `branRatePerKg` DOUBLE NOT NULL DEFAULT 22.0,
+    `huskRatePerKg` DOUBLE NOT NULL DEFAULT 8.0,
+    `invoiceFooterNote` VARCHAR(191) NOT NULL DEFAULT 'বিঃদ্রঃ ৭৫ কেজি = ১ স্ট্যান্ডার্ড বস্তা হিসেবে বিল গণনা করা হয়েছে।',
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `MillParty` (
+    `id` VARCHAR(191) NOT NULL,
+    `name` TEXT NOT NULL,
+    `phone` TEXT NULL,
+    `address` TEXT NULL,
+    `isOwnerSelfParty` BOOLEAN NOT NULL DEFAULT false,
+    `openingBalance` DOUBLE NOT NULL DEFAULT 0,
+    `currentDue` DOUBLE NOT NULL DEFAULT 0,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `MillBatch` (
+    `id` VARCHAR(191) NOT NULL,
+    `batchNo` VARCHAR(191) NOT NULL,
+    `date` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `partyId` VARCHAR(191) NOT NULL,
+    `paddyType` TEXT NOT NULL,
+    `vehicleNo` TEXT NULL,
+    `physicalBags` INTEGER NOT NULL,
+    `grossWeightKg` DOUBLE NOT NULL,
+    `tareWeightKg` DOUBLE NOT NULL,
+    `dhaltaKg` DOUBLE NOT NULL,
+    `netWeightKg` DOUBLE NOT NULL,
+    `standardBags75Kg` DOUBLE NOT NULL,
+    `status` VARCHAR(191) NOT NULL DEFAULT 'RECEIVED',
+    `dryerRatePerBag` DOUBLE NOT NULL DEFAULT 0,
+    `dryerFee` DOUBLE NOT NULL DEFAULT 0,
+    `millingRatePerBag` DOUBLE NOT NULL DEFAULT 0,
+    `millingFee` DOUBLE NOT NULL DEFAULT 0,
+    `riceOutputBags` DOUBLE NOT NULL DEFAULT 0,
+    `branKg` DOUBLE NOT NULL DEFAULT 0,
+    `huskKg` DOUBLE NOT NULL DEFAULT 0,
+    `byProductKeptMill` BOOLEAN NOT NULL DEFAULT true,
+    `byProductIncome` DOUBLE NOT NULL DEFAULT 0,
+    `totalBillAmount` DOUBLE NOT NULL DEFAULT 0,
+    `mainSyncStatus` ENUM('NOT_APPLICABLE', 'PENDING', 'POSTED', 'REJECTED') NOT NULL DEFAULT 'NOT_APPLICABLE',
+    `createdByName` TEXT NOT NULL,
+    `createdByUserId` TEXT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    UNIQUE INDEX `MillBatch_batchNo_key`(`batchNo`),
+    INDEX `MillBatch_partyId_idx`(`partyId`),
+    INDEX `MillBatch_date_idx`(`date`),
+    INDEX `MillBatch_status_idx`(`status`),
+    INDEX `MillBatch_mainSyncStatus_idx`(`mainSyncStatus`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `MillExpense` (
+    `id` VARCHAR(191) NOT NULL,
+    `date` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `category` VARCHAR(191) NOT NULL,
+    `description` TEXT NOT NULL,
+    `amount` DOUBLE NOT NULL,
+    `paidBy` ENUM('MILL_CASH', 'PARTNER_1', 'PARTNER_2') NOT NULL DEFAULT 'MILL_CASH',
+    `mainSyncStatus` ENUM('NOT_APPLICABLE', 'PENDING', 'POSTED', 'REJECTED') NOT NULL DEFAULT 'NOT_APPLICABLE',
+    `createdByName` TEXT NOT NULL,
+    `createdByUserId` TEXT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    INDEX `MillExpense_date_idx`(`date`),
+    INDEX `MillExpense_category_idx`(`category`),
+    INDEX `MillExpense_paidBy_idx`(`paidBy`),
+    INDEX `MillExpense_mainSyncStatus_idx`(`mainSyncStatus`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `MillVoucher` (
+    `id` VARCHAR(191) NOT NULL,
+    `voucherNo` VARCHAR(191) NOT NULL,
+    `date` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `type` VARCHAR(191) NOT NULL,
+    `partyId` VARCHAR(191) NULL,
+    `partnerTarget` TEXT NULL,
+    `paymentMode` VARCHAR(191) NOT NULL DEFAULT 'CASH',
+    `amount` DOUBLE NOT NULL,
+    `note` TEXT NULL,
+    `createdByName` TEXT NOT NULL,
+    `createdByUserId` TEXT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    UNIQUE INDEX `MillVoucher_voucherNo_key`(`voucherNo`),
+    INDEX `MillVoucher_partyId_idx`(`partyId`),
+    INDEX `MillVoucher_date_idx`(`date`),
+    INDEX `MillVoucher_type_idx`(`type`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -2048,6 +2199,15 @@ ALTER TABLE `PaddyPurchase` ADD CONSTRAINT `PaddyPurchase_businessId_fkey` FOREI
 ALTER TABLE `PaddyPurchase` ADD CONSTRAINT `PaddyPurchase_voucherId_fkey` FOREIGN KEY (`voucherId`) REFERENCES `Voucher`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE `PaddyPurchaseItem` ADD CONSTRAINT `PaddyPurchaseItem_businessId_fkey` FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `PaddyPurchaseItem` ADD CONSTRAINT `PaddyPurchaseItem_paddyPurchaseId_fkey` FOREIGN KEY (`paddyPurchaseId`) REFERENCES `PaddyPurchase`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `PaddyPurchaseItem` ADD CONSTRAINT `PaddyPurchaseItem_productId_fkey` FOREIGN KEY (`productId`) REFERENCES `Product`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE `BagReturnVoucher` ADD CONSTRAINT `BagReturnVoucher_businessId_fkey` FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -2100,6 +2260,12 @@ ALTER TABLE `DriverTripPayment` ADD CONSTRAINT `DriverTripPayment_cashAccountId_
 
 -- AddForeignKey
 ALTER TABLE `DriverTripPayment` ADD CONSTRAINT `DriverTripPayment_createdById_fkey` FOREIGN KEY (`createdById`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `MillBatch` ADD CONSTRAINT `MillBatch_partyId_fkey` FOREIGN KEY (`partyId`) REFERENCES `MillParty`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `MillVoucher` ADD CONSTRAINT `MillVoucher_partyId_fkey` FOREIGN KEY (`partyId`) REFERENCES `MillParty`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- ── integrity rules (CHECK constraints, ported from the PostgreSQL migrations) ──
 ALTER TABLE `JournalEntry` ADD CONSTRAINT `JournalEntry_amounts_nonnegative` CHECK (`debit` >= 0 AND `credit` >= 0);

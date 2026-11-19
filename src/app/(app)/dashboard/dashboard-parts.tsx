@@ -92,19 +92,34 @@ export async function CashBookWidget({ ctx }: { ctx: AppContext }) {
  * এক সারিতে সুন্দর গ্রিড আকারে।
  */
 export async function CashAndBalancesSection({ ctx }: { ctx: AppContext }) {
-  if (!can(ctx, "accounts:view")) return null;
-  const t = await getT();
-  const cur = ctx.business.currencySymbol;
-  const isDep = isDepot(ctx.business.businessType);
-  const bookFilter: BookFilter = isDep ? "ALL" : "GENERAL";
-  const heads = allowedAccounts(ctx);
+  try {
+    if (!can(ctx, "accounts:view")) return null;
+    const t = await getT();
+    const cur = ctx.business.currencySymbol;
+    const isDep = isDepot(ctx.business.businessType);
+    const bookFilter: BookFilter = isDep ? "ALL" : "GENERAL";
+    const heads = allowedAccounts(ctx);
 
-  const [c, cashRows, bankRows, depotBox] = await Promise.all([
-    dailyCash(ctx.business.id, {}).catch(() => null),
-    balancesByKind(ctx.business.id, ["CASH"], undefined, bookFilter).catch(() => []),
-    balancesByKind(ctx.business.id, ["BANK"], undefined, bookFilter).catch(() => []),
-    isDep ? depotCashSummary(ctx.business.id).catch(() => null) : Promise.resolve(null),
-  ]);
+    const [c, cashRows, bankRows, depotBox] = await Promise.all([
+      dailyCash(ctx.business.id, {}).catch((err) => {
+        console.warn("[Dashboard] dailyCash error:", err);
+        return null;
+      }),
+      balancesByKind(ctx.business.id, ["CASH"], undefined, bookFilter).catch((err) => {
+        console.warn("[Dashboard] cash balances error:", err);
+        return [];
+      }),
+      balancesByKind(ctx.business.id, ["BANK"], undefined, bookFilter).catch((err) => {
+        console.warn("[Dashboard] bank balances error:", err);
+        return [];
+      }),
+      isDep
+        ? depotCashSummary(ctx.business.id).catch((err) => {
+            console.warn("[Dashboard] depotCashSummary error:", err);
+            return null;
+          })
+        : Promise.resolve(null),
+    ]);
 
   const cashAccounts = cashRows
     .filter((r) => heads === null || heads.includes(r.id))
@@ -315,6 +330,10 @@ export async function CashAndBalancesSection({ ctx }: { ctx: AppContext }) {
       </div>
     </section>
   );
+  } catch (err) {
+    console.error("[Dashboard] CashAndBalancesSection failed:", err);
+    return null;
+  }
 }
 
 /**
@@ -325,47 +344,64 @@ export async function CashAndBalancesSection({ ctx }: { ctx: AppContext }) {
  * (গ) মোট স্টক মূল্য (Total Stock Value / বর্তমান মজুদ) - হালকা হলুদ/অ্যাম্বার শেড
  */
 export async function DebtorsCreditorsSummary({ ctx }: { ctx: AppContext }) {
-  const canAccounts = can(ctx, "accounts:view");
-  const canVerify = can(ctx, ["view_approval_queue", "can_verify_transactions", "vouchers:verify"]);
-  if (!canAccounts && !canVerify) return null;
-  const t = await getT();
-  const cur = ctx.business.currencySymbol;
-  const isDep = isDepot(ctx.business.businessType);
-  const bookFilter: BookFilter = isDep ? "ALL" : "GENERAL";
+  try {
+    const canAccounts = can(ctx, "accounts:view");
+    const canVerify = can(ctx, ["view_approval_queue", "can_verify_transactions", "vouchers:verify"]);
+    if (!canAccounts && !canVerify) return null;
+    const t = await getT();
+    const cur = ctx.business.currencySymbol;
+    const isDep = isDepot(ctx.business.businessType);
+    const bookFilter: BookFilter = isDep ? "ALL" : "GENERAL";
 
-  const [debtorAccounts, creditorAccounts, valuation, unverifiedCount] = await Promise.all([
-    canAccounts ? balancesByKind(ctx.business.id, ["CUSTOMER"], undefined, bookFilter).catch(() => []) : Promise.resolve([]),
-    canAccounts ? balancesByKind(ctx.business.id, ["SUPPLIER"], undefined, bookFilter).catch(() => []) : Promise.resolve([]),
-    canAccounts
-      ? calculateInventoryValuation(ctx.business.id, { includeDepot: isDep }).catch(() => ({
-          totalValue: 0,
-          purchasedValue: 0,
-          producedValue: 0,
-          totalProducts: 0,
-          purchasedCount: 0,
-          producedCount: 0,
-          items: [],
-          byCategory: new Map(),
-        }))
-      : Promise.resolve({
-          totalValue: 0,
-          purchasedValue: 0,
-          producedValue: 0,
-          totalProducts: 0,
-          purchasedCount: 0,
-          producedCount: 0,
-          items: [],
-          byCategory: new Map(),
-        }),
-    canVerify
-      ? prisma.voucher.count({
-          where: {
-            businessId: ctx.business.id,
-            verificationStatus: "UNVERIFIED",
-          },
-        }).catch(() => 0)
-      : Promise.resolve(0),
-  ]);
+    const [debtorAccounts, creditorAccounts, valuation, unverifiedCount] = await Promise.all([
+      canAccounts
+        ? balancesByKind(ctx.business.id, ["CUSTOMER"], undefined, bookFilter).catch((err) => {
+            console.warn("[Dashboard] customer balances error:", err);
+            return [];
+          })
+        : Promise.resolve([]),
+      canAccounts
+        ? balancesByKind(ctx.business.id, ["SUPPLIER"], undefined, bookFilter).catch((err) => {
+            console.warn("[Dashboard] supplier balances error:", err);
+            return [];
+          })
+        : Promise.resolve([]),
+      canAccounts
+        ? calculateInventoryValuation(ctx.business.id, { includeDepot: isDep }).catch((err) => {
+            console.warn("[Dashboard] inventory valuation error:", err);
+            return {
+              totalValue: 0,
+              purchasedValue: 0,
+              producedValue: 0,
+              totalProducts: 0,
+              purchasedCount: 0,
+              producedCount: 0,
+              items: [],
+              byCategory: new Map(),
+            };
+          })
+        : Promise.resolve({
+            totalValue: 0,
+            purchasedValue: 0,
+            producedValue: 0,
+            totalProducts: 0,
+            purchasedCount: 0,
+            producedCount: 0,
+            items: [],
+            byCategory: new Map(),
+          }),
+      canVerify
+        ? prisma.voucher.count({
+            where: {
+              businessId: ctx.business.id,
+              verificationStatus: "UNVERIFIED",
+            },
+          }).catch((err) => {
+            console.warn("[Dashboard] unverified voucher count error:", err);
+            return 0;
+          })
+        : Promise.resolve(0),
+    ]);
 
   // Debtor balances: positive balance (debit > credit) = customer owes money (receivable)
   const debtorDueList = debtorAccounts.filter((r) => r.balance > 0.005);
@@ -608,6 +644,10 @@ export async function DebtorsCreditorsSummary({ ctx }: { ctx: AppContext }) {
       </div>
     </section>
   );
+  } catch (err) {
+    console.error("[Dashboard] DebtorsCreditorsSummary failed:", err);
+    return null;
+  }
 }
 
 export interface QuickActionCard {
@@ -628,9 +668,10 @@ export interface QuickActionCard {
  * 6 responsive cards (Grid 2/3/6 col) with custom color themes, smooth transitions, and bilingual labels.
  */
 export async function QuickAccountingActions({ ctx }: { ctx?: AppContext } = {}) {
-  const t = await getT();
-  const isRiceMill = ctx ? businessModules(ctx.business.businessTypes).has("RICE_MILL") : true;
-  const isDep = ctx ? isDepot(ctx.business.businessType) : false;
+  try {
+    const t = await getT();
+    const isRiceMill = ctx ? businessModules(ctx.business.businessTypes).has("RICE_MILL") : true;
+    const isDep = ctx ? isDepot(ctx.business.businessType) : false;
 
   const actions: QuickActionCard[] = isRiceMill
     ? [
@@ -891,4 +932,8 @@ export async function QuickAccountingActions({ ctx }: { ctx?: AppContext } = {})
       </div>
     </section>
   );
+  } catch (err) {
+    console.error("[Dashboard] QuickAccountingActions failed:", err);
+    return null;
+  }
 }

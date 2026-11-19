@@ -96,25 +96,41 @@ export default async function DashboardPage() {
     ctx.user.email === "nahid21506@gmail.com" ||
     ctx.user.name?.includes("নাহিদ");
 
-  const [pendingBatches, pendingExpenses] = isSuperAdminOrOwner
-    ? await Promise.all([
-        prisma.millBatch.findMany({
+  let pendingBatches: any[] = [];
+  let pendingExpenses: any[] = [];
+
+  if (isSuperAdminOrOwner) {
+    try {
+      if ("millBatch" in prisma) {
+        pendingBatches = await prisma.millBatch.findMany({
           where: {
             party: { isOwnerSelfParty: true },
             mainSyncStatus: "PENDING",
           },
           include: { party: true },
           orderBy: { date: "desc" },
-        }),
-        prisma.millExpense.findMany({
+        });
+      }
+    } catch (err) {
+      console.warn("[Dashboard] MillBatch query skipped (table not found or schema pending):", err);
+      pendingBatches = [];
+    }
+
+    try {
+      if ("millExpense" in prisma) {
+        pendingExpenses = await prisma.millExpense.findMany({
           where: {
             paidBy: "PARTNER_1",
             mainSyncStatus: "PENDING",
           },
           orderBy: { date: "desc" },
-        }),
-      ])
-    : [[], []];
+        });
+      }
+    } catch (err) {
+      console.warn("[Dashboard] MillExpense query skipped (table not found or schema pending):", err);
+      pendingExpenses = [];
+    }
+  }
 
   return (
     <>

@@ -32,15 +32,17 @@ const CATEGORY_NAMES: Record<string, string> = {
 };
 
 export function RiceMillBridgeCard({
-  pendingBatches,
-  pendingExpenses,
+  pendingBatches = [],
+  pendingExpenses = [],
 }: {
-  pendingBatches: PendingBatch[];
-  pendingExpenses: PendingExpense[];
+  pendingBatches?: PendingBatch[];
+  pendingExpenses?: PendingExpense[];
 }) {
-  const totalBatchAmount = pendingBatches.reduce((sum, b) => sum + (b.totalBillAmount || 0), 0);
-  const totalExpenseAmount = pendingExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
-  const totalPendingItems = pendingBatches.length + pendingExpenses.length;
+  const batches = pendingBatches ?? [];
+  const expenses = pendingExpenses ?? [];
+  const totalBatchAmount = batches.reduce((sum, b) => sum + (b.totalBillAmount || 0), 0);
+  const totalExpenseAmount = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+  const totalPendingItems = batches.length + expenses.length;
 
   return (
     <section className="mb-6 rounded-2xl border-2 border-amber-300 bg-linear-to-br from-amber-50/90 via-white to-amber-50/50 p-5 shadow-sm">
@@ -81,7 +83,7 @@ export function RiceMillBridgeCard({
           <p className="text-[11px] font-semibold text-amber-900">মালিকের নিজস্ব ধান মাড়াই বিল (পেন্ডিং)</p>
           <p className="text-lg font-black text-amber-950">
             ৳ {formatNumber(totalBatchAmount)}{" "}
-            <span className="text-xs font-semibold text-slate-500">({pendingBatches.length} টি ব্যাচ)</span>
+            <span className="text-xs font-semibold text-slate-500">({batches.length} টি ব্যাচ)</span>
           </p>
         </div>
 
@@ -89,7 +91,7 @@ export function RiceMillBridgeCard({
           <p className="text-[11px] font-semibold text-amber-900">পার্টনার ১ (নাহিদ হাসান) পকেট খরচ (পেন্ডিং)</p>
           <p className="text-lg font-black text-amber-950">
             ৳ {formatNumber(totalExpenseAmount)}{" "}
-            <span className="text-xs font-semibold text-slate-500">({pendingExpenses.length} টি খরচ)</span>
+            <span className="text-xs font-semibold text-slate-500">({expenses.length} টি খরচ)</span>
           </p>
         </div>
       </div>
@@ -101,11 +103,11 @@ export function RiceMillBridgeCard({
       ) : (
         <div className="mt-4 space-y-4">
           {/* Batches List */}
-          {pendingBatches.length > 0 && (
+          {batches.length > 0 && (
             <div>
               <h4 className="text-xs font-bold text-amber-950 mb-2 flex items-center gap-1.5">
                 <span>🌾</span>
-                <span>নিজস্ব ধান মাড়াই বিল ({pendingBatches.length})</span>
+                <span>নিজস্ব ধান মাড়াই বিল ({batches.length})</span>
               </h4>
 
               <div className="overflow-x-auto rounded-xl border border-amber-200 bg-white">
@@ -120,7 +122,7 @@ export function RiceMillBridgeCard({
                     </tr>
                   </thead>
                   <tbody>
-                    {pendingBatches.map((b) => (
+                    {batches.map((b) => (
                       <tr key={b.id} className="hover:bg-amber-50/40">
                         <td className="whitespace-nowrap font-mono font-bold text-slate-800">
                           {b.batchNo}
@@ -156,11 +158,11 @@ export function RiceMillBridgeCard({
           )}
 
           {/* Expenses List */}
-          {pendingExpenses.length > 0 && (
+          {expenses.length > 0 && (
             <div>
               <h4 className="text-xs font-bold text-amber-950 mb-2 flex items-center gap-1.5">
                 <span>💸</span>
-                <span>নাহিদ হাসানের পকেট থেকে পরিশোধিত মিল খরচ ({pendingExpenses.length})</span>
+                <span>নাহিদ হাসানের পকেট থেকে পরিশোধিত মিল খরচ ({expenses.length})</span>
               </h4>
 
               <div className="overflow-x-auto rounded-xl border border-amber-200 bg-white">
@@ -175,7 +177,7 @@ export function RiceMillBridgeCard({
                     </tr>
                   </thead>
                   <tbody>
-                    {pendingExpenses.map((e) => (
+                    {expenses.map((e) => (
                       <tr key={e.id} className="hover:bg-amber-50/40">
                         <td className="whitespace-nowrap text-slate-600">{formatDateTime(e.date)}</td>
                         <td className="font-semibold text-slate-700">
