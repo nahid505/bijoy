@@ -17,9 +17,9 @@ const run = process.env.TEST_DATABASE_URL || process.env.TEST_MYSQL_URL ? descri
 const D = (s: string) => new Date(`${s}T00:00:00.000Z`);
 const party = (name: string) => ({ name, mobile: null, email: null, address: null, notes: null, openingBalance: 0, creditLimit: 0, creditDays: 0 });
 const OCT = { gte: D("2026-10-01"), lt: D("2026-11-01") };
+let ctx: Ctx;
 
 run("depot cash (ডিপো ক্যাশ) and depot expenses", () => {
-  let ctx: Ctx;
   let box: string;
   let sys: Record<string, string>; // systemKey → account id
   let rentId: string;
@@ -139,7 +139,7 @@ run("depot cash (ডিপো ক্যাশ) and depot expenses", () => {
 run("depot cash — backup and restore", () => {
   it("depot expense / fund sourceKeys survive a restore unchanged; the restored box holds the same cash", async () => {
     const { exportBusiness, restoreBackup } = await import("@/server/services/backup");
-    const src = await prisma.voucher.findFirstOrThrow({ where: { sourceKey: { startsWith: DEPOT_EXPENSE_SOURCE } }, orderBy: { createdAt: "desc" } });
+    const src = await prisma.voucher.findFirstOrThrow({ where: { businessId: ctx.businessId, sourceKey: { startsWith: DEPOT_EXPENSE_SOURCE } }, orderBy: { createdAt: "desc" } });
     const backup = await exportBusiness(src.businessId);
     const user = await prisma.user.findFirstOrThrow({ where: { memberships: { some: { businessId: src.businessId } } } });
     const restored = await restoreBackup(JSON.parse(JSON.stringify(backup)), user.id);

@@ -2,18 +2,58 @@
 
 import { useEffect, useState, useCallback } from "react";
 
-interface BeforeInstallPromptEvent extends Event {
+export interface BeforeInstallPromptEvent extends Event {
   readonly platforms: string[];
   readonly userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
   prompt(): Promise<void>;
 }
 
+declare global {
+  interface Window {
+    __deferredPwaPrompt?: BeforeInstallPromptEvent | null;
+  }
+}
+
+let globalDeferredPrompt: BeforeInstallPromptEvent | null = null;
+const promptListeners = new Set<(prompt: BeforeInstallPromptEvent | null) => void>();
+
+export function setGlobalPrompt(prompt: BeforeInstallPromptEvent | null) {
+  globalDeferredPrompt = prompt;
+  if (typeof window !== "undefined") {
+    window.__deferredPwaPrompt = prompt;
+  }
+  promptListeners.forEach((listener) => listener(prompt));
+}
+
+// Module-level early capture for browser environments
+if (typeof window !== "undefined") {
+  if (window.__deferredPwaPrompt) {
+    globalDeferredPrompt = window.__deferredPwaPrompt;
+  }
+
+  window.addEventListener("beforeinstallprompt", (e: Event) => {
+    e.preventDefault();
+    setGlobalPrompt(e as BeforeInstallPromptEvent);
+  });
+
+  window.addEventListener("appinstalled", () => {
+    setGlobalPrompt(null);
+  });
+}
+
 export function usePWAInstall() {
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(() => {
+    if (typeof window !== "undefined") {
+      return globalDeferredPrompt || window.__deferredPwaPrompt || null;
+    }
+    return null;
+  });
   const [isStandalone, setIsStandalone] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+
     // Register Service Worker if supported
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => {
@@ -29,14 +69,23 @@ export function usePWAInstall() {
     checkStandalone();
     standaloneMedia.addEventListener("change", checkStandalone);
 
+    if (globalDeferredPrompt) {
+      setDeferredPrompt(globalDeferredPrompt);
+    }
+
+    const onPromptChange = (prompt: BeforeInstallPromptEvent | null) => {
+      setDeferredPrompt(prompt);
+    };
+    promptListeners.add(onPromptChange);
+
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
+      setGlobalPrompt(e as BeforeInstallPromptEvent);
     };
 
     const handleAppInstalled = () => {
       setIsInstalled(true);
-      setDeferredPrompt(null);
+      setGlobalPrompt(null);
     };
 
     window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
@@ -44,28 +93,30 @@ export function usePWAInstall() {
 
     return () => {
       standaloneMedia.removeEventListener("change", checkStandalone);
+      promptListeners.delete(onPromptChange);
       window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
       window.removeEventListener("appinstalled", handleAppInstalled);
     };
   }, []);
 
-  const triggerInstall = useCallback(async () => {
-    if (!deferredPrompt) return false;
+  const triggerInstall = useCallback(async (): Promise<"accepted" | "dismissed" | "no-prompt" | "error"> => {
+    const prompt = deferredPrompt || globalDeferredPrompt || (typeof window !== "undefined" ? window.__deferredPwaPrompt : null);
+    if (!prompt) return "no-prompt";
     try {
-      await deferredPrompt.prompt();
-      const choice = await deferredPrompt.userChoice;
+      await prompt.prompt();
+      const choice = await prompt.userChoice;
       if (choice.outcome === "accepted") {
         setIsInstalled(true);
       }
-      setDeferredPrompt(null);
-      return choice.outcome === "accepted";
+      setGlobalPrompt(null);
+      return choice.outcome;
     } catch {
-      return false;
+      return "error";
     }
   }, [deferredPrompt]);
 
   return {
-    canInstallPrompt: !!deferredPrompt,
+    canInstallPrompt: !!(deferredPrompt || globalDeferredPrompt),
     isStandalone,
     isInstalled,
     triggerInstall,
@@ -82,11 +133,13 @@ export function DownloadModal({
   initialTab?: "android" | "windows";
 }) {
   const [tab, setTab] = useState<"android" | "windows">(initialTab);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const { canInstallPrompt, isStandalone, isInstalled, triggerInstall } = usePWAInstall();
 
   useEffect(() => {
     if (isOpen) {
       setTab(initialTab);
+      setStatusMessage(null);
     }
   }, [isOpen, initialTab]);
 
@@ -107,7 +160,18 @@ export function DownloadModal({
   if (!isOpen) return null;
 
   const handleInstallClick = async () => {
-    await triggerInstall();
+    if (isStandalone || isInstalled) {
+      setStatusMessage("অ্যাপটি ইতিমধ্যে আপনার ডিভাইসে ইনস্টল করা আছে।");
+      return;
+    }
+    const outcome = await triggerInstall();
+    if (outcome === "accepted") {
+      setStatusMessage("✅ অভিনন্দন! বিজয় লেনদেন অ্যাপ সফলভাবে ইনস্টল করা হয়েছে।");
+    } else if (outcome === "dismissed") {
+      setStatusMessage("ইনস্টলেশন প্রম্পটটি বন্ধ করা হয়েছে। প্রয়োজন হলে আবার চেষ্টা করতে পারেন।");
+    } else if (outcome === "no-prompt") {
+      setStatusMessage("ব্রাউজারের অ্যাড্রেস বারের ডানপাশে থাকা ইনস্টল (🖥️ বা ➕) আইকন অথবা মেনু (⋮) থেকে 'Install বিজয় লেনদেন' নির্বাচন করুন।");
+    }
   };
 
   return (
@@ -126,7 +190,7 @@ export function DownloadModal({
           <div>
             <div className="flex items-center gap-2">
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-lg font-bold text-white">৳</span>
-              <h2 className="text-lg font-bold text-ink-900">বিজয় লেনদেন অ্যাপ ডাউনলোড ও ইনস্টলেশন</h2>
+              <h2 className="text-lg font-bold text-ink-900">বিজয় লেনদেন অ্যাপ ডাউনলোড ও ইনস্টলেশন</h2>
             </div>
             <p className="mt-1 text-xs text-slate-500">সহজেই মোবাইল ও কম্পিউটারে অ্যাপ হিসেবে ব্যবহার করুন</p>
           </div>
@@ -139,6 +203,44 @@ export function DownloadModal({
             ✕
           </button>
         </div>
+
+        {/* Standalone Status or Direct One-Click Install Banner */}
+        {isStandalone || isInstalled ? (
+          <div className="mt-4 flex items-center gap-2 rounded-xl bg-emerald-50 px-3.5 py-2.5 text-xs text-emerald-800 border border-emerald-300">
+            <span className="text-base">✅</span>
+            <span className="font-semibold">অ্যাপটি বর্তমানে আপনার ডিভাইসে ইনস্টল অবস্থায় চালু আছে</span>
+          </div>
+        ) : (
+          <div className="mt-4 rounded-xl border-2 border-emerald-500 bg-emerald-50/70 p-4 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">⚡</span>
+                  <h3 className="text-sm font-bold text-emerald-950">ওয়ান-ক্লিক অ্যাপ ইনস্টল</h3>
+                  <span className="rounded bg-emerald-200/90 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">
+                    PWA ইনস্টল
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-emerald-800">
+                  কোনো ফাইল ডাউনলোড ছাড়াই সরাসরি ব্রাউজার থেকে অ্যাপ ইনস্টল করুন।
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleInstallClick}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 px-4 py-2.5 text-xs font-bold text-white shadow-md transition cursor-pointer shrink-0"
+              >
+                <span>⬇️</span>
+                <span>সরাসরি অ্যাপ ইনস্টল করুন</span>
+              </button>
+            </div>
+            {statusMessage && (
+              <div className="mt-2.5 rounded-lg bg-white/95 p-2.5 text-xs font-medium text-emerald-900 border border-emerald-200">
+                {statusMessage}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Tab Switcher */}
         <div className="mt-4 flex rounded-lg bg-slate-100 p-1">
@@ -161,14 +263,6 @@ export function DownloadModal({
             💻 Windows (পিসি / কম্পিউটার)
           </button>
         </div>
-
-        {/* Status notice if running in standalone */}
-        {(isStandalone || isInstalled) && (
-          <div className="mt-3 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800 border border-emerald-200">
-            <span>✅</span>
-            <span>অ্যাপটি বর্তমানে ইনস্টল অবস্থায় চলছে</span>
-          </div>
-        )}
 
         {/* Content Body */}
         <div className="mt-4 space-y-4">
@@ -226,8 +320,8 @@ export function DownloadModal({
                       onClick={handleInstallClick}
                       className="btn-secondary inline-flex items-center gap-2 text-xs font-semibold py-2 px-4 border-brand-600 text-brand-700 hover:bg-brand-50 cursor-pointer"
                     >
-                      <span>📲</span>
-                      <span>সরাসরি ব্রাউজার থেকে ইনস্টল করুন</span>
+                      <span>⬇️</span>
+                      <span>সরাসরি অ্যাপ ইনস্টল করুন</span>
                     </button>
                   ) : (
                     <div className="rounded-lg bg-white p-3 text-xs text-slate-600 border border-slate-200 space-y-1">
@@ -265,8 +359,8 @@ export function DownloadModal({
                       onClick={handleInstallClick}
                       className="btn-primary inline-flex items-center gap-2 text-xs font-semibold py-2 px-4 shadow-sm cursor-pointer"
                     >
-                      <span>🖥️</span>
-                      <span>কম্পিউটারে সরাসরি ইনস্টল করুন</span>
+                      <span>⬇️</span>
+                      <span>সরাসরি অ্যাপ ইনস্টল করুন</span>
                     </button>
                   ) : (
                     <div className="rounded-lg bg-white p-3 text-xs text-slate-600 border border-slate-200 space-y-1">
@@ -291,7 +385,7 @@ export function DownloadModal({
                       </span>
                     </div>
                     <p className="mt-1 text-xs text-slate-600">
-                      ডেস্কটপ আইকন থেকে সরাসরি এক ক্লিকে বিজয় লেনদেন চালু করার শর্টকাট ফাইল।
+                      ডেস্কটপ আইকন থেকে সরাসরি এক ক্লিকে বিজয় লেনদেন চালু করার শর্টকাট ফাইল।
                     </p>
                   </div>
                 </div>
@@ -322,6 +416,30 @@ export function DownloadModal({
         </div>
       </div>
     </div>
+  );
+}
+
+export function AppDownloadHeaderTrigger() {
+  const [modalOpen, setModalOpen] = useState(false);
+  const { isStandalone } = usePWAInstall();
+
+  // If already running standalone, no need to show install button in header
+  if (isStandalone) return null;
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setModalOpen(true)}
+        className="flex h-10 sm:h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50/70 px-2.5 sm:px-3 text-xs font-semibold text-emerald-800 shadow-2xs transition hover:bg-emerald-100 hover:border-emerald-400 shrink-0 cursor-pointer"
+        title="অ্যাপ ইনস্টল বা ডাউনলোড করুন"
+        aria-label="অ্যাপ ইনস্টল বা ডাউনলোড করুন"
+      >
+        <span aria-hidden>📲</span>
+        <span className="hidden md:inline">অ্যাপ ইনস্টল</span>
+      </button>
+      <DownloadModal isOpen={modalOpen} onClose={() => setModalOpen(false)} />
+    </>
   );
 }
 

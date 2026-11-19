@@ -16,6 +16,7 @@ import { LangToggle } from "@/components/lang";
 import { SubscriptionBanner } from "@/components/subscription-banner";
 import { TopBackBar } from "@/components/back-button";
 import { SpotlightHeaderTrigger } from "@/components/spotlight-search";
+import { AppDownloadHeaderTrigger } from "@/components/app-download";
 import { unreadCount, visibleKinds } from "@/server/services/notifications";
 import { isRestricted, notificationScopeWhere } from "@/server/party-scope";
 import { reportOpenFor, reportSlugForPath } from "@/server/reports/registry";
@@ -73,6 +74,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </p>
           </div>
           <SpotlightHeaderTrigger />
+          <AppDownloadHeaderTrigger />
           {alertKinds.length > 0 && (
             <Link
               prefetch={false}

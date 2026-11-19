@@ -1055,6 +1055,10 @@ model SmsSettings {
   lowBalanceThreshold  Decimal   @default(100) @db.Decimal(12, 2)
   balance              Decimal?  @db.Decimal(12, 2)
   balanceCheckedAt     DateTime?
+  whatsappUrl          String?
+  whatsappTokenEnc     String?
+  whatsappTokenHint    String?
+  whatsappCountryCode  String?   @default("88")
   events               String[]  @default(["SALE_INVOICE", "PAYMENT_RECEIVED", "SALES_RETURN", "INVOICE_CANCELLED", "DUE_REMINDER", "PURCHASE", "SUPPLIER_PAYMENT", "PURCHASE_RETURN", "LOW_STOCK", "EXPIRY_WARNING", "EXPIRED"])
   alertMobiles         String[]  @default([]) // inventory alerts go here (default: business mobile)
   expiryAlertDays      Int[]     @default([90, 60, 30, 15, 7])
@@ -1086,6 +1090,7 @@ model SmsMessage {
   encoding      String // GSM7 | UCS2
   parts         Int
   status        SmsStatus @default(QUEUED)
+  channel       String?   @default("SMS") // SMS | WHATSAPP
   priority      Int       @default(0)
   dedupeKey     String?   @unique
   provider      String?
@@ -2156,4 +2161,132 @@ model DriverTripPayment {
   @@index([businessId, driverName])
   @@index([businessId, date])
   @@index([tripId])
+}
+
+// ────────────────── Auto Rice Mill Custom Milling (60:40 JV) ──────────────────
+
+enum MillRole {
+  SUPER_ADMIN
+  MILL_ACCOUNTANT
+  MILL_PARTNER
+}
+
+enum PaidBySource {
+  MILL_CASH
+  PARTNER_1
+  PARTNER_2
+}
+
+enum MainSyncStatus {
+  NOT_APPLICABLE
+  PENDING
+  POSTED
+  REJECTED
+}
+
+model RiceMillSettings {
+  id                  Int      @id @default(1)
+  millName            String   @default("বিজয় অটো রাইস মিল (জয়েন্ট ভেঞ্চার)")
+  millAddress         String   @default("বীরগঞ্জ, দিনাজপুর")
+  millPhone           String   @default("01763921505")
+  partner1Name        String   @default("নাহিদ হাসান")
+  partner1SharePct    Float    @default(60.0)
+  partner2Name        String   @default("পার্টনার (৪০%)")
+  partner2SharePct    Float    @default(40.0)
+  monthlyRent         Float    @default(120000)
+  bagStandardKg       Float    @default(75.0)
+  defaultDhaltaPerBag Float    @default(1.5)
+  defaultDryerRate    Float    @default(50.0)
+  defaultMillingRate  Float    @default(120.0)
+  branRatePerKg       Float    @default(22.0)
+  huskRatePerKg       Float    @default(8.0)
+  invoiceFooterNote   String   @default("বিঃদ্রঃ ৭৫ কেজি = ১ স্ট্যান্ডার্ড বস্তা হিসেবে বিল গণনা করা হয়েছে।")
+  updatedAt           DateTime @updatedAt
+}
+
+model MillParty {
+  id               String        @id @default(cuid())
+  name             String
+  phone            String?
+  address          String?
+  isOwnerSelfParty Boolean       @default(false)
+  openingBalance   Float         @default(0)
+  currentDue       Float         @default(0)
+  batches          MillBatch[]
+  vouchers         MillVoucher[]
+  createdAt        DateTime      @default(now())
+}
+
+model MillBatch {
+  id                String         @id @default(cuid())
+  batchNo           String         @unique
+  date              DateTime       @default(now())
+  partyId           String
+  party             MillParty      @relation(fields: [partyId], references: [id])
+  paddyType         String
+  vehicleNo         String?
+  physicalBags      Int
+  grossWeightKg     Float
+  tareWeightKg      Float
+  dhaltaKg          Float
+  netWeightKg       Float
+  standardBags75Kg  Float
+  status            String         @default("RECEIVED") // RECEIVED, IN_DRYER, MILLED, DELIVERED
+  dryerRatePerBag   Float          @default(0)
+  dryerFee          Float          @default(0)
+  millingRatePerBag Float          @default(0)
+  millingFee        Float          @default(0)
+  riceOutputBags    Float          @default(0)
+  branKg            Float          @default(0)
+  huskKg            Float          @default(0)
+  byProductKeptMill Boolean        @default(true)
+  byProductIncome   Float          @default(0)
+  totalBillAmount   Float          @default(0)
+  mainSyncStatus    MainSyncStatus @default(NOT_APPLICABLE)
+  createdByName     String
+  createdByUserId   String?
+  createdAt         DateTime       @default(now())
+
+  @@index([partyId])
+  @@index([date])
+  @@index([status])
+  @@index([mainSyncStatus])
+}
+
+model MillExpense {
+  id              String         @id @default(cuid())
+  date            DateTime       @default(now())
+  category        String         // MILL_RENT, ELECTRICITY_FUEL, LABOUR, PARTS_MAINTENANCE, OTHER
+  description     String
+  amount          Float
+  paidBy          PaidBySource   @default(MILL_CASH)
+  mainSyncStatus  MainSyncStatus @default(NOT_APPLICABLE)
+  createdByName   String
+  createdByUserId String?
+  createdAt       DateTime       @default(now())
+
+  @@index([date])
+  @@index([category])
+  @@index([paidBy])
+  @@index([mainSyncStatus])
+}
+
+model MillVoucher {
+  id              String       @id @default(cuid())
+  voucherNo       String       @unique
+  date            DateTime     @default(now())
+  type            String       // RECEIPT (Party Payment In), PAYMENT (Partner Withdrawal / Expense Out)
+  partyId         String?
+  party           MillParty?   @relation(fields: [partyId], references: [id])
+  partnerTarget   String?      // PARTNER_1, PARTNER_2
+  paymentMode     String       @default("CASH") // CASH, BANK, BKASH
+  amount          Float
+  note            String?
+  createdByName   String
+  createdByUserId String?
+  createdAt       DateTime     @default(now())
+
+  @@index([partyId])
+  @@index([date])
+  @@index([type])
 }

@@ -544,3 +544,38 @@ run("OTP and security SMS", () => {
     expect(await prisma.smsOtp.count({ where: { mobile, consumedAt: null } })).toBe(0); // the unsent code cannot be used
   });
 });
+
+run("WhatsApp Integration", () => {
+  it("formats mobile numbers for WhatsApp E.164 without leading plus", async () => {
+    const { formatWhatsAppMobile } = await import("@/lib/sms-service");
+    expect(formatWhatsAppMobile("01712345678")).toBe("8801712345678");
+    expect(formatWhatsAppMobile("+8801712345678")).toBe("8801712345678");
+    expect(formatWhatsAppMobile("8801712345678")).toBe("8801712345678");
+    expect(formatWhatsAppMobile("1712345678", "880")).toBe("8801712345678");
+  });
+
+  it("saves WhatsApp settings with encrypted token and default country code", async () => {
+    const B = await newBusiness("হোয়াটসঅ্যাপ স্টোর");
+    useSession(B.cookies);
+    const r = await saveSmsSettingsAction(null, form({
+      enabled: "on",
+      provider: "whatsapp",
+      whatsappUrl: "https://api.ultramsg.com/instance12345/messages/chat",
+      whatsappToken: "token-secret-xyz",
+      whatsappCountryCode: "88",
+      lowBalanceThreshold: "100",
+      events: ["SALE_INVOICE", "PAYMENT_RECEIVED"],
+      alertMobiles: "",
+      expiryAlertDays: ["90", "60", "30", "15", "7"],
+      dueReminderEveryDays: "7",
+    }));
+    expect(r?.ok).toBe(true);
+
+    const s = await prisma.smsSettings.findUniqueOrThrow({ where: { businessId: B.ctx.business.id } });
+    expect(s.provider).toBe("whatsapp");
+    expect(s.whatsappUrl).toBe("https://api.ultramsg.com/instance12345/messages/chat");
+    expect(s.whatsappCountryCode).toBe("88");
+    expect(s.whatsappTokenHint).toContain("•");
+    expect(s.whatsappTokenEnc).not.toBe("token-secret-xyz"); // encrypted
+  });
+});

@@ -4,6 +4,7 @@ import "./globals.css";
 import { LangProvider } from "@/components/lang";
 import { Toaster } from "@/components/toaster";
 import { NavWatchdog } from "@/components/nav-watchdog";
+import { PwaRegistrar } from "@/components/pwa-registrar";
 import { DigitInputs } from "@/components/digit-inputs";
 import { EnglishScreen } from "@/components/digit-display";
 import { getLang } from "@/server/i18n";
@@ -18,6 +19,7 @@ export const metadata: Metadata = {
   title: { default: "বিজয় লেনদেন", template: "%s | বিজয় লেনদেন" },
   description: "বিজয় লেনদেন — ব্যবসায়িক হিসাব ও লেনদেন ব্যবস্থাপনা",
   robots: { index: false, follow: false },
+  manifest: "/manifest.json",
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
@@ -28,6 +30,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <LangProvider lang={lang}>
           <Toaster>{children}</Toaster>
           <NavWatchdog />
+          <PwaRegistrar />
           {/* number fields: Bangla / mixed digits → English as typed; English UI: remaining Bangla text and digits → English */}
           <DigitInputs />
           <EnglishScreen on={lang === "en"} />

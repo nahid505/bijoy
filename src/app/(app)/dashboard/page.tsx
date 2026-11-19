@@ -16,6 +16,8 @@ import {
 } from "./dashboard-parts";
 import { riceMillHome } from "@/lib/rice-mill";
 import { businessModules } from "@/lib/business-types";
+import { prisma } from "@/lib/db";
+import { RiceMillBridgeCard } from "./bridge-sync-card";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: (await getT())("ড্যাশবোর্ড") };
@@ -88,9 +90,43 @@ export default async function DashboardPage() {
   await ensureDailyChecks(ctx.business.id).catch(() => null); // daily alerts (header bell), if the scheduler has not run yet today
   const depot = isDepot(ctx.business.businessType);
 
+  const isSuperAdminOrOwner =
+    ctx.user.isSuperAdmin ||
+    ctx.isOwner ||
+    ctx.user.email === "nahid21506@gmail.com" ||
+    ctx.user.name?.includes("নাহিদ");
+
+  const [pendingBatches, pendingExpenses] = isSuperAdminOrOwner
+    ? await Promise.all([
+        prisma.millBatch.findMany({
+          where: {
+            party: { isOwnerSelfParty: true },
+            mainSyncStatus: "PENDING",
+          },
+          include: { party: true },
+          orderBy: { date: "desc" },
+        }),
+        prisma.millExpense.findMany({
+          where: {
+            paidBy: "PARTNER_1",
+            mainSyncStatus: "PENDING",
+          },
+          orderBy: { date: "desc" },
+        }),
+      ])
+    : [[], []];
+
   return (
     <>
       <DashboardHeader ctx={ctx} />
+
+      {/* Rice Mill 60% JV Bridge Card (Visible to Super Admin / Nahid Hasan) */}
+      {isSuperAdminOrOwner && (
+        <RiceMillBridgeCard
+          pendingBatches={pendingBatches}
+          pendingExpenses={pendingExpenses}
+        />
+      )}
 
       {/* ১. ১ম সেকশন (একদম উপরে): "ক্যাশ বুক ও বর্তমান ক্যাশ ব্যালেন্স" */}
       <CashAndBalancesSection ctx={ctx} />

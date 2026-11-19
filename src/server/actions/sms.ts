@@ -13,7 +13,7 @@ import { businessToday } from "../services/notifications";
 import { isBulk, sendManualSms, resolveRecipients, type SmsTarget } from "../sms/manual";
 import { availableProviders } from "../sms/providers";
 import { checkSmsBalance, enqueueSms, kickSmsQueue, processSmsMessage } from "../sms/queue";
-import { encryptSecret, secretHint } from "../sms/secret";
+import { encryptSecret, decryptSecret, secretHint } from "../sms/secret";
 import { loginToBulkSmsBd, verifyBulkSmsBdApiKey } from "../sms/bulksmsbd-bridge";
 
 const settingsSchema = z.object({
@@ -22,6 +22,10 @@ const settingsSchema = z.object({
   apiKey: z.string().trim().max(500).optional(),
   clearApiKey: z.boolean(),
   senderId: z.string().trim().max(20, "সেন্ডার আইডি সর্বোচ্চ ২০ অক্ষর").regex(/^[A-Za-z0-9 ._-]*$/, "সেন্ডার আইডিতে শুধু ইংরেজি অক্ষর/সংখ্যা").optional(),
+  whatsappUrl: z.string().trim().max(1000).optional(),
+  whatsappToken: z.string().trim().max(1000).optional(),
+  clearWhatsappToken: z.boolean(),
+  whatsappCountryCode: z.string().trim().max(10).default("88"),
   lowBalanceThreshold: z.coerce.number().min(0).max(1_000_000),
   events: z.array(z.string()).transform((e) => e.filter((x) => AUTOMATIC_EVENTS.includes(x))),
   alertMobiles: z.string().max(500).transform((s, ctx) => {
@@ -44,6 +48,10 @@ export async function saveSmsSettingsAction(_prev: ActionState, fd: FormData): P
       apiKey: String(fd.get("apiKey") ?? ""),
       clearApiKey: fd.get("clearApiKey") === "on",
       senderId: String(fd.get("senderId") ?? ""),
+      whatsappUrl: String(fd.get("whatsappUrl") ?? ""),
+      whatsappToken: String(fd.get("whatsappToken") ?? ""),
+      clearWhatsappToken: fd.get("clearWhatsappToken") === "on",
+      whatsappCountryCode: String(fd.get("whatsappCountryCode") || "88"),
       lowBalanceThreshold: fd.get("lowBalanceThreshold") || 0,
       events: fd.getAll("events").map(String),
       alertMobiles: String(fd.get("alertMobiles") ?? ""),
@@ -51,23 +59,57 @@ export async function saveSmsSettingsAction(_prev: ActionState, fd: FormData): P
       dueReminderEveryDays: fd.get("dueReminderEveryDays") || 7,
     });
     const key = input.apiKey ? { apiKeyEnc: encryptSecret(input.apiKey), apiKeyHint: secretHint(input.apiKey) } : input.clearApiKey ? { apiKeyEnc: null, apiKeyHint: null } : {};
+    const waKey = input.whatsappToken
+      ? { whatsappTokenEnc: encryptSecret(input.whatsappToken), whatsappTokenHint: secretHint(input.whatsappToken) }
+      : input.clearWhatsappToken
+      ? { whatsappTokenEnc: null, whatsappTokenHint: null }
+      : {};
+
     const data = {
-      enabled: input.enabled, provider: input.provider, senderId: input.senderId || null, lowBalanceThreshold: input.lowBalanceThreshold,
-      events: input.events, alertMobiles: input.alertMobiles, expiryAlertDays: input.expiryAlertDays.length ? input.expiryAlertDays : [90, 60, 30, 15, 7],
-      dueReminderEveryDays: input.dueReminderEveryDays, ...key,
+      enabled: input.enabled,
+      provider: input.provider,
+      senderId: input.senderId || null,
+      whatsappUrl: input.whatsappUrl || null,
+      whatsappCountryCode: input.whatsappCountryCode || "88",
+      lowBalanceThreshold: input.lowBalanceThreshold,
+      events: input.events,
+      alertMobiles: input.alertMobiles,
+      expiryAlertDays: input.expiryAlertDays.length ? input.expiryAlertDays : [90, 60, 30, 15, 7],
+      dueReminderEveryDays: input.dueReminderEveryDays,
+      ...key,
+      ...waKey,
     };
-    if (input.enabled && !["platform", "mock"].includes(input.provider)) {
-      const existing = await prisma.smsSettings.findUnique({ where: { businessId: ctx.business.id }, select: { apiKeyEnc: true } });
-      if (!("apiKeyEnc" in key ? key.apiKeyEnc : existing?.apiKeyEnc)) throw new UserError("এই প্রোভাইডারের জন্য API কী দিন", { apiKey: ["API কী আবশ্যক"] });
+
+    if (input.enabled) {
+      const existing = await prisma.smsSettings.findUnique({
+        where: { businessId: ctx.business.id },
+        select: { apiKeyEnc: true, whatsappTokenEnc: true },
+      });
+
+      if (["bulksmsbd", "both"].includes(input.provider)) {
+        if (!("apiKeyEnc" in key ? key.apiKeyEnc : existing?.apiKeyEnc)) {
+          throw new UserError("BulkSMSBD এর জন্য API কী দিন", { apiKey: ["API কী আবশ্যক"] });
+        }
+      }
+
+      if (["whatsapp", "both"].includes(input.provider)) {
+        if (!input.whatsappUrl) {
+          throw new UserError("WhatsApp API URL / Endpoint দিন", { whatsappUrl: ["API URL আবশ্যক"] });
+        }
+        if (!("whatsappTokenEnc" in waKey ? waKey.whatsappTokenEnc : existing?.whatsappTokenEnc)) {
+          throw new UserError("WhatsApp API Token দিন", { whatsappToken: ["API Token আবশ্যক"] });
+        }
+      }
     }
+
     await prisma.smsSettings.upsert({ where: { businessId: ctx.business.id }, create: { businessId: ctx.business.id, ...data }, update: data });
     await audit({
       businessId: ctx.business.id, userId: ctx.user.id, action: "UPDATE", entity: "SmsSettings", entityId: ctx.business.id,
-      details: { ...data, apiKeyEnc: undefined, apiKeyChanged: !!input.apiKey, apiKeyCleared: input.clearApiKey }, // never log the key
+      details: { ...data, apiKeyEnc: undefined, whatsappTokenEnc: undefined, apiKeyChanged: !!input.apiKey, apiKeyCleared: input.clearApiKey, whatsappTokenChanged: !!input.whatsappToken, whatsappTokenCleared: input.clearWhatsappToken }, // never log plain secrets
     });
   });
   revalidatePath("/sms", "layout");
-  return result.ok ? { ok: true, message: "এসএমএস সেটিং সংরক্ষণ হয়েছে" } : toResult(result);
+  return result.ok ? { ok: true, message: "এসএমএস ও হোয়াটসঅ্যাপ সেটিং সংরক্ষণ হয়েছে" } : toResult(result);
 }
 
 /** Sends a test SMS right away (through the queue, so it is logged like every other SMS). */
@@ -89,6 +131,71 @@ export async function sendTestSmsAction(_prev: ActionState, fd: FormData): Promi
   });
   revalidatePath("/sms", "layout");
   return result.ok ? { ok: true, message: `${result.data} নম্বরে টেস্ট এসএমএস পাঠানো হয়েছে` } : toResult(result);
+}
+
+/** Sends a test WhatsApp message right away. */
+export async function sendTestWhatsappAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const result = await guard(async () => {
+    const ctx = await assertPermission("sms:manage");
+    const rawTo = String(fd.get("testMobile") ?? "");
+    const to = normalizeBdMobile(rawTo);
+    if (!to) throw new UserError("সঠিক মোবাইল নম্বর দিন", { testMobile: ["সঠিক মোবাইল নম্বর দিন"] });
+
+    const s = await prisma.smsSettings.findUnique({ where: { businessId: ctx.business.id } });
+    if (!s?.whatsappUrl) {
+      throw new UserError("WhatsApp API URL কনফিগার করা নেই। সেটিংস সংরক্ষণ করুন।");
+    }
+    const token = s.whatsappTokenEnc ? decryptSecret(s.whatsappTokenEnc) : "";
+    if (!token) {
+      throw new UserError("WhatsApp API Token কনফিগার করা নেই। সেটিংস সংরক্ষণ করুন।");
+    }
+
+    const body = renderTemplate(SMS_EVENT.TEST.defaultBody, { business_name: ctx.business.name });
+    const { sendWhatsAppMessage } = await import("@/lib/sms-service");
+    const res = await sendWhatsAppMessage({
+      url: s.whatsappUrl,
+      token,
+      to,
+      body,
+      defaultCountryCode: s.whatsappCountryCode ?? "88",
+    });
+
+    // Log in SmsMessage
+    const m = await prisma.smsMessage.create({
+      data: {
+        businessId: ctx.business.id,
+        recipient: to,
+        body,
+        channel: "WHATSAPP",
+        provider: "whatsapp",
+        event: "TEST",
+        encoding: "UCS2",
+        parts: 1,
+        status: res.success ? "SENT" : "FAILED",
+        lastError: res.error ?? null,
+        requestId: res.messageId ?? null,
+        createdById: ctx.user.id,
+        attempts: 1,
+        sentAt: res.success ? new Date() : null,
+      },
+    });
+
+    await audit({
+      businessId: ctx.business.id,
+      userId: ctx.user.id,
+      action: "CREATE",
+      entity: "Sms",
+      entityId: m.id,
+      details: { test: true, channel: "WHATSAPP", to, status: m.status },
+    });
+
+    if (!res.success) {
+      throw new UserError(`টেস্ট WhatsApp বার্তা যায়নি: ${res.error ?? "অজানা ত্রুটি"}`);
+    }
+    return to;
+  });
+  revalidatePath("/sms", "layout");
+  return result.ok ? { ok: true, message: `${result.data} নম্বরে টেস্ট WhatsApp বার্তা সফলভাবে পাঠানো হয়েছে` } : toResult(result);
 }
 
 export async function refreshSmsBalanceAction(_prev?: ActionState, _fd?: FormData): Promise<ActionState> {

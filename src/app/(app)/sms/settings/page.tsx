@@ -5,7 +5,7 @@ import { SMS_EVENTS } from "@/lib/sms-text";
 import { ActionButton, ActionForm, Field, SubmitButton } from "@/components/forms";
 import { PageHeader } from "@/components/ui";
 import { requirePermission } from "@/server/auth";
-import { refreshSmsBalanceAction, saveSmsSettingsAction, sendTestSmsAction } from "@/server/actions/sms";
+import { refreshSmsBalanceAction, saveSmsSettingsAction, sendTestSmsAction, sendTestWhatsappAction } from "@/server/actions/sms";
 import { availableProviders, platformConfig, PROVIDER_LABELS } from "@/server/sms/providers";
 import { SmsTabs } from "../sms-ui";
 import { intList, strList } from "@/lib/dialect";
@@ -57,6 +57,9 @@ export default async function SmsSettingsPage() {
                   initialProvider={s?.provider ?? (platform ? "platform" : "mock")}
                   apiKeyHint={s?.apiKeyHint}
                   initialSenderId={s?.senderId}
+                  initialWhatsappUrl={s?.whatsappUrl}
+                  whatsappTokenHint={s?.whatsappTokenHint}
+                  initialWhatsappCountryCode={s?.whatsappCountryCode}
                   providers={providers}
                   providerLabels={PROVIDER_LABELS}
                   platform={!!platform}
@@ -121,6 +124,26 @@ export default async function SmsSettingsPage() {
               </ActionForm>
             </div>
           </section>
+
+          <section className="panel">
+            <div className="panel-head flex items-center justify-between">
+              <h2 className="panel-title flex items-center gap-1.5">
+                <span>📱</span>
+                <span>টেস্ট WhatsApp</span>
+              </h2>
+            </div>
+            <div className="p-4">
+              <ActionForm action={sendTestWhatsappAction} className="space-y-3">
+                <Field label="WhatsApp নম্বর" name="testMobile" hint="বাংলাদেশি নম্বর (01XXXXXXXXX)">
+                  <input id="testWaMobile" name="testMobile" type="tel" className="input" placeholder="01XXXXXXXXX" defaultValue={ctx.user.mobile ?? ""} />
+                </Field>
+                <SubmitButton className="btn-emerald bg-emerald-600 hover:bg-emerald-700 text-white" pendingText="পাঠানো হচ্ছে…">
+                  টেস্ট WhatsApp পাঠান
+                </SubmitButton>
+              </ActionForm>
+            </div>
+          </section>
+
           <section className="panel">
             <div className="panel-head"><h2 className="panel-title">ব্যালেন্স</h2></div>
             <div className="space-y-2 p-4 text-sm">

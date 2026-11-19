@@ -163,6 +163,16 @@ export function RecipeForm({ action, units, recipe, currency }: { action: FormAc
 
 // ───────────────────────── production entry ─────────────────────────
 
+export interface PackagingBagOption {
+  id: string;
+  productId: string;
+  name: string;
+  code: string | null;
+  capacityKg: number;
+  stock: number;
+  unit: string;
+}
+
 export interface ProductionDefaults {
   date: string;
   recipeId: string | null;
@@ -171,17 +181,20 @@ export interface ProductionDefaults {
   narration: string;
   extraCost?: number;
   costAccountId?: string;
+  bagProductId?: string | null;
+  bagWeightKg?: number;
   inputs: { product: ProductOption; quantity: number; batchNo: string | null }[];
   outputs: { product: ProductOption; quantity: number; costShare?: number; batchNo: string | null }[];
 }
 
 export function ProductionForm({
-  action, units, recipes, warehouses, accounts, defaults, currency, multiWarehouse, dateLocked,
+  action, units, recipes, warehouses, accounts, defaults, currency, multiWarehouse, dateLocked, packagingBags = [],
 }: {
   /** no transaction:change_date permission */
   dateLocked?: boolean;
   action: FormAction; units: UnitOption[]; recipes: RecipeData[]; warehouses: WarehouseOption[]; accounts?: AccountOption[];
   defaults: ProductionDefaults | null; currency: string; multiWarehouse: boolean;
+  packagingBags?: PackagingBagOption[];
 }) {
   const unitOf = useUnits(units);
   const [date, setDate] = useState(defaults?.date ?? toDateInput()); // today in Bangladesh (UTC is still "yesterday" until 6 am)
@@ -195,6 +208,12 @@ export function ProductionForm({
   const [mainQty, setMainQty] = useState(() => (defaults?.inputs[0] ? fmtNum(defaults.inputs[0].quantity) : ""));
   const batches = recipe ? batchesFor(recipe.inputs[0]?.quantity ?? 0, n(mainQty)) : 1;
 
+  const [selectedBagProductId, setSelectedBagProductId] = useState<string>(() => {
+    if (defaults?.bagProductId !== undefined) return defaults.bagProductId ?? "NONE";
+    const bag50 = packagingBags.find((b) => b.capacityKg === 50) ?? packagingBags[0];
+    return bag50?.productId ?? "NONE";
+  });
+
   /** Fill every line from the recipe for the entered main-material quantity. */
   const applyRecipe = (r: RecipeData | null, qty: string) => {
     if (!r) return;
@@ -204,9 +223,45 @@ export function ProductionForm({
     setOutputs(r.outputs.map((l) => newLine(l.product, fmtNum(l.quantity * b))));
   };
 
+  const totalRiceWeight = outputs.reduce((sum, l) => {
+    if (!l.product) return sum;
+    const name = l.product.name.toLowerCase();
+    const isRice =
+      (name.includes("চাল") || name.includes("rice")) &&
+      !name.includes("খুদ") &&
+      !name.includes("কুঁড়া") &&
+      !name.includes("তুষ");
+    return isRice ? sum + n(l.quantity) : sum;
+  }, 0);
+
+  const fallbackRiceWeight = outputs.reduce((sum, l, idx) => {
+    if (!l.product) return sum;
+    const name = l.product.name.toLowerCase();
+    const isByProduct =
+      name.includes("খুদ") ||
+      name.includes("কুঁড়া") ||
+      name.includes("তুষ") ||
+      name.includes("ভূসি") ||
+      name.includes("হাল") ||
+      name.includes("bran") ||
+      name.includes("husk") ||
+      name.includes("broken");
+    return (!isByProduct && idx === 0) ? sum + n(l.quantity) : sum;
+  }, 0);
+
+  const effectiveRiceWeight = totalRiceWeight > 0 ? totalRiceWeight : fallbackRiceWeight;
+
+  const selectedBag = packagingBags.find((b) => b.productId === selectedBagProductId);
+  const selectedBagCapacity = selectedBag ? selectedBag.capacityKg : 0;
+  const requiredBags = (selectedBag && selectedBagCapacity > 0 && effectiveRiceWeight > 0)
+    ? Math.ceil(effectiveRiceWeight / selectedBagCapacity)
+    : 0;
+
   const payload = JSON.stringify({
     date, reference: reference || null, narration: narration || null, recipeId: recipeId || null, batches: batches > 0 ? batches : 1,
     warehouseId: multiWarehouse ? warehouseId || null : null, extraCost: defaults?.extraCost ?? 0, costAccountId: defaults?.costAccountId || null,
+    bagProductId: selectedBagProductId === "NONE" ? "NONE" : (selectedBagProductId || null),
+    bagWeightKg: selectedBagCapacity,
     inputs: inputs.filter((l) => l.product || l.quantity).map((l) => ({ productId: l.product?.id ?? "", quantity: l.quantity, batchNo: l.batchNo || null })),
     outputs: outputs.filter((l) => l.product || l.quantity).map((l) => ({ productId: l.product?.id ?? "", quantity: l.quantity, costShare: 0, batchNo: l.batchNo || null, expiryDate: null })),
   });
@@ -237,6 +292,67 @@ export function ProductionForm({
       </div>
 
       <LineTable title="ব্যবহৃত কাঁচামাল (স্টক থেকে কমবে)" lines={inputs} setLines={setInputs} units={units} outputs={false} currency={currency} showStock batches prefix="inputs" />
+
+      {/* চালের খালি বস্তা নির্বাচন (Packaging Bag Selection) */}
+      <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 shadow-2xs">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <label htmlFor="bagProductId" className="text-sm font-bold text-amber-950 flex items-center gap-1.5">
+              <span>🎒</span>
+              <span>চালের খালি বস্তা নির্বাচন (Packaging Bag)</span>
+            </label>
+            <p className="text-xs text-amber-900/80 mt-0.5">
+              উৎপাদিত চালের প্যাকিংয়ের সাইজ নির্বাচন করুন — নির্বাচিত বস্তার স্টক থেকে প্রয়োজনীয় সংখ্যা স্বয়ংক্রিয়ভাবে সমন্বয় হবে
+            </p>
+          </div>
+
+          <div className="w-full sm:w-80">
+            <select
+              id="bagProductId"
+              className="input font-bold bg-white text-slate-800"
+              value={selectedBagProductId}
+              onChange={(e) => setSelectedBagProductId(e.target.value)}
+            >
+              <option value="NONE">🚫 বস্তা ছাড়া (খোলা চাল / Loose Rice)</option>
+              {packagingBags.map((bag) => (
+                <option key={bag.productId} value={bag.productId}>
+                  {bag.name} ({toBnDigits(bag.capacityKg)} কেজি) — মজুদ: {toBnDigits(bag.stock)} {bag.unit}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Live Calculation Bar */}
+        <div className="mt-3 border-t border-amber-200 pt-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+          {selectedBagProductId === "NONE" ? (
+            <span className="text-slate-600 font-medium">
+              ℹ️ <strong>বস্তা ছাড়া</strong> নির্বাচন করা হয়েছে — খালি বস্তার ইনভেন্টরি স্পর্শ করা হবে না (কোনো বস্তা স্টক থেকে কাটা হবে না)।
+            </span>
+          ) : selectedBag ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold text-slate-700">
+                মোট চাল: <strong className="text-slate-900">{formatQty(effectiveRiceWeight)} কেজি</strong> ÷ {toBnDigits(selectedBag.capacityKg)} কেজি =
+              </span>
+              <span className="rounded-md bg-amber-200 border border-amber-300 px-2 py-0.5 font-bold text-amber-950 text-xs">
+                প্রয়োজনীয় বস্তা: {toBnDigits(requiredBags)} {selectedBag.unit}
+              </span>
+              <span className="text-slate-600">
+                (বর্তমান মজুদ: <strong className={selectedBag.stock >= requiredBags ? "text-emerald-700 font-bold" : "text-red-700 font-bold"}>
+                  {toBnDigits(selectedBag.stock)} {selectedBag.unit}
+                </strong>)
+              </span>
+            </div>
+          ) : null}
+
+          {selectedBag && requiredBags > selectedBag.stock && (
+            <span className="text-red-700 font-bold bg-red-100 border border-red-300 rounded px-2 py-0.5">
+              ⚠️ খালি বস্তার ঘাটতি রয়েছে! (প্রয়োজন {toBnDigits(requiredBags)} টি, মজুদ আছে {toBnDigits(selectedBag.stock)} টি)
+            </span>
+          )}
+        </div>
+      </div>
+
       <LineTable title="উৎপাদিত পণ্য ও বাই-প্রোডাক্ট (স্টকে যোগ হবে)" hint="প্রকৃত ওজন/পরিমাণ লিখুন — রেসিপির হিসাব থেকে কম-বেশি হতে পারে।" lines={outputs} setLines={setOutputs} units={units} outputs currency={currency} batches prefix="outputs" />
 
       <Analysis inputs={inputs} outputs={outputs} unitOf={unitOf} />

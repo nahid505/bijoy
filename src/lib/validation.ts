@@ -606,6 +606,8 @@ export const productionSchema = z
     recipeId: optionalId,
     batches: z.coerce.number().positive().max(1_000_000).default(1),
     warehouseId: optionalId,
+    bagProductId: z.string().nullable().optional(),
+    bagWeightKg: z.coerce.number().min(0).optional(),
     inputs: z.array(z.object({ ...productLine, batchNo: optionalText(60) })).min(1, "কমপক্ষে একটি কাঁচামাল দিন").max(50),
     outputs: z.array(z.object({ ...productLine, costShare, batchNo: optionalText(60), expiryDate: optionalDate })).min(1, "কমপক্ষে একটি উৎপাদিত পণ্য দিন").max(50),
     extraCost: money.default(0),

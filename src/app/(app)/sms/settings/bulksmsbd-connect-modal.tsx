@@ -593,6 +593,9 @@ export function ProviderFormFields({
   initialProvider,
   apiKeyHint,
   initialSenderId,
+  initialWhatsappUrl,
+  whatsappTokenHint,
+  initialWhatsappCountryCode,
   providers,
   providerLabels,
   platform,
@@ -601,6 +604,9 @@ export function ProviderFormFields({
   initialProvider: string;
   apiKeyHint?: string | null;
   initialSenderId?: string | null;
+  initialWhatsappUrl?: string | null;
+  whatsappTokenHint?: string | null;
+  initialWhatsappCountryCode?: string | null;
   providers: string[];
   providerLabels: Record<string, string>;
   platform: boolean;
@@ -609,10 +615,14 @@ export function ProviderFormFields({
   const [provider, setProvider] = useState(initialProvider);
   const [currentHint, setCurrentHint] = useState(apiKeyHint);
   const [currentSenderId, setCurrentSenderId] = useState(initialSenderId ?? "");
+  const [currentWaTokenHint, setCurrentWaTokenHint] = useState(whatsappTokenHint);
+
+  const showSmsFields = ["bulksmsbd", "both", "platform", "mock"].includes(provider);
+  const showWaFields = ["whatsapp", "both"].includes(provider);
 
   return (
     <>
-      <Field label="প্রোভাইডার" name="provider">
+      <Field label="প্রোভাইডার" name="provider" className="sm:col-span-2">
         <select
           id="provider"
           name="provider"
@@ -628,6 +638,75 @@ export function ProviderFormFields({
         </select>
       </Field>
 
+      {/* WhatsApp Gateway Settings */}
+      {showWaFields && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-4 sm:col-span-2 space-y-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-emerald-900">
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-xs text-white">
+              📱
+            </span>
+            <span>WhatsApp Gateway কনফিগারেশন (UltraMsg / কাস্টম API)</span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field
+              label="WhatsApp API URL / Endpoint"
+              name="whatsappUrl"
+              hint="উদাঃ https://api.ultramsg.com/instanceXXXXX/messages/chat"
+              className="sm:col-span-2"
+            >
+              <input
+                id="whatsappUrl"
+                name="whatsappUrl"
+                type="url"
+                defaultValue={initialWhatsappUrl ?? ""}
+                className="input"
+                placeholder="https://api.ultramsg.com/instance.../messages/chat"
+              />
+            </Field>
+
+            <Field
+              label="API Token / Key"
+              name="whatsappToken"
+              hint={
+                currentWaTokenHint
+                  ? `সংরক্ষিত টোকেন: ${currentWaTokenHint} — পরিবর্তন না করলে খালি রাখুন`
+                  : "এনক্রিপ্ট করে সুরক্ষিত রাখা হয়"
+              }
+            >
+              <input
+                id="whatsappToken"
+                name="whatsappToken"
+                type="password"
+                autoComplete="new-password"
+                className="input"
+                placeholder={currentWaTokenHint ?? ""}
+              />
+            </Field>
+
+            <Field
+              label="ডিফল্ট কান্ট্রি কোড"
+              name="whatsappCountryCode"
+              hint="বাংলাদেশের জন্য 88 (নম্বরে 017... থাকলে 88017... হবে)"
+            >
+              <input
+                id="whatsappCountryCode"
+                name="whatsappCountryCode"
+                type="text"
+                defaultValue={initialWhatsappCountryCode || "88"}
+                maxLength={5}
+                className="input"
+              />
+            </Field>
+          </div>
+          {currentWaTokenHint && (
+            <label className="flex items-center gap-2 text-xs text-emerald-900">
+              <input type="checkbox" name="clearWhatsappToken" /> সংরক্ষিত WhatsApp Token মুছে ফেলুন
+            </label>
+          )}
+        </div>
+      )}
+
+      {/* BulkSMSBD Automation Helpers */}
       {provider === "bulksmsbd" && (
         <BulkSmsBdQuickActions
           registrationData={registrationData}
@@ -638,35 +717,40 @@ export function ProviderFormFields({
         />
       )}
 
-      <Field
-        label="API কী"
-        name="apiKey"
-        hint={
-          currentHint
-            ? `সংরক্ষিত কী: ${currentHint} — পরিবর্তন না করলে খালি রাখুন`
-            : "এনক্রিপ্ট করে সংরক্ষণ হয়; কখনো আর দেখানো হয় না"
-        }
-      >
-        <input
-          id="apiKey"
-          name="apiKey"
-          type="password"
-          autoComplete="new-password"
-          className="input"
-          placeholder={currentHint ?? ""}
-        />
-      </Field>
+      {/* Standard SMS Credentials */}
+      {showSmsFields && (
+        <>
+          <Field
+            label="এসএমএস API কী"
+            name="apiKey"
+            hint={
+              currentHint
+                ? `সংরক্ষিত কী: ${currentHint} — পরিবর্তন না করলে খালি রাখুন`
+                : "এনক্রিপ্ট করে সংরক্ষণ হয়; কখনো আর দেখানো হয় না"
+            }
+          >
+            <input
+              id="apiKey"
+              name="apiKey"
+              type="password"
+              autoComplete="new-password"
+              className="input"
+              placeholder={currentHint ?? ""}
+            />
+          </Field>
 
-      <Field label="সেন্ডার আইডি / মাস্কিং" name="senderId" hint="প্রোভাইডারে অনুমোদিত নাম বা নম্বর">
-        <input
-          id="senderId"
-          name="senderId"
-          value={currentSenderId}
-          onChange={(e) => setCurrentSenderId(e.target.value)}
-          maxLength={20}
-          className="input"
-        />
-      </Field>
+          <Field label="সেন্ডার আইডি / মাস্কিং" name="senderId" hint="প্রোভাইডারে অনুমোদিত নাম বা নম্বর">
+            <input
+              id="senderId"
+              name="senderId"
+              value={currentSenderId}
+              onChange={(e) => setCurrentSenderId(e.target.value)}
+              maxLength={20}
+              className="input"
+            />
+          </Field>
+        </>
+      )}
     </>
   );
 }

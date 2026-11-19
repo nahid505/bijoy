@@ -4,6 +4,7 @@
 //   permanent → never retried (invalid number, bad credentials, no balance, rejected sender ID)
 import { randomUUID } from "node:crypto";
 import type { SmsEncoding } from "@/lib/sms-text";
+import { formatWhatsAppMobile, sendWhatsAppMessage } from "@/lib/sms-service";
 
 export class SmsProviderError extends Error {
   constructor(message: string, public readonly temporary: boolean, public readonly code?: string) {
@@ -37,11 +38,16 @@ export interface ProviderConfig {
   provider: string;
   apiKey: string | null;
   senderId: string | null;
+  whatsappUrl?: string | null;
+  whatsappToken?: string | null;
+  whatsappCountryCode?: string | null;
 }
 
 export const PROVIDER_LABELS: Record<string, string> = {
+  bulksmsbd: "BulkSMSBD (সাধারণ SMS)",
+  whatsapp: "WhatsApp API (UltraMsg / WaSender)",
+  both: "উভয়ই (SMS + WhatsApp)",
   platform: "সার্ভারের ডিফল্ট প্রোভাইডার (প্ল্যাটফর্ম)",
-  bulksmsbd: "BulkSMSBD",
   http: "জেনেরিক HTTP গেটওয়ে",
   mock: "ডেমো / টেস্ট (আসল এসএমএস যায় না)",
 };
@@ -148,6 +154,75 @@ function mockGateway(): SmsProvider {
   };
 }
 
+/** WhatsApp Gateway (UltraMsg / WaSender / Custom HTTP). */
+function whatsappGateway(cfg: ProviderConfig): SmsProvider {
+  return {
+    id: "whatsapp",
+    async send(m) {
+      const url = cfg.whatsappUrl ?? process.env.WHATSAPP_API_URL ?? "";
+      const token = cfg.whatsappToken ?? cfg.apiKey ?? process.env.WHATSAPP_API_TOKEN ?? "";
+      const countryCode = cfg.whatsappCountryCode ?? "88";
+
+      const res = await sendWhatsAppMessage({
+        url,
+        token,
+        to: m.to,
+        body: m.text,
+        defaultCountryCode: countryCode,
+      });
+
+      if (res.success) {
+        return {
+          requestId: res.messageId ?? randomUUID(),
+          status: "SENT",
+        };
+      }
+      throw new SmsProviderError(res.error ?? "WhatsApp বার্তা পাঠানো ব্যর্থ হয়েছে", false, "WHATSAPP_FAILED");
+    },
+    async balance() {
+      return null;
+    },
+    async status() {
+      return "DELIVERED";
+    },
+  };
+}
+
+/** Both SMS (BulkSMSBD) and WhatsApp Gateway */
+function bothGateway(cfg: ProviderConfig): SmsProvider {
+  const sms = cfg.apiKey ? bulkSmsBd(cfg) : mockGateway();
+  const wa = whatsappGateway(cfg);
+
+  return {
+    id: "both",
+    async send(m) {
+      const results = await Promise.allSettled([sms.send(m), wa.send(m)]);
+      const smsRes = results[0];
+      const waRes = results[1];
+
+      if (smsRes.status === "fulfilled" || waRes.status === "fulfilled") {
+        const id =
+          smsRes.status === "fulfilled"
+            ? smsRes.value.requestId
+            : (waRes as PromiseFulfilledResult<SendResult>).value.requestId;
+        return {
+          requestId: id,
+          status: "SENT",
+        };
+      }
+      const err =
+        smsRes.status === "rejected" ? smsRes.reason : (waRes as PromiseRejectedResult).reason;
+      throw err;
+    },
+    async balance() {
+      return sms.balance ? sms.balance() : null;
+    },
+    async status(requestId) {
+      return sms.status ? sms.status(requestId) : "DELIVERED";
+    },
+  };
+}
+
 // Extra adapters can be registered at runtime (used by the test-suite for a programmable gateway).
 const custom = new Map<string, (cfg: ProviderConfig) => SmsProvider>();
 export function registerSmsProvider(id: string, factory: (cfg: ProviderConfig) => SmsProvider) {
@@ -163,7 +238,11 @@ export function createProvider(cfg: ProviderConfig): SmsProvider {
   const extra = custom.get(cfg.provider);
   if (extra) return extra(cfg);
   if (cfg.provider === "mock") return mockGateway();
-  if (!cfg.apiKey) throw new SmsProviderError("এসএমএস API কী সেট করা নেই", false, "CONFIG");
+  if (cfg.provider === "whatsapp") return whatsappGateway(cfg);
+  if (cfg.provider === "both") return bothGateway(cfg);
+  if (!cfg.apiKey && cfg.provider !== "whatsapp" && cfg.provider !== "both") {
+    throw new SmsProviderError("এসএমএস API কী সেট করা নেই", false, "CONFIG");
+  }
   if (cfg.provider === "bulksmsbd") return bulkSmsBd(cfg);
   if (cfg.provider === "http") return httpGateway(cfg);
   throw new SmsProviderError(`অজানা এসএমএস প্রোভাইডার: ${cfg.provider}`, false, "CONFIG");

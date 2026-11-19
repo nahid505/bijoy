@@ -79,6 +79,8 @@ run("rice mill packaging bag inventory & consumption tracking", () => {
     const bag25 = items.find((i) => i.bagType === "BAG_25KG");
     expect(bag25).toBeDefined();
     expect(Number(bag25?.capacityKg)).toBe(25);
+    p.bag25 = bag25!.productId;
+    p.bagItem25Id = bag25!.id;
   });
 
   it("2. Purchasing empty packaging bags via standard purchase voucher increases bag inventory", async () => {
@@ -241,5 +243,103 @@ run("rice mill packaging bag inventory & consumption tracking", () => {
         notes: null,
       }),
     ).rejects.toThrow(/পর্যাপ্ত খালি বস্তা নেই/);
+  });
+
+  it("6. Production with explicitly selected 25KG bag consumes 25KG bags accurately", async () => {
+    // Buy 500 bags of 25kg bags
+    await saveTradeVoucher(ctx, "PURCHASE", {
+      date: D("2026-10-11"),
+      partyAccountId: bagSupplier.accountId,
+      warehouseId,
+      reference: "PO-BAGS-25KG",
+      narration: "৫০০ পিস ২৫ কেজি চালের বস্তা ক্রয়",
+      discount: 0,
+      vatPercent: 0,
+      payments: [],
+      returnOfId: null,
+      dueDate: null,
+      items: [
+        {
+          productId: p.bag25,
+          quantity: 500,
+          freeQuantity: 0,
+          rate: 30,
+          discount: 0,
+          unitId: null,
+          batchNo: null,
+          expiryDate: null,
+          mfgDate: null,
+        },
+      ],
+    });
+
+    const bag25Before = await prisma.product.findUniqueOrThrow({ where: { id: p.bag25 } });
+    expect(Number(bag25Before.stock)).toBe(500);
+
+    const bag50Before = await prisma.product.findUniqueOrThrow({ where: { id: p.bag50 } });
+    const bag50StockBefore = Number(bag50Before.stock); // 920
+
+    // Production: 2,500 kg rice with bagProductId: p.bag25 (25kg)
+    // 2,500 kg / 25 kg = 100 bags of 25KG bags needed!
+    const production25: ProductionInput = {
+      date: D("2026-10-12"),
+      reference: "MILL-BATCH-25KG",
+      narration: "২৫ কেজি মিনিকেট চাল মিলিং ব্যাচ",
+      recipeId: null,
+      batches: 1,
+      warehouseId,
+      bagProductId: p.bag25,
+      bagWeightKg: 25,
+      inputs: [{ productId: p.paddy, quantity: 4000, batchNo: null }],
+      outputs: [
+        { productId: p.rice, quantity: 2500, costShare: 100, batchNo: null, expiryDate: null },
+      ],
+      extraCost: 0,
+      costAccountId: null,
+    };
+
+    const run25 = await saveProduction(ctx, production25);
+    expect(run25.id).toBeDefined();
+
+    // Verify 100 bags of 25KG bag were consumed (500 - 100 = 400)
+    const bag25After = await prisma.product.findUniqueOrThrow({ where: { id: p.bag25 } });
+    expect(Number(bag25After.stock)).toBe(400);
+
+    // Verify 50KG bags were NOT touched
+    const bag50After = await prisma.product.findUniqueOrThrow({ where: { id: p.bag50 } });
+    expect(Number(bag50After.stock)).toBe(bag50StockBefore);
+  });
+
+  it("7. Production with 'NONE' (loose rice / বস্তা ছাড়া) consumes zero packaging bags", async () => {
+    const bag25Before = await prisma.product.findUniqueOrThrow({ where: { id: p.bag25 } });
+    const bag50Before = await prisma.product.findUniqueOrThrow({ where: { id: p.bag50 } });
+
+    // Production with bagProductId: "NONE" (বস্তা ছাড়া / খোলা চাল)
+    const looseProduction: ProductionInput = {
+      date: D("2026-10-13"),
+      reference: "MILL-BATCH-LOOSE",
+      narration: "খোলা চাল মিলিং (বস্তা ছাড়া)",
+      recipeId: null,
+      batches: 1,
+      warehouseId,
+      bagProductId: "NONE",
+      bagWeightKg: 0,
+      inputs: [{ productId: p.paddy, quantity: 1000, batchNo: null }],
+      outputs: [
+        { productId: p.rice, quantity: 650, costShare: 100, batchNo: null, expiryDate: null },
+      ],
+      extraCost: 0,
+      costAccountId: null,
+    };
+
+    const runLoose = await saveProduction(ctx, looseProduction);
+    expect(runLoose.id).toBeDefined();
+
+    // Verify NO packaging bags were consumed
+    const bag25After = await prisma.product.findUniqueOrThrow({ where: { id: p.bag25 } });
+    expect(Number(bag25After.stock)).toBe(Number(bag25Before.stock));
+
+    const bag50After = await prisma.product.findUniqueOrThrow({ where: { id: p.bag50 } });
+    expect(Number(bag50After.stock)).toBe(Number(bag50Before.stock));
   });
 });

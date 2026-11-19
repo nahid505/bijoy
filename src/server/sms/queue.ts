@@ -72,7 +72,17 @@ export async function providerConfigFor(db: Db, businessId: string | null): Prom
     const cfg = platformConfig();
     return cfg ? { cfg: { ...cfg, senderId: s.senderId || cfg.senderId }, enabled: true } : { cfg: null, enabled: false, reason: "সার্ভারে প্ল্যাটফর্ম প্রোভাইডার কনফিগার করা নেই" };
   }
-  return { cfg: { provider: s.provider, apiKey: decryptSecret(s.apiKeyEnc), senderId: s.senderId }, enabled: true };
+  return {
+    cfg: {
+      provider: s.provider,
+      apiKey: decryptSecret(s.apiKeyEnc),
+      senderId: s.senderId,
+      whatsappUrl: s.whatsappUrl,
+      whatsappToken: decryptSecret(s.whatsappTokenEnc),
+      whatsappCountryCode: s.whatsappCountryCode ?? "88",
+    },
+    enabled: true,
+  };
 }
 
 async function finish(db: Db, id: string, data: Prisma.SmsMessageUpdateInput) {
@@ -88,8 +98,9 @@ async function deliver(db: Db, m: SmsMessage, now: Date) {
   try {
     const provider = createProvider(cfg);
     const r = await provider.send({ to: m.recipient, text: m.body, encoding: m.encoding as "GSM7" | "UCS2", senderId: cfg.senderId });
+    const channel = cfg.provider === "whatsapp" || cfg.provider === "both" ? "WHATSAPP" : "SMS";
     await finish(db, m.id, {
-      status: r.status, provider: provider.id, requestId: r.requestId, cost: r.cost ?? null, lastError: null,
+      status: r.status, provider: provider.id, channel: m.channel && m.channel !== "SMS" ? m.channel : channel, requestId: r.requestId, cost: r.cost ?? null, lastError: null,
       sentAt: now, ...(r.status === "DELIVERED" ? { deliveredAt: now } : {}),
     });
     return r.status;

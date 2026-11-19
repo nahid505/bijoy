@@ -1,0 +1,20 @@
+{
+  "name": "বিজয় লেনদেন - অটো রাইস মিল ও ব্যবসা ব্যবস্থাপনা",
+  "short_name": "বিজয় লেনদেন",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#16a34a",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

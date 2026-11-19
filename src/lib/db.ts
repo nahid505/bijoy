@@ -3,6 +3,22 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import { dbProvider } from "./dialect";
 import { createTenantIsolationExtension } from "./tenant-isolation";
 
+// Ensure environment variables (.env / .env.local) are loaded in all runtime contexts
+if (!process.env.DATABASE_URL) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const dotenv = require("dotenv");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require("path");
+    dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
+    if (!process.env.DATABASE_URL) {
+      dotenv.config({ path: path.resolve(process.cwd(), ".env") });
+    }
+  } catch {
+    // ignore
+  }
+}
+
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
 /**

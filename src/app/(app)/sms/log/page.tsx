@@ -20,11 +20,13 @@ export default async function SmsLogPage({ searchParams }: { searchParams: Searc
   const p = await readParams(searchParams);
   const { page, skip, take } = pageOf(p);
   const q = p.q?.trim();
+  const channel = p.channel?.trim().toUpperCase();
   const where: Prisma.SmsMessageWhereInput = {
     businessId: ctx.business.id, // isolation: only this business's messages
     ...(STATUSES.includes(p.status as SmsStatus) ? { status: p.status as SmsStatus } : {}),
     ...(p.event && SMS_EVENT[p.event] ? { event: p.event } : {}),
     ...(p.batch ? { batchId: p.batch } : {}),
+    ...(channel === "WHATSAPP" ? { OR: [{ channel: "WHATSAPP" }, { provider: "whatsapp" }] } : channel === "SMS" ? { channel: "SMS", provider: { not: "whatsapp" } } : {}),
     ...(q ? { OR: [{ recipient: { contains: q } }, { body: ci(q) }, { voucherNo: ci(q) }, { customer: { name: ci(q) } }, { supplier: { name: ci(q) } }] } : {}),
   };
   const [rows, total] = await Promise.all([
@@ -40,6 +42,13 @@ export default async function SmsLogPage({ searchParams }: { searchParams: Searc
       <section className="panel">
         <FilterBar action="/sms/log">
           <FilterField label="খুঁজুন"><input name="q" defaultValue={q ?? ""} placeholder="মোবাইল, নাম, ইনভয়েস, বার্তা" className="input w-56" /></FilterField>
+          <FilterField label="মাধ্যম">
+            <select name="channel" defaultValue={p.channel ?? ""} className="input w-36">
+              <option value="">সব মাধ্যম</option>
+              <option value="SMS">✉️ SMS</option>
+              <option value="WHATSAPP">📱 WhatsApp</option>
+            </select>
+          </FilterField>
           <FilterField label="অবস্থা">
             <select name="status" defaultValue={p.status ?? ""} className="input w-36">
               <option value="">সব</option>
@@ -57,7 +66,7 @@ export default async function SmsLogPage({ searchParams }: { searchParams: Searc
           <div className="overflow-x-auto">
             <table className="table">
               <thead>
-                <tr><th>সময়</th><th>প্রাপক</th><th>ধরন</th><th className="min-w-[16rem]">বার্তা</th><th>অবস্থা</th><th>প্রোভাইডার / রিকোয়েস্ট</th><th className="num">পার্ট / খরচ</th><th /></tr>
+                <tr><th>সময়</th><th>মাধ্যম</th><th>প্রাপক</th><th>ধরন</th><th className="min-w-[16rem]">বার্তা</th><th>অবস্থা</th><th>প্রোভাইডার / রিকোয়েস্ট</th><th className="num">পার্ট / খরচ</th><th /></tr>
               </thead>
               <tbody>
                 {rows.map((m) => {
@@ -68,6 +77,17 @@ export default async function SmsLogPage({ searchParams }: { searchParams: Searc
                         {formatDateTime(m.createdAt)}
                         {m.sentAt && <span className="block text-slate-400">পাঠানো {formatDateTime(m.sentAt)}</span>}
                         {m.deliveredAt && <span className="block text-brand-700">পৌঁছেছে {formatDateTime(m.deliveredAt)}</span>}
+                      </td>
+                      <td>
+                        {m.channel === "WHATSAPP" || m.provider === "whatsapp" ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
+                            <span>📱</span> WhatsApp
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-800">
+                            <span>✉️</span> SMS
+                          </span>
+                        )}
                       </td>
                       <td className="text-xs">
                         <span className="font-mono">{m.recipient}</span>

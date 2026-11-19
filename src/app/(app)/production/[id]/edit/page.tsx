@@ -17,6 +17,12 @@ export default async function EditProductionPage({ params }: { params: Promise<{
   const ctx = await requirePermission(RICE_MILL_ACCESS.milling);
   const [v, data] = await Promise.all([loadProduction(ctx.business.id, id), productionFormData(ctx.business.id)]);
   if (!v) notFound();
+
+  const bagProductIds = new Set(data.packagingBags.map((b) => b.productId));
+  const usedBagItem = v.items.find((i) => i.direction === -1 && bagProductIds.has(i.productId));
+  const matchedBag = usedBagItem ? data.packagingBags.find((b) => b.productId === usedBagItem.productId) : null;
+  const rawInputs = v.items.filter((i) => i.direction === -1 && !bagProductIds.has(i.productId));
+
   return (
     <>
       <PageHeader
@@ -30,14 +36,22 @@ export default async function EditProductionPage({ params }: { params: Promise<{
           units={data.units}
           recipes={data.recipes}
           warehouses={data.warehouses}
+          packagingBags={data.packagingBags}
           accounts={v.adjustmentAccount ? [{ id: v.adjustmentAccount.id, name: v.adjustmentAccount.name, group: "" }] : []}
           currency={ctx.business.currencySymbol}
           dateLocked={!canChangeEntryDate(ctx)}
           multiWarehouse={ctx.features.includes("MULTI_WAREHOUSE")}
           defaults={{
-            date: toDateInput(v.date), recipeId: v.productionRun?.recipeId ?? null, warehouseId: v.items[0]?.warehouseId ?? null,
-            reference: v.reference ?? "", narration: v.narration ?? "", extraCost: num(v.productionRun?.extraCost ?? 0), costAccountId: v.adjustmentAccountId ?? "",
-            inputs: v.items.filter((i) => i.direction === -1).map((i) => ({ product: toProductOption(i.product), quantity: num(i.baseQuantity), batchNo: i.batchNo })),
+            date: toDateInput(v.date),
+            recipeId: v.productionRun?.recipeId ?? null,
+            warehouseId: v.items[0]?.warehouseId ?? null,
+            reference: v.reference ?? "",
+            narration: v.narration ?? "",
+            extraCost: num(v.productionRun?.extraCost ?? 0),
+            costAccountId: v.adjustmentAccountId ?? "",
+            bagProductId: usedBagItem ? usedBagItem.productId : "NONE",
+            bagWeightKg: matchedBag ? matchedBag.capacityKg : 0,
+            inputs: rawInputs.map((i) => ({ product: toProductOption(i.product), quantity: num(i.baseQuantity), batchNo: i.batchNo })),
             outputs: v.items.filter((i) => i.direction === 1).map((i) => ({ product: toProductOption(i.product), quantity: num(i.baseQuantity), costShare: num(i.costShare ?? 0), batchNo: i.batchNo })),
           }}
         />

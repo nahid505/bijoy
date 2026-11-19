@@ -29,6 +29,7 @@ export default async function NewProductionPage({ searchParams }: { searchParams
           units={data.units}
           recipes={data.recipes}
           warehouses={data.warehouses}
+          packagingBags={data.packagingBags}
           accounts={[]}
           currency={ctx.business.currencySymbol}
           dateLocked={!canChangeEntryDate(ctx)}
