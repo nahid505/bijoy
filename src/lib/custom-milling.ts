@@ -83,10 +83,10 @@ export function resolveMillRole(ctx: AppContext, simulateRole?: string | null): 
  * Retrieves the singleton RiceMillSettings (id: 1) or creates default.
  */
 export async function getRiceMillSettings() {
-  let settings = await prisma.riceMillSettings.findUnique({ where: { id: 1 } });
-  if (!settings) {
-    settings = await prisma.riceMillSettings.create({
-      data: {
+  try {
+    return await prisma.riceMillSettings.upsert({
+      where: { id: 1 },
+      create: {
         id: 1,
         millName: "বিজয় অটো রাইস মিল (জয়েন্ট ভেঞ্চার)",
         millAddress: "বীরগঞ্জ, দিনাজপুর",
@@ -104,29 +104,39 @@ export async function getRiceMillSettings() {
         huskRatePerKg: 8.0,
         invoiceFooterNote: "বিঃদ্রঃ ৭৫ কেজি = ১ স্ট্যান্ডার্ড বস্তা হিসেবে বিল গণনা করা হয়েছে।",
       },
+      update: {},
     });
+  } catch (_err) {
+    const existing = await prisma.riceMillSettings.findUnique({ where: { id: 1 } });
+    if (existing) return existing;
+    throw _err;
   }
-  return settings;
 }
 
 /**
  * Retrieves or creates the dedicated Owner Self-Party record for Nahid Hasan.
  */
 export async function getOrCreateOwnerParty() {
-  let party = await prisma.millParty.findFirst({ where: { isOwnerSelfParty: true } });
-  if (!party) {
-    party = await prisma.millParty.create({
-      data: {
-        name: "নাহিদ হাসান (নিজস্ব পার্টি)",
-        phone: "01763921505",
-        address: "বীরগঞ্জ, দিনাজপুর",
-        isOwnerSelfParty: true,
-        openingBalance: 0,
-        currentDue: 0,
-      },
-    });
+  try {
+    let party = await prisma.millParty.findFirst({ where: { isOwnerSelfParty: true } });
+    if (!party) {
+      party = await prisma.millParty.create({
+        data: {
+          name: "নাহিদ হাসান (নিজস্ব পার্টি)",
+          phone: "01763921505",
+          address: "বীরগঞ্জ, দিনাজপুর",
+          isOwnerSelfParty: true,
+          openingBalance: 0,
+          currentDue: 0,
+        },
+      });
+    }
+    return party;
+  } catch (_err) {
+    const fallback = await prisma.millParty.findFirst({ where: { isOwnerSelfParty: true } });
+    if (fallback) return fallback;
+    throw _err;
   }
-  return party;
 }
 
 /**
