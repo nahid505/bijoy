@@ -16,8 +16,6 @@ import {
 } from "./dashboard-parts";
 import { riceMillHome } from "@/lib/rice-mill";
 import { businessModules } from "@/lib/business-types";
-import { prisma } from "@/lib/db";
-import { RiceMillBridgeCard } from "./bridge-sync-card";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: (await getT())("ড্যাশবোর্ড") };
@@ -61,21 +59,6 @@ export default async function DashboardPage() {
   const ctx = await requireContext();
   const t = await getT();
 
-  // Custom Milling (Rented Mill) Accountant or Partner auto-redirect:
-  // Super Admin / Owner stays on the main business dashboard; assigned accountant/partner is directed to custom-milling
-  try {
-    const millSettings = await prisma.riceMillSettings.findUnique({ where: { id: 1 } });
-    if (millSettings && !ctx.user.isSuperAdmin && !ctx.isOwner && ctx.user.email !== "nahid21506@gmail.com") {
-      if (millSettings.accountantUserId === ctx.user.id || millSettings.partnerUserId === ctx.user.id) {
-        redirect("/custom-milling");
-      }
-    }
-  } catch (err) {
-    if (err && typeof err === "object" && "digest" in err && String((err as any).digest).startsWith("NEXT_REDIRECT")) {
-      throw err;
-    }
-  }
-
   if (!can(ctx, "dashboard:view")) {
     // depot-only role: the depot dashboard alone — no sales, profit, ledger or cash figures
     if (isDepot(ctx.business.businessType) && can(ctx, "depot:view")) {
@@ -106,59 +89,9 @@ export default async function DashboardPage() {
   await ensureDailyChecks(ctx.business.id).catch(() => null); // daily alerts (header bell), if the scheduler has not run yet today
   const depot = isDepot(ctx.business.businessType);
 
-  const isSuperAdminOrOwner =
-    ctx.user.isSuperAdmin ||
-    ctx.isOwner ||
-    ctx.user.email === "nahid21506@gmail.com" ||
-    ctx.user.name?.includes("নাহিদ");
-
-  let pendingBatches: any[] = [];
-  let pendingExpenses: any[] = [];
-
-  if (isSuperAdminOrOwner) {
-    try {
-      if ("millBatch" in prisma) {
-        pendingBatches = await prisma.millBatch.findMany({
-          where: {
-            party: { isOwnerSelfParty: true },
-            mainSyncStatus: "PENDING",
-          },
-          include: { party: true },
-          orderBy: { date: "desc" },
-        });
-      }
-    } catch (err) {
-      console.warn("[Dashboard] MillBatch query skipped (table not found or schema pending):", err);
-      pendingBatches = [];
-    }
-
-    try {
-      if ("millExpense" in prisma) {
-        pendingExpenses = await prisma.millExpense.findMany({
-          where: {
-            paidBy: "PARTNER_1",
-            mainSyncStatus: "PENDING",
-          },
-          orderBy: { date: "desc" },
-        });
-      }
-    } catch (err) {
-      console.warn("[Dashboard] MillExpense query skipped (table not found or schema pending):", err);
-      pendingExpenses = [];
-    }
-  }
-
   return (
     <>
       <DashboardHeader ctx={ctx} />
-
-      {/* Rice Mill 60% JV Bridge Card (Visible to Super Admin / Nahid Hasan) */}
-      {isSuperAdminOrOwner && (
-        <RiceMillBridgeCard
-          pendingBatches={pendingBatches}
-          pendingExpenses={pendingExpenses}
-        />
-      )}
 
       {/* ১. ১ম সেকশন (একদম উপরে): "ক্যাশ বুক ও বর্তমান ক্যাশ ব্যালেন্স" */}
       <CashAndBalancesSection ctx={ctx} />

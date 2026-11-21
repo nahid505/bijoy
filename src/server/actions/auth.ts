@@ -95,19 +95,7 @@ export async function loginAction(_prev: ActionState, fd: FormData): Promise<Act
   if (otpStep) return { ok: false, message: result.ok ? `${(otpStep as Record<string, string>).mobile} নম্বরে পাঠানো ৬ অঙ্কের কোড দিন` : result.message, errors: result.ok ? undefined : result.errors, data: otpStep };
   if (!result.ok) return { ok: false, message: result.message, errors: result.errors };
 
-  let targetUrl = nextUrl.startsWith("/") && !nextUrl.startsWith("//") ? nextUrl : "/dashboard";
-  if (targetUrl === "/dashboard") {
-    try {
-      const user = await getCurrentUser();
-      if (user && !user.isSuperAdmin && user.email !== "nahid21506@gmail.com") {
-        const millSettings = await prisma.riceMillSettings.findUnique({ where: { id: 1 } });
-        if (millSettings?.accountantUserId === user.id || millSettings?.partnerUserId === user.id) {
-          targetUrl = "/custom-milling";
-        }
-      }
-    } catch {}
-  }
-
+  const targetUrl = nextUrl.startsWith("/") && !nextUrl.startsWith("//") ? nextUrl : "/dashboard";
   redirect(targetUrl);
 }
 
