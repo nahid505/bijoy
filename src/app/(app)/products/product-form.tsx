@@ -23,6 +23,7 @@ export interface ProductDefaults {
   minStock?: number;
   openingStock?: number;
   openingRate?: number;
+  warehouseId?: string;
   trackBatch?: boolean;
   packSize?: number;
 }
@@ -38,6 +39,7 @@ export function ProductForm({
   categories,
   brands,
   units,
+  warehouses = [],
   cancelHref,
   hasTransactions,
   variant = "general",
@@ -49,6 +51,7 @@ export function ProductForm({
   categories: { id: string; name: string }[];
   brands: { id: string; name: string }[];
   units: { id: string; name: string }[];
+  warehouses?: { id: string; name: string; isDefault?: boolean }[];
   cancelHref: string;
   hasTransactions?: boolean;
   variant?: "general" | "depot";
@@ -179,9 +182,28 @@ export function ProductForm({
 
       <fieldset className="grid gap-4 border-t border-rule pt-4 sm:grid-cols-3">
         <legend className="mb-2 text-sm font-semibold text-ink-800">{t("প্রারম্ভিক মজুদ")}</legend>
-        <Field label="প্রারম্ভিক পরিমাণ" name="openingStock" hint={t("হিসাব শুরুর তারিখে প্রধান গুদামে")}><input id="openingStock" name="openingStock" type="text" inputMode="decimal" data-numeric step="0.001" min="0" defaultValue={defaults.openingStock ?? 0} className="input-num" /></Field>
+        <Field label="গুদাম নির্বাচন (Warehouse) *" name="warehouseId" hint={t("যে গুদামে প্রারম্ভিক মজুদ জমা হবে")}>
+          <select
+            id="warehouseId"
+            name="warehouseId"
+            defaultValue={defaults.warehouseId ?? warehouses.find((w) => w.isDefault)?.id ?? warehouses[0]?.id ?? ""}
+            className="input"
+            required={warehouses.length > 0}
+          >
+            {warehouses.length === 0 ? (
+              <option value="">{t("— কোনো গুদাম নেই —")}</option>
+            ) : (
+              warehouses.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.name} {w.isDefault ? `(${t("প্রধান গুদাম")})` : ""}
+                </option>
+              ))
+            )}
+          </select>
+        </Field>
+        <Field label="প্রারম্ভিক পরিমাণ" name="openingStock" hint={t("হিসাব শুরুর তারিখে মজুদ")}><input id="openingStock" name="openingStock" type="text" inputMode="decimal" data-numeric step="0.001" min="0" defaultValue={defaults.openingStock ?? 0} className="input-num" /></Field>
         <Field label="প্রারম্ভিক দর" name="openingRate" hint={t("ফাঁকা/শূন্য হলে ক্রয়মূল্য ব্যবহৃত হবে")}><input id="openingRate" name="openingRate" type="text" inputMode="decimal" data-numeric step="0.01" min="0" defaultValue={defaults.openingRate ?? 0} className="input-num" /></Field>
-        <p className="self-end pb-2 text-xs text-slate-500">
+        <p className="pb-2 text-xs text-slate-500 sm:col-span-3">
           {t("প্রারম্ভিক মজুদ মূল্য “মজুদ পণ্য” লেজারে ডেবিট ও “প্রারম্ভিক ব্যালেন্স সমন্বয়” এ ক্রেডিট হিসেবে পোস্ট হবে")}{depot ? ` ${t("— ডিপো হিসাবে (সাধারণ হিসাবে নয়)")}` : ""}।
         </p>
       </fieldset>

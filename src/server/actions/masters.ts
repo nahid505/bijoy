@@ -214,7 +214,7 @@ async function saveProductFrom(kind: "GENERAL" | "DEPOT", id: string | null, fd:
     if (input.isDepotProduct && !isDepot(ctx.business.businessType)) throw new UserError("ডিপো পণ্য শুধু ডিপো ব্যবসায় রাখা যায়");
     const productId = await saveProduct(ctx.svc, input, id ?? undefined);
     const after = input.isDepotProduct ?? before;
-    await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: id ? "UPDATE" : "CREATE", entity: "Product", entityId: productId, details: { name: input.name, openingStock: input.openingStock, ...(after ? { depotProduct: true } : {}), ...(after !== before ? { movedTo: after ? "DEPOT" : "GENERAL" } : {}) } });
+    await audit({ businessId: ctx.business.id, userId: ctx.user.id, action: id ? "UPDATE" : "CREATE", entity: "Product", entityId: productId, details: { name: input.name, openingStock: input.openingStock, warehouseId: input.warehouseId, ...(after ? { depotProduct: true } : {}), ...(after !== before ? { movedTo: after ? "DEPOT" : "GENERAL" } : {}) } });
     return { productId, after };
   });
   if (!result.ok) return toResult(result);

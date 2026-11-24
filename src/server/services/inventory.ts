@@ -123,7 +123,15 @@ export async function writeMovements(tx: Tx, ctx: Ctx, voucher: { id: string; da
 }
 
 /** Opening stock: one OPENING voucher per product (Dr Inventory / Cr Opening balance equity). */
-export async function setOpeningStock(tx: Tx, ctx: Ctx, productId: string, qty: number, rate: number, book: BookKey = "GENERAL") {
+export async function setOpeningStock(
+  tx: Tx,
+  ctx: Ctx,
+  productId: string,
+  qty: number,
+  rate: number,
+  book: BookKey = "GENERAL",
+  warehouseId?: string | null,
+) {
   const business = await tx.business.findUniqueOrThrow({ where: { id: ctx.businessId } });
   const sourceKey = `opening:product:${productId}`;
   let existing = await tx.voucher.findUnique({ where: { businessId_sourceKey: { businessId: ctx.businessId, sourceKey } } });
@@ -134,12 +142,21 @@ export async function setOpeningStock(tx: Tx, ctx: Ctx, productId: string, qty: 
     existing = null;
     if (qty <= 0) return revalueProducts(tx, ctx.businessId, [productId]);
   }
+  const targetWarehouseId = warehouseId || (await defaultWarehouseId(tx, ctx.businessId));
   const value = round2(qty * rate);
   const unchanged =
     existing &&
     qty > 0 &&
     Number(existing.amount) === value &&
-    (await tx.stockMovement.count({ where: { voucherId: existing.id, quantityIn: qty, unitCost: round4(rate) } })) === 1;
+    existing.warehouseId === targetWarehouseId &&
+    (await tx.stockMovement.count({
+      where: {
+        voucherId: existing.id,
+        warehouseId: targetWarehouseId,
+        quantityIn: qty,
+        unitCost: round4(rate),
+      },
+    })) === 1;
   if (unchanged || (!existing && qty <= 0)) return;
   await assertNotLocked(tx, ctx.businessId, business.booksStartDate);
 
@@ -147,9 +164,16 @@ export async function setOpeningStock(tx: Tx, ctx: Ctx, productId: string, qty: 
     await tx.voucher.delete({ where: { id: existing!.id } });
   } else {
     const acc = await systemAccounts(tx, ctx.businessId);
-    const warehouseId = await defaultWarehouseId(tx, ctx.businessId);
     const voucher = existing
-      ? await tx.voucher.update({ where: { id: existing.id }, data: { amount: value, date: business.booksStartDate, updatedById: ctx.userId } })
+      ? await tx.voucher.update({
+          where: { id: existing.id },
+          data: {
+            amount: value,
+            warehouseId: targetWarehouseId,
+            date: business.booksStartDate,
+            updatedById: ctx.userId,
+          },
+        })
       : await tx.voucher.create({
           data: {
             businessId: ctx.businessId,
@@ -159,13 +183,13 @@ export async function setOpeningStock(tx: Tx, ctx: Ctx, productId: string, qty: 
             date: business.booksStartDate,
             narration: "প্রারম্ভিক মজুদ",
             amount: value,
-            warehouseId,
+            warehouseId: targetWarehouseId,
             sourceKey,
             createdById: ctx.userId,
           },
         });
     await tx.stockMovement.deleteMany({ where: { voucherId: voucher.id } });
-    await writeMovements(tx, ctx, voucher, [{ productId, warehouseId, type: "OPENING", quantityIn: qty, unitCost: rate }]);
+    await writeMovements(tx, ctx, voucher, [{ productId, warehouseId: targetWarehouseId, type: "OPENING", quantityIn: qty, unitCost: rate }]);
     await writeEntries(tx, voucher, openingEntries(acc.INVENTORY, value, acc), { allowEmpty: true });
   }
   await revalueProducts(tx, ctx.businessId, [productId]); // later sales' COGS follow the new opening cost

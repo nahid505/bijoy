@@ -397,6 +397,8 @@ export async function saveProduct(ctx: Ctx, input: ProductInput, id?: string) {
     if (!unit) throw new UserError("ইউনিট পাওয়া যায়নি");
     if (input.categoryId && !(await tx.category.findFirst({ where: { id: input.categoryId, businessId: ctx.businessId } }))) throw new UserError("ক্যাটাগরি পাওয়া যায়নি");
     if (input.brandId && !(await tx.brand.findFirst({ where: { id: input.brandId, businessId: ctx.businessId } }))) throw new UserError("ব্র্যান্ড পাওয়া যায়নি");
+    const targetWarehouseId = input.warehouseId || input.openingWarehouseId;
+    if (targetWarehouseId && !(await tx.warehouse.findFirst({ where: { id: targetWarehouseId, businessId: ctx.businessId } }))) throw new UserError("নির্বাচিত গুদাম পাওয়া যায়নি");
     // company / brand typed in (depot form): reuse one of that name, or create it
     let brandId = input.brandId;
     if (!brandId && input.newBrandName) {
@@ -450,7 +452,7 @@ export async function saveProduct(ctx: Ctx, input: ProductInput, id?: string) {
       productId = (await tx.product.create({ data: { ...data, businessId: ctx.businessId } })).id;
     }
     // replays the stock timeline; a depot product's opening stock is in the depot book
-    await setOpeningStock(tx, ctx, productId, input.openingStock, data.openingRate, depotProduct ? "DEPOT" : "GENERAL");
+    await setOpeningStock(tx, ctx, productId, input.openingStock, data.openingRate, depotProduct ? "DEPOT" : "GENERAL", targetWarehouseId);
     return productId;
   }, TX);
 }

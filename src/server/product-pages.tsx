@@ -263,15 +263,24 @@ export async function ProductEditPage({ id, kind = "GENERAL" }: { id: string | n
   const t = await getT();
   const base = depot ? "/depot/products" : "/products";
   const businessId = ctx.business.id;
-  const [pr, categories, brands, units] = await Promise.all([
+  const [pr, categories, brands, units, warehouses] = await Promise.all([
     id ? prisma.product.findFirst({ where: { id, businessId } }) : null,
     prisma.category.findMany({ where: { businessId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.brand.findMany({ where: { businessId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.unit.findMany({ where: { businessId, baseUnitId: null }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.warehouse.findMany({ where: { businessId }, orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true, isDefault: true } }),
   ]);
   if (id && !pr) notFound();
   if (pr && pr.isDepotProduct !== depot) redirect(`${pr.isDepotProduct ? "/depot/products" : "/products"}/${pr.id}/edit`);
   const hasTransactions = pr ? (await prisma.voucherItem.count({ where: { productId: pr.id } })) > 0 : false;
+  const openingVoucher = id
+    ? await prisma.voucher.findUnique({
+        where: { businessId_sourceKey: { businessId, sourceKey: `opening:product:${id}` } },
+        select: { warehouseId: true },
+      })
+    : null;
+  const defaultWarehouse = warehouses.find((w) => w.isDefault) ?? warehouses[0];
+  const initialWarehouseId = openingVoucher?.warehouseId ?? defaultWarehouse?.id ?? "";
   return (
     <>
       <PageHeader
@@ -287,6 +296,7 @@ export async function ProductEditPage({ id, kind = "GENERAL" }: { id: string | n
           categories={categories}
           brands={brands}
           units={units}
+          warehouses={warehouses}
           hasTransactions={hasTransactions}
           showDepotFlag={isDepot(ctx.business.businessType)}
           cancelHref={pr ? `${base}/${pr.id}` : base}
@@ -296,10 +306,14 @@ export async function ProductEditPage({ id, kind = "GENERAL" }: { id: string | n
                   name: pr.name, code: pr.code, barcode: pr.barcode, categoryId: pr.categoryId, brandId: pr.brandId, unitId: pr.unitId,
                   purchasePrice: num(pr.purchasePrice), salePrice: num(pr.salePrice), wholesalePrice: num(pr.wholesalePrice), depotCommissionRate: num(pr.depotCommissionRate),
                   depotCommissionType: pr.depotCommissionType, isDepotProduct: pr.isDepotProduct,
-                  minStock: num(pr.minStock), openingStock: num(pr.openingStock), openingRate: num(pr.openingRate), trackBatch: pr.trackBatch,
+                  minStock: num(pr.minStock), openingStock: num(pr.openingStock), openingRate: num(pr.openingRate),
+                  warehouseId: initialWarehouseId,
+                  trackBatch: pr.trackBatch,
                   packSize: num(pr.packSize) || 24,
                 }
-              : {}
+              : {
+                  warehouseId: initialWarehouseId,
+                }
           }
         />
       </section>

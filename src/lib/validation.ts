@@ -227,6 +227,8 @@ export const productSchema = z.object({
   minStock: nonNegQty.default(0),
   openingStock: nonNegQty.default(0),
   openingRate: money.default(0),
+  warehouseId: optionalId.optional(),
+  openingWarehouseId: optionalId.optional(),
   trackBatch: z.boolean().default(false),
 }).refine((p) => p.depotCommissionType !== "PERCENT" || (p.depotCommissionRate ?? 0) <= 100, { path: ["depotCommissionRate"], message: "শতাংশ ১০০-এর বেশি হতে পারে না" });
 export type ProductInput = z.infer<typeof productSchema>;
