@@ -24,6 +24,7 @@ import { getT } from "./i18n";
 const MOVE_LABELS: Record<string, string> = {
   OPENING: "প্রারম্ভিক", PURCHASE: "ক্রয়", SALE: "বিক্রয়", SALES_RETURN: "বিক্রয় ফেরত", PURCHASE_RETURN: "ক্রয় ফেরত", ADJUSTMENT_IN: "সমন্বয় (আগমন)", ADJUSTMENT_OUT: "সমন্বয় (বাহির)",
   PRODUCTION_IN: "উৎপাদন", PRODUCTION_OUT: "উৎপাদনে ব্যবহার", DEPOT_OUT: "ডিও ডেলিভারি",
+  TRANSFER_IN: "হস্তান্তর (আগমন)", TRANSFER_OUT: "হস্তান্তর (প্রেরণ)",
 };
 
 export async function ProductListPage({ searchParams }: { searchParams: SearchParams }) {
@@ -147,7 +148,11 @@ export async function ProductDetailPage({ id, kind = "GENERAL" }: { id: string; 
     prisma.stockMovement.findMany({
       where: { productId: pr.id },
       orderBy: [{ date: "asc" }, { createdAt: "asc" }, { id: "asc" }],
-      include: { voucher: { select: { id: true, voucherNo: true, type: true } }, warehouse: { select: { name: true } } },
+      include: {
+        voucher: { select: { id: true, voucherNo: true, type: true } },
+        transfer: { select: { id: true, transferNo: true } },
+        warehouse: { select: { name: true } },
+      },
       take: 2000,
     }),
     prisma.stockMovement.groupBy({ by: ["warehouseId"], where: { productId: pr.id }, _sum: { quantityIn: true, quantityOut: true } }),
@@ -237,7 +242,13 @@ export async function ProductDetailPage({ id, kind = "GENERAL" }: { id: string; 
                   {card.map((m) => (
                     <tr key={m.id}>
                       <td className="whitespace-nowrap">{formatDate(m.date)}</td>
-                      <td>{m.voucher ? <Link prefetch={false} href={`/vouchers/v/${m.voucher.id}`} className="text-brand-700 hover:underline">{m.voucher.voucherNo}</Link> : "—"}</td>
+                      <td>
+                        {m.voucher ? (
+                          <Link prefetch={false} href={`/vouchers/v/${m.voucher.id}`} className="text-brand-700 hover:underline">{m.voucher.voucherNo}</Link>
+                        ) : m.transfer ? (
+                          <Link prefetch={false} href={`/products/stock-transfer#${m.transfer.transferNo}`} className="text-brand-700 hover:underline">{m.transfer.transferNo}</Link>
+                        ) : "—"}
+                      </td>
                       <td>{m.voucher ? t(VOUCHER_TYPES[m.voucher.type].label) : t(MOVE_LABELS[m.type])}</td>
                       <td className="text-xs">{m.warehouse.name}{m.batchNo ? ` · ${m.batchNo}` : ""}</td>
                       <td className="num text-brand-700">{num(m.quantityIn) ? formatQty(num(m.quantityIn)) : ""}</td>

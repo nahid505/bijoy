@@ -160,6 +160,7 @@ export const NAV: NavEntry[] = [
       { href: "/products/brands", label: "ব্র্যান্ড", permission: "inventory:view", module: "TRADING" },
       { href: "/products/units", label: "ইউনিট", permission: "inventory:view", module: "TRADING" },
       { href: "/products/stock", label: "স্টক", permission: "inventory:view", module: "TRADING" },
+      { href: "/products/stock-transfer", label: "গুদাম মাল হস্তান্তর", permission: "inventory:view", module: "TRADING" },
       { href: "/products/batches", label: "ব্যাচ ও মেয়াদ", permission: "inventory:view", module: "TRADING" },
       { href: "/notifications", label: "নোটিফিকেশন", permission: "inventory:view" },
     ],

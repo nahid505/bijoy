@@ -907,6 +907,29 @@ export const packagingBagWastageSchema = z.object({
 });
 export type PackagingBagWastageInput = z.infer<typeof packagingBagWastageSchema>;
 
+export const stockTransferItemSchema = z.object({
+  productId: z.string().min(1, "পণ্য নির্বাচন করুন"),
+  quantity: quantity,
+  batchNo: optionalText(80),
+});
+
+export const stockTransferSchema = z
+  .object({
+    date: dateField,
+    fromWarehouseId: z.string().min(1, "প্রেরক গুদাম নির্বাচন করুন"),
+    toWarehouseId: z.string().min(1, "প্রাপক গুদাম নির্বাচন করুন"),
+    vehicleNo: optionalText(80),
+    driverName: optionalText(80),
+    notes: optionalText(300),
+    items: z.array(stockTransferItemSchema).min(1, "কমপক্ষে একটি পণ্য যোগ করুন"),
+  })
+  .refine((d) => d.fromWarehouseId !== d.toWarehouseId, {
+    path: ["toWarehouseId"],
+    message: "প্রেরক ও প্রাপক গুদাম একই হতে পারবে না",
+  });
+export type StockTransferInput = z.infer<typeof stockTransferSchema>;
+export type StockTransferItemInput = z.infer<typeof stockTransferItemSchema>;
+
 /** Flatten zod errors into { "path.to.field": [messages] } for forms. */
 export function fieldErrors(error: z.ZodError): Record<string, string[]> {
   const out: Record<string, string[]> = {};

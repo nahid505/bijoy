@@ -69,6 +69,8 @@ enum StockMovementType {
   PRODUCTION_IN
   PRODUCTION_OUT
   DEPOT_OUT // depot delivery against a company DO
+  TRANSFER_IN
+  TRANSFER_OUT
 }
 
 /// Depot delivery challan: how the dealer pays for the goods.
@@ -233,6 +235,7 @@ model Business {
   units                Unit[]
   warehouses           Warehouse[]
   stockMovements       StockMovement[]
+  stockTransfers       StockTransfer[]
   auditLogs            AuditLog[]
   counters             Counter[]
   productBatches       ProductBatch[]
@@ -321,6 +324,7 @@ model User {
   bagReturnsCreated            BagReturnVoucher[]      @relation("BagReturnCreatedBy")
   bagWastagesCreated           PackagingBagWastage[]   @relation("BagWastageCreatedBy")
   driverTripPaymentsCreated    DriverTripPayment[]     @relation("DriverTripPaymentCreatedBy")
+  stockTransfersCreated        StockTransfer[]         @relation("StockTransferCreatedBy")
 }
 
 // Permissions are string keys (see src/lib/permissions.ts); "*" = everything.
@@ -799,6 +803,8 @@ model Warehouse {
   vouchers             Voucher[]
   voucherItems         VoucherItem[]
   packagingBagWastages PackagingBagWastage[]
+  transfersFrom        StockTransfer[]       @relation("StockTransferFrom")
+  transfersTo          StockTransfer[]       @relation("StockTransferTo")
 
   @@unique([businessId, name])
 }
@@ -842,6 +848,7 @@ model Product {
   batches            ProductBatch[]
   notifications      Notification[]
   recipeLines        RecipeLine[]
+  stockTransferItems StockTransferItem[]
 
   // ── Packaging Bag Tracking (খালি চালের বস্তা)
   packagingBagItem     PackagingBagItem? @relation("ProductPackagingBag")
@@ -863,35 +870,86 @@ enum DepotCommissionType {
 }
 
 model StockMovement {
-  id            String            @id @default(cuid())
-  businessId    String
-  business      Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  productId     String
-  product       Product           @relation(fields: [productId], references: [id])
-  warehouseId   String
-  warehouse     Warehouse         @relation(fields: [warehouseId], references: [id])
-  voucherId     String?
-  voucher       Voucher?          @relation(fields: [voucherId], references: [id], onDelete: Cascade)
-  voucherItemId String?
-  voucherItem   VoucherItem?      @relation(fields: [voucherItemId], references: [id], onDelete: Cascade)
-  batchNo       String?
-  expiryDate    DateTime?
-  batchId       String?
-  batch         ProductBatch?     @relation(fields: [batchId], references: [id], onDelete: Restrict)
-  type          StockMovementType
-  date          DateTime
-  quantityIn    Decimal           @default(0) @db.Decimal(14, 3)
-  quantityOut   Decimal           @default(0) @db.Decimal(14, 3)
-  unitCost      Decimal           @default(0) @db.Decimal(14, 4)
-  value         Decimal           @default(0) @db.Decimal(14, 2)
-  createdAt     DateTime          @default(now())
+  id             String             @id @default(cuid())
+  businessId     String
+  business       Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product            @relation(fields: [productId], references: [id])
+  warehouseId    String
+  warehouse      Warehouse          @relation(fields: [warehouseId], references: [id])
+  voucherId      String?
+  voucher        Voucher?           @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  voucherItemId  String?
+  voucherItem    VoucherItem?       @relation(fields: [voucherItemId], references: [id], onDelete: Cascade)
+  transferId     String?
+  transfer       StockTransfer?     @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  transferItemId String?
+  transferItem   StockTransferItem? @relation(fields: [transferItemId], references: [id], onDelete: Cascade)
+  batchNo        String?
+  expiryDate     DateTime?
+  batchId        String?
+  batch          ProductBatch?      @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  type           StockMovementType
+  date           DateTime
+  quantityIn     Decimal            @default(0) @db.Decimal(14, 3)
+  quantityOut    Decimal            @default(0) @db.Decimal(14, 3)
+  unitCost       Decimal            @default(0) @db.Decimal(14, 4)
+  value          Decimal            @default(0) @db.Decimal(14, 2)
+  createdAt      DateTime           @default(now())
 
   @@index([businessId, productId, date])
   @@index([businessId, warehouseId])
   @@index([voucherItemId])
+  @@index([transferId])
+  @@index([transferItemId])
   @@index([businessId, productId, batchNo])
   @@index([voucherId])
   @@index([batchId])
+}
+
+model StockTransfer {
+  id              String    @id @default(cuid())
+  businessId      String
+  business        Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  transferNo      String
+  date            DateTime
+  fromWarehouseId String
+  fromWarehouse   Warehouse @relation("StockTransferFrom", fields: [fromWarehouseId], references: [id])
+  toWarehouseId   String
+  toWarehouse     Warehouse @relation("StockTransferTo", fields: [toWarehouseId], references: [id])
+  vehicleNo       String?   @db.Text
+  driverName      String?   @db.Text
+  notes           String?   @db.Text
+  status          String    @default("COMPLETED") @db.VarChar(191)
+  createdById     String?
+  createdBy       User?     @relation("StockTransferCreatedBy", fields: [createdById], references: [id])
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  items          StockTransferItem[]
+  stockMovements StockMovement[]
+
+  @@unique([businessId, transferNo])
+  @@index([businessId, date])
+  @@index([fromWarehouseId])
+  @@index([toWarehouseId])
+}
+
+model StockTransferItem {
+  id         String        @id @default(cuid())
+  transferId String
+  transfer   StockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  productId  String
+  product    Product       @relation(fields: [productId], references: [id])
+  quantity   Decimal       @db.Decimal(14, 3)
+  unitCost   Decimal       @default(0) @db.Decimal(14, 4)
+  batchNo    String?       @db.Text
+  lineNo     Int           @default(0)
+
+  stockMovements StockMovement[]
+
+  @@index([transferId])
+  @@index([productId])
 }
 
 /// A batch / lot of a batch-tracked product. One product can have many batches with different

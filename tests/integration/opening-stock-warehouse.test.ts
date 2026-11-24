@@ -4,6 +4,7 @@ import { createBusiness } from "@/server/services/bootstrap";
 import type { Ctx } from "@/server/services/accounting";
 import { saveProduct } from "@/server/services/master";
 import { warehouseStock } from "@/server/services/inventory";
+import { productSchema } from "@/lib/validation";
 
 const run = process.env.TEST_DATABASE_URL || process.env.TEST_MYSQL_URL ? describe : describe.skip;
 
@@ -40,16 +41,19 @@ run("Product Opening Stock Warehouse Assignment", () => {
 
   it("records opening stock in the user-selected warehouse and updates properly on change", async () => {
     // 1. Create product with opening stock in secondWh
-    const productId = await saveProduct(ctx, {
-      name: `টেস্ট চাল-${Date.now()}`,
-      unitId,
-      purchasePrice: 60,
-      salePrice: 70,
-      openingStock: 25,
-      openingRate: 60,
-      warehouseId: secondWhId,
-      trackBatch: false,
-    });
+    const productId = await saveProduct(
+      ctx,
+      productSchema.parse({
+        name: `টেস্ট চাল-${Date.now()}`,
+        unitId,
+        purchasePrice: 60,
+        salePrice: 70,
+        openingStock: 25,
+        openingRate: 60,
+        warehouseId: secondWhId,
+        trackBatch: false,
+      }),
+    );
 
     // Verify stock in secondWh is 25, and in defaultWh is 0
     const stockWh2 = await warehouseStock(prisma as never, productId, secondWhId);
@@ -72,7 +76,7 @@ run("Product Opening Stock Warehouse Assignment", () => {
     // 2. Update product opening stock to defaultWh
     await saveProduct(
       ctx,
-      {
+      productSchema.parse({
         name: `টেস্ট চাল-${Date.now()}`,
         unitId,
         purchasePrice: 60,
@@ -81,7 +85,7 @@ run("Product Opening Stock Warehouse Assignment", () => {
         openingRate: 62,
         warehouseId: defaultWhId,
         trackBatch: false,
-      },
+      }),
       productId,
     );
 
