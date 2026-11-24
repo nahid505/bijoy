@@ -10,11 +10,61 @@ import type { AccountOption, ProductOption, UnitOption, WarehouseOption } from "
 import { formatQty, toBnDigits, toDateInput } from "@/lib/format";
 import { batchesFor, processLoss, shareTotal, sharesBySaleValue, sharesValid, yieldPercent } from "@/lib/production";
 
-type Line = { key: string; product: ProductOption | null; quantity: string; costShare: string; batchNo: string };
+type Line = {
+  key: string;
+  product: ProductOption | null;
+  quantity: string;
+  costShare: string;
+  batchNo: string;
+  emptyBagProductId?: string;
+  bagSizeKg?: string;
+  bagCount?: string;
+};
 let seq = 0;
-const newLine = (p: ProductOption | null = null, quantity = "", costShare = ""): Line => ({ key: `l${++seq}`, product: p, quantity, costShare, batchNo: "" });
-const n = (v: string) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+const newLine = (
+  p: ProductOption | null = null,
+  quantity = "",
+  costShare = "",
+  emptyBagProductId = "NONE",
+  bagSizeKg = "",
+  bagCount = "",
+): Line => ({
+  key: `l${++seq}`,
+  product: p,
+  quantity,
+  costShare,
+  batchNo: "",
+  emptyBagProductId,
+  bagSizeKg,
+  bagCount,
+});
+const n = (v?: string | number | null) => (v !== undefined && v !== null && v !== "" && Number.isFinite(Number(v)) ? Number(v) : 0);
 const fmtNum = (v: number) => String(Math.round(v * 1000) / 1000);
+
+export function defaultBagForProduct(
+  p: ProductOption | null,
+  packagingBags: PackagingBagOption[],
+): { emptyBagProductId: string; bagSizeKg: string } {
+  if (!p) return { emptyBagProductId: "NONE", bagSizeKg: "" };
+  const name = p.name.toLowerCase();
+  if (name.includes("তুষ") || name.includes("ভুষি") || name.includes("husk")) {
+    return { emptyBagProductId: "NONE", bagSizeKg: "" };
+  }
+  if (name.includes("ব্রান") || name.includes("কুঁড়া") || name.includes("bran")) {
+    const bag55 =
+      packagingBags.find((b) => b.capacityKg === 55) ??
+      packagingBags.find((b) => b.name.includes("ব্রান")) ??
+      packagingBags.find((b) => b.capacityKg === 50);
+    if (bag55) return { emptyBagProductId: bag55.productId, bagSizeKg: String(bag55.capacityKg) };
+  }
+  if (name.includes("২৫") || name.includes("25")) {
+    const bag25 = packagingBags.find((b) => b.capacityKg === 25);
+    if (bag25) return { emptyBagProductId: bag25.productId, bagSizeKg: "25" };
+  }
+  const bag50 = packagingBags.find((b) => b.capacityKg === 50) ?? packagingBags[0];
+  if (bag50) return { emptyBagProductId: bag50.productId, bagSizeKg: String(bag50.capacityKg) };
+  return { emptyBagProductId: "NONE", bagSizeKg: "" };
+}
 
 export interface RecipeLineData {
   product: ProductOption;
@@ -38,26 +88,216 @@ function useUnits(units: UnitOption[]) {
 
 /** Product table shared by both forms. */
 function LineTable({
-  title, hint, lines, setLines, units, outputs, showCostShare = false, currency, showStock, batches, prefix,
+  title, hint, lines, setLines, units, outputs, showCostShare = false, currency, showStock, batches, prefix, packagingBags,
 }: {
   title: string; hint?: string; lines: Line[]; setLines: (l: Line[]) => void; units: UnitOption[]; outputs: boolean; showCostShare?: boolean; currency: string;
-  showStock?: boolean; batches?: boolean; prefix: string;
+  showStock?: boolean; batches?: boolean; prefix: string; packagingBags?: PackagingBagOption[];
 }) {
   const unitName = useUnits(units);
   const update = (key: string, patch: Partial<Line>) => setLines(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  const isMultiBagOutput = Boolean(outputs && !showCostShare && packagingBags !== undefined);
+
   return (
     // min-w-0: a fieldset is min-content wide by default, which would widen the page on phones
     <fieldset className="min-w-0 rounded-lg border border-rule p-3">
       <legend className="px-1 text-sm font-semibold text-ink-900">{title}</legend>
-      {hint && <p className="mb-2 text-xs text-slate-500">{hint}</p>}
+      {hint && <p className="px-1 text-xs text-slate-500 mb-2">{hint}</p>}
       <div className="overflow-x-auto">
-        <table className="table min-w-[640px]">
+        <table className={`table ${isMultiBagOutput ? "min-w-[840px]" : "min-w-[640px]"}`}>
           <thead>
-            <tr><th className="w-8">#</th><th>পণ্য</th><th className="w-36 text-right">পরিমাণ</th>{showCostShare && <th className="w-32 text-right">খরচ-ভাগ %</th>}{batches && <th className="w-36">ব্যাচ নং</th>}<th className="w-10" /></tr>
+            {isMultiBagOutput ? (
+              <tr>
+                <th className="w-8">#</th>
+                <th className="min-w-[170px]">উৎপাদিত পণ্য</th>
+                <th className="w-64">খালি বস্তার ধরন (প্যাকিং)</th>
+                <th className="w-24 text-right">সাইজ (কেজি)</th>
+                <th className="w-24 text-right">বস্তা সংখ্যা</th>
+                <th className="w-32 text-right">মোট পরিমাণ</th>
+                {batches && <th className="w-28">ব্যাচ নং</th>}
+                <th className="w-10" />
+              </tr>
+            ) : (
+              <tr>
+                <th className="w-8">#</th>
+                <th>পণ্য</th>
+                <th className="w-36 text-right">পরিমাণ</th>
+                {showCostShare && <th className="w-32 text-right">খরচ-ভাগ %</th>}
+                {batches && <th className="w-36">ব্যাচ নং</th>}
+                <th className="w-10" />
+              </tr>
+            )}
           </thead>
           <tbody>
             {lines.map((l, i) => {
               const short = showStock && l.product && n(l.quantity) > l.product.stock + 1e-9;
+              if (isMultiBagOutput) {
+                const selectedBag = packagingBags?.find((b) => b.productId === l.emptyBagProductId);
+                const isShortage = selectedBag && n(l.bagCount) > selectedBag.stock;
+                return (
+                  <tr key={l.key}>
+                    <td className="text-xs text-slate-400">{toBnDigits(i + 1)}</td>
+                    <td>
+                      <SearchSelect
+                        kind="products"
+                        value={l.product}
+                        onChange={(p) => {
+                          const patch: Partial<Line> = { product: p };
+                          if (packagingBags && (!l.emptyBagProductId || l.emptyBagProductId === "NONE")) {
+                            const def = defaultBagForProduct(p, packagingBags);
+                            patch.emptyBagProductId = def.emptyBagProductId;
+                            patch.bagSizeKg = def.bagSizeKg;
+                            const cap = Number(def.bagSizeKg) || 0;
+                            if (cap > 0 && n(l.quantity) > 0) {
+                              patch.bagCount = String(Math.round(n(l.quantity) / cap));
+                            }
+                          }
+                          update(l.key, patch);
+                        }}
+                        placeholder="পণ্য খুঁজুন — নাম, কোড, বারকোড"
+                        currency={currency}
+                        unitName={(id) => units.find((u) => u.id === id)?.name ?? ""}
+                        priceOf={(p) => p.avgCost || p.purchasePrice}
+                        ariaLabel={`${title}, সারি ${i + 1}`}
+                      />
+                      <FieldError name={`${prefix}.${i}.productId`} />
+                    </td>
+                    <td>
+                      <select
+                        className="input text-xs font-semibold py-1 bg-white text-slate-800"
+                        value={l.emptyBagProductId ?? "NONE"}
+                        onChange={(e) => {
+                          const bagId = e.target.value;
+                          if (bagId === "NONE") {
+                            update(l.key, { emptyBagProductId: "NONE", bagSizeKg: "", bagCount: "" });
+                          } else {
+                            const bag = packagingBags?.find((b) => b.productId === bagId);
+                            const cap = bag ? bag.capacityKg : 50;
+                            const patch: Partial<Line> = {
+                              emptyBagProductId: bagId,
+                              bagSizeKg: String(cap),
+                            };
+                            if (n(l.bagCount) > 0) {
+                              patch.quantity = fmtNum(n(l.bagCount) * cap);
+                            } else if (n(l.quantity) > 0 && cap > 0) {
+                              patch.bagCount = String(Math.round(n(l.quantity) / cap));
+                            }
+                            update(l.key, patch);
+                          }
+                        }}
+                        aria-label={`খালি বস্তা, সারি ${i + 1}`}
+                      >
+                        <option value="NONE">🚫 খোলা / বস্তা ছাড়া</option>
+                        {packagingBags?.map((bag) => (
+                          <option key={bag.productId} value={bag.productId}>
+                            {bag.name} ({toBnDigits(bag.capacityKg)} কেজি) — মজুদ: {toBnDigits(bag.stock)} {bag.unit}
+                          </option>
+                        ))}
+                      </select>
+                      {l.emptyBagProductId && l.emptyBagProductId !== "NONE" && selectedBag && (
+                        <div className="mt-1 flex items-center justify-between text-[11px]">
+                          <span className="text-slate-500">মজুদ: {toBnDigits(selectedBag.stock)} {selectedBag.unit}</span>
+                          {isShortage && (
+                            <span className="font-bold text-red-600 bg-red-50 border border-red-200 rounded px-1.5 py-0.2">
+                              ⚠️ ঘাটতি
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      <input
+                        className="input-num text-xs"
+                        inputMode="decimal"
+                        data-numeric
+                        disabled={!l.emptyBagProductId || l.emptyBagProductId === "NONE"}
+                        value={l.bagSizeKg ?? ""}
+                        onChange={(e) => {
+                          const cap = n(e.target.value);
+                          const patch: Partial<Line> = { bagSizeKg: e.target.value };
+                          if (n(l.bagCount) > 0 && cap > 0) {
+                            patch.quantity = fmtNum(n(l.bagCount) * cap);
+                          } else if (n(l.quantity) > 0 && cap > 0) {
+                            patch.bagCount = String(Math.round(n(l.quantity) / cap));
+                          }
+                          update(l.key, patch);
+                        }}
+                        placeholder="কেজি"
+                        aria-label={`বস্তার সাইজ, সারি ${i + 1}`}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        className="input-num text-xs font-bold text-ink-900"
+                        inputMode="numeric"
+                        data-numeric
+                        disabled={!l.emptyBagProductId || l.emptyBagProductId === "NONE"}
+                        value={l.bagCount ?? ""}
+                        onChange={(e) => {
+                          const count = n(e.target.value);
+                          const cap = n(l.bagSizeKg);
+                          const patch: Partial<Line> = { bagCount: e.target.value };
+                          if (cap > 0) {
+                            patch.quantity = fmtNum(count * cap);
+                          }
+                          update(l.key, patch);
+                        }}
+                        placeholder="বস্তা"
+                        aria-label={`বস্তা সংখ্যা, সারি ${i + 1}`}
+                      />
+                    </td>
+                    <td>
+                      <div className="flex items-center gap-1">
+                        <input
+                          className="input-num font-bold text-xs"
+                          inputMode="decimal"
+                          data-numeric
+                          value={l.quantity}
+                          onChange={(e) => {
+                            const q = n(e.target.value);
+                            const cap = n(l.bagSizeKg);
+                            const patch: Partial<Line> = { quantity: e.target.value };
+                            if (cap > 0 && l.emptyBagProductId && l.emptyBagProductId !== "NONE") {
+                              patch.bagCount = String(Math.round(q / cap));
+                            }
+                            update(l.key, patch);
+                          }}
+                          aria-label={`মোট পরিমাণ, সারি ${i + 1}`}
+                        />
+                        <span className="w-10 shrink-0 text-xs text-slate-500">{unitName(l.product)}</span>
+                      </div>
+                      <FieldError name={`${prefix}.${i}.quantity`} />
+                    </td>
+                    {batches && (
+                      <td>
+                        {l.product?.trackBatch ? (
+                          <input
+                            className="input text-xs"
+                            value={l.batchNo}
+                            onChange={(e) => update(l.key, { batchNo: e.target.value })}
+                            placeholder="স্বয়ংক্রিয়"
+                            aria-label={`ব্যাচ, সারি ${i + 1}`}
+                          />
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
+                    )}
+                    <td>
+                      <button
+                        type="button"
+                        className="btn-ghost btn-sm text-credit"
+                        onClick={() => setLines(lines.filter((x) => x.key !== l.key))}
+                        disabled={lines.length <= 1}
+                        aria-label="সারি মুছুন"
+                      >
+                        ✕
+                      </button>
+                    </td>
+                  </tr>
+                );
+              }
+
+              // Standard Line (Raw materials or recipe lines)
               return (
                 <tr key={l.key}>
                   <td className="text-xs text-slate-400">{toBnDigits(i + 1)}</td>
@@ -86,8 +326,87 @@ function LineTable({
           </tbody>
         </table>
       </div>
-      <button type="button" className="btn-secondary btn-sm mt-2" onClick={() => setLines([...lines, newLine()])}>+ সারি যোগ করুন</button>
+      <button
+        type="button"
+        className="btn-secondary btn-sm mt-2"
+        onClick={() => {
+          if (isMultiBagOutput && packagingBags && packagingBags.length > 0) {
+            const p = packagingBags[0];
+            setLines([...lines, newLine(null, "", "", p.productId, String(p.capacityKg), "")]);
+          } else {
+            setLines([...lines, newLine()]);
+          }
+        }}
+      >
+        + সারি যোগ করুন
+      </button>
       <FieldError name={prefix} />
+
+      {/* খালি বস্তা সমন্বয় সারাংশ কার্ড (Multi-Bag Consumption Summary) */}
+      {isMultiBagOutput && packagingBags && packagingBags.length > 0 && (
+        <div className="mt-3 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/90 p-3 shadow-2xs">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+              <span>🎒</span>
+              <span>খালি বস্তা সমন্বয় সারাংশ (স্টক থেকে অটো কাটা হবে):</span>
+            </span>
+          </div>
+          {(() => {
+            const bagTotals = new Map<string, number>();
+            for (const line of lines) {
+              if (line.emptyBagProductId && line.emptyBagProductId !== "NONE" && n(line.bagCount) > 0) {
+                bagTotals.set(
+                  line.emptyBagProductId,
+                  (bagTotals.get(line.emptyBagProductId) ?? 0) + n(line.bagCount),
+                );
+              }
+            }
+            if (bagTotals.size === 0) {
+              return (
+                <p className="text-xs text-slate-600">
+                  ℹ️ কোনো খালি বস্তা নির্বাচন করা হয়নি অথবা বস্তা সংখ্যা শূন্য (সব খোলা/বস্তা ছাড়া)।
+                </p>
+              );
+            }
+            return (
+              <div className="flex flex-wrap items-center gap-2">
+                {Array.from(bagTotals.entries()).map(([bagProdId, totalNeeded]) => {
+                  const bag = packagingBags.find((b) => b.productId === bagProdId);
+                  if (!bag) return null;
+                  const isShort = totalNeeded > bag.stock;
+                  return (
+                    <div
+                      key={bagProdId}
+                      className={`inline-flex flex-wrap items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs border font-medium ${
+                        isShort
+                          ? "bg-red-50 text-red-900 border-red-300"
+                          : "bg-white text-slate-800 border-amber-200/80 shadow-2xs"
+                      }`}
+                    >
+                      <span className="font-bold">{bag.name}</span>
+                      <span className="text-slate-500">({toBnDigits(bag.capacityKg)} কেজি):</span>
+                      <span className="font-extrabold text-ink-900 bg-amber-100/80 px-1.5 py-0.2 rounded">
+                        {toBnDigits(totalNeeded)} টি
+                      </span>
+                      <span
+                        className={
+                          isShort
+                            ? "text-red-700 font-bold ml-1"
+                            : "text-emerald-700 text-[11px] ml-1 font-semibold"
+                        }
+                      >
+                        {isShort
+                          ? `(⚠️ ঘাটতি! মজুদ আছে মাত্র ${toBnDigits(bag.stock)} টি)`
+                          : `(মজুদ: ${toBnDigits(bag.stock)} টি ✓)`}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </div>
+      )}
     </fieldset>
   );
 }
@@ -184,7 +503,15 @@ export interface ProductionDefaults {
   bagProductId?: string | null;
   bagWeightKg?: number;
   inputs: { product: ProductOption; quantity: number; batchNo: string | null }[];
-  outputs: { product: ProductOption; quantity: number; costShare?: number; batchNo: string | null }[];
+  outputs: {
+    product: ProductOption;
+    quantity: number;
+    costShare?: number;
+    batchNo: string | null;
+    emptyBagProductId?: string | null;
+    bagSizeKg?: number | null;
+    bagCount?: number | null;
+  }[];
 }
 
 export function ProductionForm({
@@ -203,16 +530,26 @@ export function ProductionForm({
   const [reference, setReference] = useState(defaults?.reference ?? "");
   const [narration, setNarration] = useState(defaults?.narration ?? "");
   const [inputs, setInputs] = useState<Line[]>(() => (defaults?.inputs.length ? defaults.inputs.map((l) => ({ ...newLine(l.product, fmtNum(l.quantity)), batchNo: l.batchNo ?? "" })) : [newLine()]));
-  const [outputs, setOutputs] = useState<Line[]>(() => (defaults?.outputs.length ? defaults.outputs.map((l) => ({ ...newLine(l.product, fmtNum(l.quantity)), batchNo: l.batchNo ?? "" })) : [newLine()]));
+  const [outputs, setOutputs] = useState<Line[]>(() => {
+    if (defaults?.outputs.length) {
+      return defaults.outputs.map((l) => {
+        const def = defaultBagForProduct(l.product, packagingBags);
+        const bagId = l.emptyBagProductId ?? def.emptyBagProductId;
+        const bagSize = l.bagSizeKg ? String(l.bagSizeKg) : def.bagSizeKg;
+        const cap = Number(bagSize) || 0;
+        const count = l.bagCount ? String(l.bagCount) : (cap > 0 && l.quantity > 0 ? String(Math.round(l.quantity / cap)) : "");
+        return {
+          ...newLine(l.product, fmtNum(l.quantity), fmtNum(l.costShare ?? 0), bagId, bagSize, count),
+          batchNo: l.batchNo ?? "",
+        };
+      });
+    }
+    const def = defaultBagForProduct(null, packagingBags);
+    return [newLine(null, "", "", def.emptyBagProductId, def.bagSizeKg, "")];
+  });
   const recipe = recipes.find((r) => r.id === recipeId) ?? null;
   const [mainQty, setMainQty] = useState(() => (defaults?.inputs[0] ? fmtNum(defaults.inputs[0].quantity) : ""));
   const batches = recipe ? batchesFor(recipe.inputs[0]?.quantity ?? 0, n(mainQty)) : 1;
-
-  const [selectedBagProductId, setSelectedBagProductId] = useState<string>(() => {
-    if (defaults?.bagProductId !== undefined) return defaults.bagProductId ?? "NONE";
-    const bag50 = packagingBags.find((b) => b.capacityKg === 50) ?? packagingBags[0];
-    return bag50?.productId ?? "NONE";
-  });
 
   /** Fill every line from the recipe for the entered main-material quantity. */
   const applyRecipe = (r: RecipeData | null, qty: string) => {
@@ -220,50 +557,33 @@ export function ProductionForm({
     const b = batchesFor(r.inputs[0]?.quantity ?? 0, n(qty));
     if (!(b > 0)) return;
     setInputs(r.inputs.map((l) => newLine(l.product, fmtNum(l.quantity * b))));
-    setOutputs(r.outputs.map((l) => newLine(l.product, fmtNum(l.quantity * b))));
+    setOutputs(r.outputs.map((l) => {
+      const q = l.quantity * b;
+      const def = defaultBagForProduct(l.product, packagingBags);
+      const cap = Number(def.bagSizeKg) || 0;
+      const count = cap > 0 && q > 0 ? String(Math.round(q / cap)) : "";
+      return {
+        ...newLine(l.product, fmtNum(q), fmtNum(l.costShare), def.emptyBagProductId, def.bagSizeKg, count),
+      };
+    }));
   };
-
-  const totalRiceWeight = outputs.reduce((sum, l) => {
-    if (!l.product) return sum;
-    const name = l.product.name.toLowerCase();
-    const isRice =
-      (name.includes("চাল") || name.includes("rice")) &&
-      !name.includes("খুদ") &&
-      !name.includes("কুঁড়া") &&
-      !name.includes("তুষ");
-    return isRice ? sum + n(l.quantity) : sum;
-  }, 0);
-
-  const fallbackRiceWeight = outputs.reduce((sum, l, idx) => {
-    if (!l.product) return sum;
-    const name = l.product.name.toLowerCase();
-    const isByProduct =
-      name.includes("খুদ") ||
-      name.includes("কুঁড়া") ||
-      name.includes("তুষ") ||
-      name.includes("ভূসি") ||
-      name.includes("হাল") ||
-      name.includes("bran") ||
-      name.includes("husk") ||
-      name.includes("broken");
-    return (!isByProduct && idx === 0) ? sum + n(l.quantity) : sum;
-  }, 0);
-
-  const effectiveRiceWeight = totalRiceWeight > 0 ? totalRiceWeight : fallbackRiceWeight;
-
-  const selectedBag = packagingBags.find((b) => b.productId === selectedBagProductId);
-  const selectedBagCapacity = selectedBag ? selectedBag.capacityKg : 0;
-  const requiredBags = (selectedBag && selectedBagCapacity > 0 && effectiveRiceWeight > 0)
-    ? Math.ceil(effectiveRiceWeight / selectedBagCapacity)
-    : 0;
 
   const payload = JSON.stringify({
     date, reference: reference || null, narration: narration || null, recipeId: recipeId || null, batches: batches > 0 ? batches : 1,
     warehouseId: multiWarehouse ? warehouseId || null : null, extraCost: defaults?.extraCost ?? 0, costAccountId: defaults?.costAccountId || null,
-    bagProductId: selectedBagProductId === "NONE" ? "NONE" : (selectedBagProductId || null),
-    bagWeightKg: selectedBagCapacity,
+    bagProductId: null,
+    bagWeightKg: 0,
     inputs: inputs.filter((l) => l.product || l.quantity).map((l) => ({ productId: l.product?.id ?? "", quantity: l.quantity, batchNo: l.batchNo || null })),
-    outputs: outputs.filter((l) => l.product || l.quantity).map((l) => ({ productId: l.product?.id ?? "", quantity: l.quantity, costShare: 0, batchNo: l.batchNo || null, expiryDate: null })),
+    outputs: outputs.filter((l) => l.product || l.quantity).map((l) => ({
+      productId: l.product?.id ?? "",
+      quantity: l.quantity,
+      costShare: 0,
+      batchNo: l.batchNo || null,
+      expiryDate: null,
+      emptyBagProductId: l.emptyBagProductId === "NONE" ? null : (l.emptyBagProductId || null),
+      bagSizeKg: l.bagSizeKg ? Number(l.bagSizeKg) : null,
+      bagCount: l.bagCount ? Math.round(Number(l.bagCount)) : 0,
+    })),
   });
 
   return (
@@ -293,67 +613,18 @@ export function ProductionForm({
 
       <LineTable title="ব্যবহৃত কাঁচামাল (স্টক থেকে কমবে)" lines={inputs} setLines={setInputs} units={units} outputs={false} currency={currency} showStock batches prefix="inputs" />
 
-      {/* চালের খালি বস্তা নির্বাচন (Packaging Bag Selection) */}
-      <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 shadow-2xs">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <label htmlFor="bagProductId" className="text-sm font-bold text-amber-950 flex items-center gap-1.5">
-              <span>🎒</span>
-              <span>চালের খালি বস্তা নির্বাচন (Packaging Bag)</span>
-            </label>
-            <p className="text-xs text-amber-900/80 mt-0.5">
-              উৎপাদিত চালের প্যাকিংয়ের সাইজ নির্বাচন করুন — নির্বাচিত বস্তার স্টক থেকে প্রয়োজনীয় সংখ্যা স্বয়ংক্রিয়ভাবে সমন্বয় হবে
-            </p>
-          </div>
-
-          <div className="w-full sm:w-80">
-            <select
-              id="bagProductId"
-              className="input font-bold bg-white text-slate-800"
-              value={selectedBagProductId}
-              onChange={(e) => setSelectedBagProductId(e.target.value)}
-            >
-              <option value="NONE">🚫 বস্তা ছাড়া (খোলা চাল / Loose Rice)</option>
-              {packagingBags.map((bag) => (
-                <option key={bag.productId} value={bag.productId}>
-                  {bag.name} ({toBnDigits(bag.capacityKg)} কেজি) — মজুদ: {toBnDigits(bag.stock)} {bag.unit}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Live Calculation Bar */}
-        <div className="mt-3 border-t border-amber-200 pt-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
-          {selectedBagProductId === "NONE" ? (
-            <span className="text-slate-600 font-medium">
-              ℹ️ <strong>বস্তা ছাড়া</strong> নির্বাচন করা হয়েছে — খালি বস্তার ইনভেন্টরি স্পর্শ করা হবে না (কোনো বস্তা স্টক থেকে কাটা হবে না)।
-            </span>
-          ) : selectedBag ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-semibold text-slate-700">
-                মোট চাল: <strong className="text-slate-900">{formatQty(effectiveRiceWeight)} কেজি</strong> ÷ {toBnDigits(selectedBag.capacityKg)} কেজি =
-              </span>
-              <span className="rounded-md bg-amber-200 border border-amber-300 px-2 py-0.5 font-bold text-amber-950 text-xs">
-                প্রয়োজনীয় বস্তা: {toBnDigits(requiredBags)} {selectedBag.unit}
-              </span>
-              <span className="text-slate-600">
-                (বর্তমান মজুদ: <strong className={selectedBag.stock >= requiredBags ? "text-emerald-700 font-bold" : "text-red-700 font-bold"}>
-                  {toBnDigits(selectedBag.stock)} {selectedBag.unit}
-                </strong>)
-              </span>
-            </div>
-          ) : null}
-
-          {selectedBag && requiredBags > selectedBag.stock && (
-            <span className="text-red-700 font-bold bg-red-100 border border-red-300 rounded px-2 py-0.5">
-              ⚠️ খালি বস্তার ঘাটতি রয়েছে! (প্রয়োজন {toBnDigits(requiredBags)} টি, মজুদ আছে {toBnDigits(selectedBag.stock)} টি)
-            </span>
-          )}
-        </div>
-      </div>
-
-      <LineTable title="উৎপাদিত পণ্য ও বাই-প্রোডাক্ট (স্টকে যোগ হবে)" hint="প্রকৃত ওজন/পরিমাণ লিখুন — রেসিপির হিসাব থেকে কম-বেশি হতে পারে।" lines={outputs} setLines={setOutputs} units={units} outputs currency={currency} batches prefix="outputs" />
+      <LineTable
+        title="উৎপাদিত পণ্য ও বাই-প্রোডাক্ট (স্টকে যোগ হবে)"
+        hint="প্রতি পণ্যের জন্য খালি বস্তা ও বস্তার সাইজ নির্বাচন করুন — বস্তা সংখ্যা দিলে মোট কেজি অথবা মোট কেজি দিলে বস্তা সংখ্যা স্বয়ংক্রিয়ভাবে হিসাব হবে।"
+        lines={outputs}
+        setLines={setOutputs}
+        units={units}
+        outputs
+        currency={currency}
+        batches
+        prefix="outputs"
+        packagingBags={packagingBags}
+      />
 
       <Analysis inputs={inputs} outputs={outputs} unitOf={unitOf} />
 

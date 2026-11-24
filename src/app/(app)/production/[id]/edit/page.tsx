@@ -49,10 +49,23 @@ export default async function EditProductionPage({ params }: { params: Promise<{
             narration: v.narration ?? "",
             extraCost: num(v.productionRun?.extraCost ?? 0),
             costAccountId: v.adjustmentAccountId ?? "",
-            bagProductId: usedBagItem ? usedBagItem.productId : "NONE",
-            bagWeightKg: matchedBag ? matchedBag.capacityKg : 0,
+            bagProductId: null,
+            bagWeightKg: 0,
             inputs: rawInputs.map((i) => ({ product: toProductOption(i.product), quantity: num(i.baseQuantity), batchNo: i.batchNo })),
-            outputs: v.items.filter((i) => i.direction === 1).map((i) => ({ product: toProductOption(i.product), quantity: num(i.baseQuantity), costShare: num(i.costShare ?? 0), batchNo: i.batchNo })),
+            outputs: v.items.filter((i) => i.direction === 1).map((i) => {
+              const emptyBagProdId = (i as any).emptyBagProductId ?? (usedBagItem ? usedBagItem.productId : "NONE");
+              const bagSize = (i as any).bagSizeKg ? num((i as any).bagSizeKg) : (matchedBag ? matchedBag.capacityKg : null);
+              const bCount = (i as any).bagCount ? Number((i as any).bagCount) : ((i as any).totalBags ? Number((i as any).totalBags) : null);
+              return {
+                product: toProductOption(i.product),
+                quantity: num(i.baseQuantity),
+                costShare: num(i.costShare ?? 0),
+                batchNo: i.batchNo,
+                emptyBagProductId: emptyBagProdId,
+                bagSizeKg: bagSize,
+                bagCount: bCount,
+              };
+            }),
           }}
         />
       </section>

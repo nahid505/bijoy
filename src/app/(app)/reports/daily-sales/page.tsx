@@ -8,7 +8,7 @@ import { PrintButton } from "@/components/forms";
 import { FilterField, PageHeader, PrintHeader } from "@/components/ui";
 import { requirePermission } from "@/server/auth";
 import { readParams, type SearchParams } from "@/server/params";
-import { dailySales, quantityText } from "@/server/reports/daily-sales";
+import { dailySales, formatSalesQuantity, quantityText } from "@/server/reports/daily-sales";
 import { voucherScopeWhere } from "@/server/party-scope";
 
 export const metadata: Metadata = { title: "ডেইলি বিক্রয় রিপোর্ট" };
@@ -61,7 +61,10 @@ export default async function DailySalesPage({ searchParams }: { searchParams: S
           <PrintHeader business={ctx.business} title="ডেইলি বিক্রয় রিপোর্ট" subtitle={formatReportDateBangla(d.date)} />
           <div className="no-print flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="text-base font-semibold text-ink-900">{formatReportDateBangla(d.date)}</h2>
-            <p className="text-xs text-slate-500">চালান: {toBnDigits(d.invoices)} টি</p>
+            <p className="text-xs text-slate-600">
+              চালান: {toBnDigits(d.invoices)} টি
+              {d.totalBags > 0 && <span> · মোট বস্তা: {toBnDigits(d.totalBags)} টি</span>}
+            </p>
           </div>
 
           <div className="overflow-x-auto print:overflow-visible">
@@ -69,51 +72,217 @@ export default async function DailySalesPage({ searchParams }: { searchParams: S
               <thead className="bg-slate-100 print:bg-slate-100">
                 <tr>
                   <th scope="col" className={`${th} w-12 text-center`}>নম্বর</th>
-                  <th scope="col" className={`${th} text-left`}>পার্টির নাম</th>
-                  <th scope="col" className={`${th} text-left`}>পণ্যের নাম</th>
-                  <th scope="col" className={`${th} text-right`}>পরিমাণ</th>
-                  <th scope="col" className={`${th} text-right`}>দর</th>
-                  <th scope="col" className={`${th} text-right`}>টাকা</th>
-                  <th scope="col" className={`${th} text-left`}>নোট</th>
+                  <th scope="col" className={`${th} text-left min-w-[12rem]`}>পার্টির নাম</th>
+                  <th scope="col" className={`${th} text-left min-w-[11rem]`}>পণ্যের নাম</th>
+                  <th scope="col" className={`${th} text-right min-w-[7.5rem]`}>পরিমাণ</th>
+                  <th scope="col" className={`${th} text-right w-20`}>দর</th>
+                  <th scope="col" className={`${th} text-right w-24`}>টাকা</th>
+                  <th scope="col" className={`${th} text-right w-28`}>মোট</th>
                 </tr>
               </thead>
-              <tbody>
-                {d.lines.length === 0 && <tr><td colSpan={7} className={`${td} py-3 text-center text-xs text-slate-500`}>এই দিনে কোনো বিক্রয় নেই</td></tr>}
-                {d.lines.map((l, i) => (
-                  <tr key={`${l.voucherId}-${i}`} className="align-top">
-                    <td className={`${td} text-center tabular-nums`}>{toBnDigits(i + 1)}</td>
-                    <td className={td}>
-                      <span className="block font-medium">{l.party}</span>
-                      <Link prefetch={false} href={`/vouchers/v/${l.voucherId}`} className="print:hidden block text-xs text-brand-700 hover:underline">{l.voucherNo}</Link>
+              {d.invoiceGroups.length === 0 ? (
+                <tbody>
+                  <tr>
+                    <td colSpan={7} className={`${td} py-4 text-center text-xs text-slate-500`}>
+                      এই দিনে কোনো বিক্রয় নেই
                     </td>
-                    <td className={td}>{l.product}</td>
-                    <td className={num}>{formatQty(l.quantity)} {l.unit}</td>
-                    <td className={num}>{money(l.rate)}</td>
-                    <td className={num}>{money(l.amount)}{l.discount > 0 && <span className="block text-[10px] text-slate-500">ছাড় {money(l.discount)}</span>}</td>
-                    <td className={`${td} text-xs`}>{l.note || "—"}</td>
                   </tr>
-                ))}
-              </tbody>
+                </tbody>
+              ) : (
+                d.invoiceGroups.map((group, groupIdx) => {
+                  const rowCount = Math.max(group.items.length, 1);
+                  return (
+                    <tbody
+                      key={group.voucherId}
+                      className="border-b-2 border-slate-700 print:border-b-2 print:border-black"
+                    >
+                      {group.items.length === 0 ? (
+                        <tr className="align-middle">
+                          <td className={`${td} text-center tabular-nums align-middle border-b-2 border-slate-700 print:border-b-2 print:border-black font-bold`}>
+                            {toBnDigits(groupIdx + 1)}
+                          </td>
+                          <td className={`${td} align-middle border-b-2 border-slate-700 print:border-b-2 print:border-black`}>
+                            <span className="block font-bold text-ink-900 print:text-black">{group.party}</span>
+                            {group.partyAddress && (
+                              <span className="block text-xs text-slate-600 print:text-black">{group.partyAddress}</span>
+                            )}
+                            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
+                              <Link
+                                prefetch={false}
+                                href={`/vouchers/v/${group.voucherId}`}
+                                className="print:hidden font-medium text-brand-700 hover:underline"
+                              >
+                                {group.voucherNo}
+                              </Link>
+                              <span className="hidden print:inline font-mono text-[11px] text-slate-600 print:text-black">
+                                {group.voucherNo}
+                              </span>
+                            </div>
+                          </td>
+                          <td colSpan={4} className={`${td} text-center text-xs text-slate-500 border-b-2 border-slate-700 print:border-b-2 print:border-black`}>
+                            কোনো পণ্যের বিবরণ নেই
+                          </td>
+                          <td className={`${num} align-middle font-bold text-base border-b-2 border-slate-700 print:border-b-2 print:border-black`}>
+                            {money(group.totalAmount)}
+                          </td>
+                        </tr>
+                      ) : (
+                        group.items.map((item, itemIdx) => {
+                          const isFirst = itemIdx === 0;
+                          const isLast = itemIdx === group.items.length - 1;
+                          const bottomBorderClass = isLast
+                            ? "border-b-2 border-slate-700 print:border-b-2 print:border-black"
+                            : "";
+
+                          return (
+                            <tr key={`${group.voucherId}-${itemIdx}`} className="align-top">
+                              {isFirst && (
+                                <td
+                                  rowSpan={rowCount}
+                                  className={`${td} w-12 text-center tabular-nums align-middle border-b-2 border-slate-700 print:border-b-2 print:border-black font-bold`}
+                                >
+                                  {toBnDigits(groupIdx + 1)}
+                                </td>
+                              )}
+                              {isFirst && (
+                                <td
+                                  rowSpan={rowCount}
+                                  className={`${td} align-middle border-b-2 border-slate-700 print:border-b-2 print:border-black`}
+                                >
+                                  <span className="block font-bold text-ink-900 print:text-black">{group.party}</span>
+                                  {group.partyAddress && (
+                                    <span className="block text-xs text-slate-600 print:text-black">{group.partyAddress}</span>
+                                  )}
+                                  <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
+                                    <Link
+                                      prefetch={false}
+                                      href={`/vouchers/v/${group.voucherId}`}
+                                      className="print:hidden font-medium text-brand-700 hover:underline"
+                                    >
+                                      {group.voucherNo}
+                                    </Link>
+                                    <span className="hidden print:inline font-mono text-[11px] text-slate-600 print:text-black">
+                                      {group.voucherNo}
+                                    </span>
+                                    {group.reference && (
+                                      <span className="text-[11px] text-slate-500 print:text-black">
+                                        ({group.reference})
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                              )}
+                              <td className={`${td} ${bottomBorderClass}`}>
+                                <span className="font-semibold text-ink-900 print:text-black">{item.product}</span>
+                                {item.note && (
+                                  <span className="block text-[11px] font-normal text-slate-500 print:text-black">
+                                    {item.note}
+                                  </span>
+                                )}
+                              </td>
+                              <td className={`${num} ${bottomBorderClass}`}>
+                                {formatSalesQuantity(item)}
+                              </td>
+                              <td className={`${num} ${bottomBorderClass}`}>
+                                {money(item.rate)}
+                              </td>
+                              <td className={`${num} ${bottomBorderClass}`}>
+                                <span>{money(item.amount)}</span>
+                                {item.discount > 0 && (
+                                  <span className="block text-[10px] font-normal text-slate-500 print:text-black">
+                                    ছাড় {money(item.discount)}
+                                  </span>
+                                )}
+                              </td>
+                              {isFirst && (
+                                <td
+                                  rowSpan={rowCount}
+                                  className={`${num} align-middle font-bold text-base border-b-2 border-slate-700 print:border-b-2 print:border-black`}
+                                >
+                                  <span>{money(group.totalAmount)}</span>
+                                  {group.discount > 0 && (
+                                    <span className="block text-[10px] font-normal text-slate-500 print:text-black">
+                                      ছাড় {money(group.discount)}
+                                    </span>
+                                  )}
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  );
+                })
+              )}
               <tfoot>
-                <tr className="font-bold total-row" id="sales-totals">
+                <tr className="font-bold total-row bg-slate-50 print:bg-slate-50" id="sales-totals">
                   <td colSpan={3} className={`${td} text-right`}>মোট পরিমাণ ও সর্বমোট বিক্রয় টাকা</td>
-                  <td className={`${td} text-right tabular-nums`}>{quantityText(d.quantityByUnit)}</td>
+                  <td className={`${td} text-right tabular-nums`}>
+                    {d.totalBags > 0 ? (
+                      <div>
+                        <span>{toBnDigits(d.totalBags)} বস্তা</span>
+                        <span className="block text-[11px] font-normal text-slate-500 print:text-black">
+                          ({quantityText(d.quantityByUnit)})
+                        </span>
+                      </div>
+                    ) : (
+                      quantityText(d.quantityByUnit)
+                    )}
+                  </td>
                   <td className={td} />
                   <td className={num}>{money(d.total)}</td>
-                  <td className={td} />
+                  <td className={`${num} font-bold text-base`}>{money(d.net)}</td>
                 </tr>
-                {d.discount > 0 && <tr><td colSpan={5} className={`${td} text-right`}>(−) ভাউচারের ছাড়</td><td className={num}>{money(d.discount)}</td><td className={td} /></tr>}
-                {d.vat > 0 && <tr><td colSpan={5} className={`${td} text-right`}>(+) ভ্যাট</td><td className={num}>{money(d.vat)}</td><td className={td} /></tr>}
-                {(d.discount > 0 || d.vat > 0) && <tr className="font-semibold total-row"><td colSpan={5} className={`${td} text-right`}>নিট বিক্রয়</td><td className={num}>{money(d.net)}</td><td className={td} /></tr>}
+                {d.discount > 0 && (
+                  <tr>
+                    <td colSpan={6} className={`${td} text-right`}>(−) ভাউচারের মোট ছাড়</td>
+                    <td className={num}>{money(d.discount)}</td>
+                  </tr>
+                )}
+                {d.vat > 0 && (
+                  <tr>
+                    <td colSpan={6} className={`${td} text-right`}>(+) মোট ভ্যাট</td>
+                    <td className={num}>{money(d.vat)}</td>
+                  </tr>
+                )}
+                {(d.discount > 0 || d.vat > 0) && (
+                  <tr className="font-semibold total-row bg-slate-50 print:bg-slate-50">
+                    <td colSpan={6} className={`${td} text-right`}>নিট বিক্রয়</td>
+                    <td className={`${num} font-bold text-base`}>{money(d.net)}</td>
+                  </tr>
+                )}
               </tfoot>
             </table>
           </div>
 
-          <div className="report-summary grid gap-2 rounded-lg border border-black bg-ink-50 p-3 text-sm sm:grid-cols-3 print:break-inside-avoid print:grid-cols-3 print:bg-white print:border-black print:text-black">
-            <p>সর্বমোট বিক্রয়: <b id="net-total" className="tabular-nums font-bold text-black">{money(d.net)}</b></p>
-            <p>নগদ আদায়: <b className="tabular-nums font-bold text-emerald-800 print:text-black">{money(d.collected)}</b></p>
-            <p>বাকি: <b className="tabular-nums font-bold text-red-800 print:text-black">{money(d.due)}</b></p>
-            <p className="sm:col-span-3 print:col-span-3"><b>কথায়:</b> <AmountInWords amount={d.net} /></p>
+          <div className="report-summary grid gap-3 rounded-lg border border-black bg-ink-50 p-3.5 text-sm sm:grid-cols-4 print:break-inside-avoid print:grid-cols-4 print:bg-white print:border-black print:text-black">
+            <div>
+              <span className="block text-xs text-slate-600 print:text-black">মোট চালান ও বস্তা</span>
+              <p className="mt-0.5 text-base font-bold text-black">
+                {toBnDigits(d.invoices)} টি চালান
+                {d.totalBags > 0 && (
+                  <span className="block text-xs font-semibold text-slate-700 print:text-black">
+                    মোট {toBnDigits(d.totalBags)} বস্তা
+                  </span>
+                )}
+              </p>
+            </div>
+            <div>
+              <span className="block text-xs text-slate-600 print:text-black">সর্বমোট বিক্রয়</span>
+              <p id="net-total" className="mt-0.5 text-base font-bold text-black tabular-nums">{money(d.net)}</p>
+            </div>
+            <div>
+              <span className="block text-xs text-slate-600 print:text-black">নগদ আদায়</span>
+              <p className="mt-0.5 text-base font-bold text-emerald-800 print:text-black tabular-nums">{money(d.collected)}</p>
+            </div>
+            <div>
+              <span className="block text-xs text-slate-600 print:text-black">বাকি</span>
+              <p className="mt-0.5 text-base font-bold text-red-800 print:text-black tabular-nums">{money(d.due)}</p>
+            </div>
+            <p className="sm:col-span-4 print:col-span-4 border-t border-slate-300 print:border-black pt-2 text-xs">
+              <b className="font-bold">কথায়:</b> <AmountInWords amount={d.net} />
+            </p>
           </div>
 
           <div className="print-only signature-section pt-10">

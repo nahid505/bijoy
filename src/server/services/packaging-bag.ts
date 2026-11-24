@@ -41,9 +41,6 @@ export async function ensurePackagingBagUnit(tx: Tx, businessId: string) {
  */
 export async function ensureDefaultPackagingBags(businessId: string) {
   return prisma.$transaction(async (tx) => {
-    const existing = await tx.packagingBagItem.count({ where: { businessId } });
-    if (existing > 0) return;
-
     const cat = await ensurePackagingBagCategory(tx, businessId);
     const unit = await ensurePackagingBagUnit(tx, businessId);
 
@@ -66,6 +63,15 @@ export async function ensureDefaultPackagingBags(businessId: string) {
         brandName: "২৫ কেজি স্ট্যান্ডার্ড",
         purchasePrice: 30,
       },
+      {
+        name: "৫৫ কেজি ব্রানের বস্তা",
+        code: "BAG-55KG",
+        bagType: PackagingBagType.OTHER,
+        capacityKg: 55,
+        material: "চটের / প্লাস্টিক ব্যাগ",
+        brandName: "৫৫ কেজি ব্রান",
+        purchasePrice: 40,
+      },
     ];
 
     for (const d of defaults) {
@@ -86,16 +92,21 @@ export async function ensureDefaultPackagingBags(businessId: string) {
           },
         });
       }
-      await tx.packagingBagItem.create({
-        data: {
-          businessId,
-          productId: prod.id,
-          bagType: d.bagType,
-          capacityKg: d.capacityKg,
-          material: d.material,
-          brandName: d.brandName,
-        },
+      const existingBagItem = await tx.packagingBagItem.findFirst({
+        where: { businessId, productId: prod.id },
       });
+      if (!existingBagItem) {
+        await tx.packagingBagItem.create({
+          data: {
+            businessId,
+            productId: prod.id,
+            bagType: d.bagType,
+            capacityKg: d.capacityKg,
+            material: d.material,
+            brandName: d.brandName,
+          },
+        });
+      }
     }
   });
 }

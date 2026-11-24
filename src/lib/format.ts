@@ -6,6 +6,26 @@ export function toBnDigits(input: string | number): string {
   return String(input).replace(/[0-9]/g, (d) => BN_DIGITS[Number(d)]);
 }
 
+export const toBn = toBnDigits;
+
+export function formatBnCurrency(amount: number): string {
+  const formatted = Math.round(amount).toLocaleString("bn-BD");
+  return `৳ ${formatted}`;
+}
+
+export function getBengaliDateLabel(d: Date | string): string {
+  try {
+    const dt = typeof d === "string" ? new Date(d) : d;
+    return new Intl.DateTimeFormat("bn-BD", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }).format(dt);
+  } catch {
+    return String(d).split("T")[0];
+  }
+}
+
 const numberFormatter = new Intl.NumberFormat("en-IN", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,

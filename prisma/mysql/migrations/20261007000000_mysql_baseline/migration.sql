@@ -355,6 +355,9 @@ CREATE TABLE `VoucherItem` (
     `juteBagQty` INTEGER NOT NULL DEFAULT 0,
     `plasticBagQty` INTEGER NOT NULL DEFAULT 0,
     `totalBags` INTEGER NOT NULL DEFAULT 0,
+    `emptyBagProductId` TEXT NULL,
+    `bagSizeKg` DECIMAL(14, 3) NULL,
+    `bagCount` INTEGER NOT NULL DEFAULT 0,
     `challanRate` DECIMAL(14, 2) NULL,
     `rate` DECIMAL(14, 2) NOT NULL,
     `discount` DECIMAL(14, 2) NOT NULL DEFAULT 0,
@@ -1359,6 +1362,9 @@ CREATE TABLE `RecipeLine` (
     `kind` ENUM('INPUT', 'OUTPUT') NOT NULL,
     `quantity` DECIMAL(14, 3) NOT NULL,
     `costShare` DECIMAL(7, 4) NOT NULL DEFAULT 0,
+    `emptyBagProductId` TEXT NULL,
+    `bagSizeKg` DECIMAL(14, 3) NULL,
+    `bagCount` INTEGER NOT NULL DEFAULT 0,
     `lineNo` INTEGER NOT NULL DEFAULT 0,
 
     INDEX `RecipeLine_recipeId_idx`(`recipeId`),
@@ -1610,6 +1616,8 @@ CREATE TABLE `RiceMillSettings` (
     `branRatePerKg` DOUBLE NOT NULL DEFAULT 22.0,
     `huskRatePerKg` DOUBLE NOT NULL DEFAULT 8.0,
     `invoiceFooterNote` VARCHAR(191) NOT NULL DEFAULT 'বিঃদ্রঃ ৭৫ কেজি = ১ স্ট্যান্ডার্ড বস্তা হিসেবে বিল গণনা করা হয়েছে।',
+    `accountantUserId` TEXT NULL,
+    `partnerUserId` TEXT NULL,
     `updatedAt` DATETIME(3) NOT NULL,
 
     PRIMARY KEY (`id`)
@@ -1706,6 +1714,290 @@ CREATE TABLE `MillVoucher` (
     INDEX `MillVoucher_partyId_idx`(`partyId`),
     INDEX `MillVoucher_date_idx`(`date`),
     INDEX `MillVoucher_type_idx`(`type`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `RentedMillSettings` (
+    `id` INTEGER NOT NULL DEFAULT 1,
+    `millName` VARCHAR(191) NOT NULL DEFAULT 'শুভংকর অটো রাইস মিল',
+    `millAddress` VARCHAR(191) NOT NULL DEFAULT 'দিনাজপুর',
+    `millPhone` VARCHAR(191) NOT NULL DEFAULT '01763921505',
+    `monthlyRent` DOUBLE NOT NULL DEFAULT 280000,
+    `partner1Name` VARCHAR(191) NOT NULL DEFAULT 'নাহিদ হাসান',
+    `partner1Share` DOUBLE NOT NULL DEFAULT 50.0,
+    `partner2Name` VARCHAR(191) NOT NULL DEFAULT 'পার্টনার',
+    `partner2Share` DOUBLE NOT NULL DEFAULT 50.0,
+    `defaultMillingRate` DOUBLE NOT NULL DEFAULT 100,
+    `dryerNames` VARCHAR(191) NOT NULL DEFAULT '["ডায়ার-১","ডায়ার-২","ডায়ার-৩","ডায়ার-৪"]',
+    `expenseCategories` VARCHAR(191) NOT NULL DEFAULT '["মাসিক মিল ভাড়া","বিদ্যুৎ বিল","লেবার খরচ","কর্মচারীর বেতন","যন্ত্রাংশ ক্রয়","অন্যান্য খরচ"]',
+    `accountantUserId` TEXT NULL,
+    `partnerUserId` TEXT NULL,
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `RentedMillParty` (
+    `id` VARCHAR(191) NOT NULL,
+    `name` VARCHAR(191) NOT NULL,
+    `phone` TEXT NULL,
+    `address` TEXT NULL,
+    `isSelfParty` BOOLEAN NOT NULL DEFAULT false,
+    `openingBalance` DOUBLE NOT NULL DEFAULT 0,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    INDEX `RentedMillParty_name_idx`(`name`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `RentedMillBill` (
+    `id` VARCHAR(191) NOT NULL,
+    `billNo` VARCHAR(191) NOT NULL,
+    `partyId` VARCHAR(191) NOT NULL,
+    `date` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `paddyQuantity` DOUBLE NOT NULL,
+    `unit` VARCHAR(191) NOT NULL DEFAULT 'বস্তা',
+    `millingRate` DOUBLE NOT NULL,
+    `totalAmount` DOUBLE NOT NULL,
+    `paidAmount` DOUBLE NOT NULL DEFAULT 0,
+    `dueAmount` DOUBLE NOT NULL DEFAULT 0,
+    `status` VARCHAR(191) NOT NULL DEFAULT 'APPROVED',
+    `notes` TEXT NULL,
+    `settlementId` VARCHAR(191) NULL,
+    `isSettled` BOOLEAN NOT NULL DEFAULT false,
+    `createdByName` TEXT NOT NULL,
+    `createdByUserId` TEXT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `RentedMillBill_billNo_key`(`billNo`),
+    INDEX `RentedMillBill_partyId_idx`(`partyId`),
+    INDEX `RentedMillBill_date_idx`(`date`),
+    INDEX `RentedMillBill_status_idx`(`status`),
+    INDEX `RentedMillBill_isSettled_idx`(`isSettled`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `RentedMillByproductSale` (
+    `id` VARCHAR(191) NOT NULL,
+    `invoiceNo` VARCHAR(191) NOT NULL,
+    `customerName` TEXT NOT NULL,
+    `customerPhone` TEXT NULL,
+    `productType` VARCHAR(191) NOT NULL,
+    `date` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `quantity` DOUBLE NOT NULL,
+    `unit` VARCHAR(191) NOT NULL DEFAULT 'কেজি',
+    `rate` DOUBLE NOT NULL,
+    `totalAmount` DOUBLE NOT NULL,
+    `paidAmount` DOUBLE NOT NULL DEFAULT 0,
+    `dueAmount` DOUBLE NOT NULL DEFAULT 0,
+    `status` VARCHAR(191) NOT NULL DEFAULT 'APPROVED',
+    `notes` TEXT NULL,
+    `settlementId` VARCHAR(191) NULL,
+    `isSettled` BOOLEAN NOT NULL DEFAULT false,
+    `createdByName` TEXT NOT NULL,
+    `createdByUserId` TEXT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `RentedMillByproductSale_invoiceNo_key`(`invoiceNo`),
+    INDEX `RentedMillByproductSale_productType_idx`(`productType`),
+    INDEX `RentedMillByproductSale_date_idx`(`date`),
+    INDEX `RentedMillByproductSale_status_idx`(`status`),
+    INDEX `RentedMillByproductSale_isSettled_idx`(`isSettled`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `RentedMillExpense` (
+    `id` VARCHAR(191) NOT NULL,
+    `expenseNo` VARCHAR(191) NOT NULL,
+    `date` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `category` VARCHAR(191) NOT NULL,
+    `description` TEXT NULL,
+    `amount` DOUBLE NOT NULL,
+    `paidTo` TEXT NULL,
+    `status` VARCHAR(191) NOT NULL DEFAULT 'APPROVED',
+    `settlementId` VARCHAR(191) NULL,
+    `isSettled` BOOLEAN NOT NULL DEFAULT false,
+    `createdByName` TEXT NOT NULL,
+    `createdByUserId` TEXT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `RentedMillExpense_expenseNo_key`(`expenseNo`),
+    INDEX `RentedMillExpense_category_idx`(`category`),
+    INDEX `RentedMillExpense_date_idx`(`date`),
+    INDEX `RentedMillExpense_status_idx`(`status`),
+    INDEX `RentedMillExpense_isSettled_idx`(`isSettled`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `RentedMillPayment` (
+    `id` VARCHAR(191) NOT NULL,
+    `receiptNo` VARCHAR(191) NOT NULL,
+    `partyId` VARCHAR(191) NOT NULL,
+    `date` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `amount` DOUBLE NOT NULL,
+    `paymentMethod` VARCHAR(191) NOT NULL DEFAULT 'নগদ',
+    `status` VARCHAR(191) NOT NULL DEFAULT 'APPROVED',
+    `notes` TEXT NULL,
+    `createdByName` TEXT NOT NULL,
+    `createdByUserId` TEXT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `RentedMillPayment_receiptNo_key`(`receiptNo`),
+    INDEX `RentedMillPayment_partyId_idx`(`partyId`),
+    INDEX `RentedMillPayment_date_idx`(`date`),
+    INDEX `RentedMillPayment_status_idx`(`status`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `RentedMillPaddyReceipt` (
+    `id` VARCHAR(191) NOT NULL,
+    `receiptNo` VARCHAR(191) NOT NULL,
+    `partyId` VARCHAR(191) NOT NULL,
+    `date` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `receiptTime` TEXT NULL,
+    `paddyName` TEXT NOT NULL,
+    `juteBags` INTEGER NOT NULL DEFAULT 0,
+    `plasticBags` INTEGER NOT NULL DEFAULT 0,
+    `bagsCount` INTEGER NOT NULL,
+    `sklWeight` DOUBLE NOT NULL,
+    `dhaltaKg` DOUBLE NOT NULL DEFAULT 0,
+    `netSklKg` DOUBLE NOT NULL DEFAULT 0,
+    `standardBags75kg` DOUBLE NOT NULL,
+    `ratePerStandardBag` DOUBLE NOT NULL DEFAULT 100,
+    `totalBillAmount` DOUBLE NOT NULL DEFAULT 0,
+    `status` VARCHAR(191) NOT NULL DEFAULT 'APPROVED',
+    `notes` TEXT NULL,
+    `settlementId` VARCHAR(191) NULL,
+    `isSettled` BOOLEAN NOT NULL DEFAULT false,
+    `createdByName` TEXT NOT NULL,
+    `createdByUserId` TEXT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `RentedMillPaddyReceipt_receiptNo_key`(`receiptNo`),
+    INDEX `RentedMillPaddyReceipt_partyId_idx`(`partyId`),
+    INDEX `RentedMillPaddyReceipt_date_idx`(`date`),
+    INDEX `RentedMillPaddyReceipt_status_idx`(`status`),
+    INDEX `RentedMillPaddyReceipt_isSettled_idx`(`isSettled`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `RentedMillDryerMilling` (
+    `id` VARCHAR(191) NOT NULL,
+    `entryNo` VARCHAR(191) NOT NULL,
+    `partyId` VARCHAR(191) NOT NULL,
+    `date` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `dryerNo` TEXT NOT NULL,
+    `usedBags` DOUBLE NOT NULL,
+    `milledKg` DOUBLE NOT NULL,
+    `status` VARCHAR(191) NOT NULL DEFAULT 'APPROVED',
+    `notes` TEXT NULL,
+    `createdByName` TEXT NOT NULL,
+    `createdByUserId` TEXT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `RentedMillDryerMilling_entryNo_key`(`entryNo`),
+    INDEX `RentedMillDryerMilling_partyId_idx`(`partyId`),
+    INDEX `RentedMillDryerMilling_date_idx`(`date`),
+    INDEX `RentedMillDryerMilling_status_idx`(`status`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `RentedMillSettlement` (
+    `id` VARCHAR(191) NOT NULL,
+    `settlementNo` VARCHAR(191) NOT NULL,
+    `fromDate` DATETIME(3) NOT NULL,
+    `toDate` DATETIME(3) NOT NULL,
+    `totalMillingIncome` DOUBLE NOT NULL DEFAULT 0,
+    `totalByproductIncome` DOUBLE NOT NULL DEFAULT 0,
+    `totalIncome` DOUBLE NOT NULL DEFAULT 0,
+    `totalRentExpense` DOUBLE NOT NULL DEFAULT 0,
+    `totalOtherExpense` DOUBLE NOT NULL DEFAULT 0,
+    `totalExpense` DOUBLE NOT NULL DEFAULT 0,
+    `netProfit` DOUBLE NOT NULL DEFAULT 0,
+    `partner1Name` VARCHAR(191) NOT NULL DEFAULT 'নাহিদ হাসান',
+    `partner1Share` DOUBLE NOT NULL DEFAULT 50.0,
+    `partner1Amount` DOUBLE NOT NULL DEFAULT 0,
+    `partner2Name` VARCHAR(191) NOT NULL DEFAULT 'পার্টনার',
+    `partner2Share` DOUBLE NOT NULL DEFAULT 50.0,
+    `partner2Amount` DOUBLE NOT NULL DEFAULT 0,
+    `status` VARCHAR(191) NOT NULL DEFAULT 'SETTLED',
+    `notes` TEXT NULL,
+    `settledByName` TEXT NOT NULL,
+    `settledByUserId` TEXT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `RentedMillSettlement_settlementNo_key`(`settlementNo`),
+    INDEX `RentedMillSettlement_fromDate_toDate_idx`(`fromDate`, `toDate`),
+    INDEX `RentedMillSettlement_createdAt_idx`(`createdAt`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `RentedMillBankAccount` (
+    `id` VARCHAR(191) NOT NULL,
+    `bankName` VARCHAR(191) NOT NULL,
+    `accountName` TEXT NULL,
+    `accountNumber` VARCHAR(191) NOT NULL,
+    `branchName` TEXT NULL,
+    `openingBalance` DOUBLE NOT NULL DEFAULT 0,
+    `currentBalance` DOUBLE NOT NULL DEFAULT 0,
+    `isActive` BOOLEAN NOT NULL DEFAULT true,
+    `notes` TEXT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    INDEX `RentedMillBankAccount_bankName_idx`(`bankName`),
+    INDEX `RentedMillBankAccount_accountNumber_idx`(`accountNumber`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `RentedMillFundTransaction` (
+    `id` VARCHAR(191) NOT NULL,
+    `transactionNo` VARCHAR(191) NOT NULL,
+    `date` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `partyType` VARCHAR(191) NOT NULL,
+    `partnerName` TEXT NULL,
+    `transactionType` VARCHAR(191) NOT NULL,
+    `medium` VARCHAR(191) NOT NULL DEFAULT 'CASH',
+    `bankAccountId` VARCHAR(191) NULL,
+    `amount` DOUBLE NOT NULL,
+    `reference` TEXT NULL,
+    `status` VARCHAR(191) NOT NULL DEFAULT 'PENDING',
+    `rejectedReason` TEXT NULL,
+    `createdByName` TEXT NOT NULL,
+    `createdByUserId` TEXT NULL,
+    `approvedByName` TEXT NULL,
+    `approvedByUserId` TEXT NULL,
+    `approvedAt` DATETIME(3) NULL,
+    `settlementId` VARCHAR(191) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `RentedMillFundTransaction_transactionNo_key`(`transactionNo`),
+    INDEX `RentedMillFundTransaction_partyType_idx`(`partyType`),
+    INDEX `RentedMillFundTransaction_transactionType_idx`(`transactionType`),
+    INDEX `RentedMillFundTransaction_medium_idx`(`medium`),
+    INDEX `RentedMillFundTransaction_date_idx`(`date`),
+    INDEX `RentedMillFundTransaction_status_idx`(`status`),
+    INDEX `RentedMillFundTransaction_bankAccountId_idx`(`bankAccountId`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -2266,6 +2558,36 @@ ALTER TABLE `MillBatch` ADD CONSTRAINT `MillBatch_partyId_fkey` FOREIGN KEY (`pa
 
 -- AddForeignKey
 ALTER TABLE `MillVoucher` ADD CONSTRAINT `MillVoucher_partyId_fkey` FOREIGN KEY (`partyId`) REFERENCES `MillParty`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `RentedMillBill` ADD CONSTRAINT `RentedMillBill_partyId_fkey` FOREIGN KEY (`partyId`) REFERENCES `RentedMillParty`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `RentedMillBill` ADD CONSTRAINT `RentedMillBill_settlementId_fkey` FOREIGN KEY (`settlementId`) REFERENCES `RentedMillSettlement`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `RentedMillByproductSale` ADD CONSTRAINT `RentedMillByproductSale_settlementId_fkey` FOREIGN KEY (`settlementId`) REFERENCES `RentedMillSettlement`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `RentedMillExpense` ADD CONSTRAINT `RentedMillExpense_settlementId_fkey` FOREIGN KEY (`settlementId`) REFERENCES `RentedMillSettlement`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `RentedMillPayment` ADD CONSTRAINT `RentedMillPayment_partyId_fkey` FOREIGN KEY (`partyId`) REFERENCES `RentedMillParty`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `RentedMillPaddyReceipt` ADD CONSTRAINT `RentedMillPaddyReceipt_partyId_fkey` FOREIGN KEY (`partyId`) REFERENCES `RentedMillParty`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `RentedMillPaddyReceipt` ADD CONSTRAINT `RentedMillPaddyReceipt_settlementId_fkey` FOREIGN KEY (`settlementId`) REFERENCES `RentedMillSettlement`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `RentedMillDryerMilling` ADD CONSTRAINT `RentedMillDryerMilling_partyId_fkey` FOREIGN KEY (`partyId`) REFERENCES `RentedMillParty`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `RentedMillFundTransaction` ADD CONSTRAINT `RentedMillFundTransaction_bankAccountId_fkey` FOREIGN KEY (`bankAccountId`) REFERENCES `RentedMillBankAccount`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `RentedMillFundTransaction` ADD CONSTRAINT `RentedMillFundTransaction_settlementId_fkey` FOREIGN KEY (`settlementId`) REFERENCES `RentedMillSettlement`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- ── integrity rules (CHECK constraints, ported from the PostgreSQL migrations) ──
 ALTER TABLE `JournalEntry` ADD CONSTRAINT `JournalEntry_amounts_nonnegative` CHECK (`debit` >= 0 AND `credit` >= 0);

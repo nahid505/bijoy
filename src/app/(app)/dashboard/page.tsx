@@ -16,6 +16,7 @@ import {
 } from "./dashboard-parts";
 import { riceMillHome } from "@/lib/rice-mill";
 import { businessModules } from "@/lib/business-types";
+import { prisma } from "@/lib/db";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: (await getT())("ড্যাশবোর্ড") };
@@ -58,6 +59,23 @@ function QuickActions({ quick, label }: { quick: ReturnType<typeof quickActions>
 export default async function DashboardPage() {
   const ctx = await requireContext();
   const t = await getT();
+
+  // Assigned accountant or partner for Rented Mill auto-redirect:
+  if (!ctx.user.isSuperAdmin && ctx.user.email !== "nahid21506@gmail.com" && !ctx.user.name?.includes("নাহিদ")) {
+    try {
+      const rentedSettings = await prisma.rentedMillSettings.findUnique({ where: { id: 1 } });
+      if (
+        rentedSettings?.accountantUserId === ctx.user.id ||
+        rentedSettings?.partnerUserId === ctx.user.id
+      ) {
+        redirect("/rented-mill");
+      }
+    } catch (err) {
+      if (err && typeof err === "object" && "digest" in err && String((err as any).digest).startsWith("NEXT_REDIRECT")) {
+        throw err;
+      }
+    }
+  }
 
   if (!can(ctx, "dashboard:view")) {
     // depot-only role: the depot dashboard alone — no sales, profit, ledger or cash figures

@@ -20,6 +20,7 @@ import { AppDownloadHeaderTrigger } from "@/components/app-download";
 import { unreadCount, visibleKinds } from "@/server/services/notifications";
 import { isRestricted, notificationScopeWhere } from "@/server/party-scope";
 import { reportOpenFor, reportSlugForPath } from "@/server/reports/registry";
+import { getRentedMillSettings } from "@/lib/rented-mill";
 
 export const dynamic = "force-dynamic";
 
@@ -28,10 +29,36 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // pages of a switched-off feature are refused here (server side), not only hidden from the menu
   const path = (await headers()).get("x-pathname") ?? "";
 
+  // Check if logged in user is assigned accountant or partner for Rented Mill
+  let isRentedMillAccountant = false;
+  let isRentedMillPartner = false;
+  if (!ctx.user.isSuperAdmin && ctx.user.email !== "nahid21506@gmail.com" && !ctx.user.name?.includes("নাহিদ")) {
+    try {
+      const rentedSettings = await getRentedMillSettings();
+      if (rentedSettings.partnerUserId === ctx.user.id) {
+        isRentedMillPartner = true;
+      } else if (rentedSettings.accountantUserId === ctx.user.id) {
+        isRentedMillAccountant = true;
+      }
+    } catch {}
+  }
+  const isRentedMillRestricted = isRentedMillAccountant || isRentedMillPartner;
+
   // suspended subscription: only billing / own account stay open (enforced in permissions as well)
   if (ctx.subscription?.blocked && !/^\/(billing|account|forbidden)(\/|$)/.test(path)) redirect("/billing?suspended=1");
   const gate = featureForPath(path);
   if (gate && !ctx.features.includes(gate)) redirect(`/forbidden?feature=${gate}`);
+
+  // Auto-redirect if restricted to Rented Mill and trying to open other main business pages
+  if (isRentedMillRestricted) {
+    if (!path.startsWith("/rented-mill") && !path.startsWith("/account") && !path.startsWith("/forbidden")) {
+      redirect("/rented-mill");
+    }
+    // Block accountant & partner from settings page
+    if (path.startsWith("/rented-mill/settings")) {
+      redirect("/rented-mill");
+    }
+  }
 
   const t = await getT();
   const en = (await getLang()) === "en";
@@ -51,16 +78,59 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const moduleOn = (m?: BusinessModule) => !m || modules.has(m);
   const allowed = (p?: Parameters<typeof hasPermission>[1], href?: string) => (!p || hasPermission(ctx.permissions, p)) && (!href || (featureOn(href) && reportOk(href)));
 
-  const entries: SidebarEntry[] = NAV.flatMap((e): SidebarEntry[] => {
-    if (!moduleOn(e.module)) return [];
-    if (e.children) {
-      const children = e.children.filter((c) => moduleOn(c.module) && !(c.hiddenWithModule && modules.has(c.hiddenWithModule)) && allowed(c.permission, c.href)).map(({ href, label, icon }) => ({ href, label: navLabel(label), icon }));
-      return children.length ? [{ key: e.key, label: navLabel(e.label), icon: e.icon, children, highlight: e.highlight }] : [];
-    }
-    return allowed(e.permission, e.href) ? [{ key: e.key, label: navLabel(e.label), icon: e.icon, href: e.href }] : [];
-  });
+  const rentedMillNav = NAV.find((e) => e.key === "rented-mill");
+  const accountNav = NAV.find((e) => e.key === "account");
 
-  const tabs = MOBILE_TABS.filter((x) => moduleOn(x.module) && allowed(x.permission, x.href)).map((x) => ({ ...x, label: navLabel(x.label) }));
+  const millHeaderName = isRentedMillPartner
+    ? "শুভংকর অটো রাইস মিল (পার্টনার ৫০%)"
+    : isRentedMillAccountant
+    ? "ভাড়া অটো রাইস মিল (যৌথ ৫০:৫০)"
+    : ctx.business.name;
+
+  const entries: SidebarEntry[] = isRentedMillRestricted
+    ? [
+        ...(rentedMillNav
+          ? [
+              {
+                key: rentedMillNav.key,
+                label: navLabel(rentedMillNav.label),
+                icon: rentedMillNav.icon,
+                highlight: true,
+                children: (rentedMillNav.children || [])
+                  .filter((c) => c.href !== "/rented-mill/settings")
+                  .map(({ href, label, icon }) => ({ href, label: navLabel(label), icon })),
+              },
+            ]
+          : []),
+        ...(accountNav
+          ? [
+              {
+                key: accountNav.key,
+                label: navLabel(accountNav.label),
+                icon: accountNav.icon,
+                href: accountNav.href,
+              },
+            ]
+          : []),
+      ]
+    : NAV.flatMap((e): SidebarEntry[] => {
+        if (!moduleOn(e.module)) return [];
+        if (e.children) {
+          const children = e.children.filter((c) => moduleOn(c.module) && !(c.hiddenWithModule && modules.has(c.hiddenWithModule)) && allowed(c.permission, c.href)).map(({ href, label, icon }) => ({ href, label: navLabel(label), icon }));
+          return children.length ? [{ key: e.key, label: navLabel(e.label), icon: e.icon, children, highlight: e.highlight }] : [];
+        }
+        return allowed(e.permission, e.href) ? [{ key: e.key, label: navLabel(e.label), icon: e.icon, href: e.href }] : [];
+      });
+
+  const tabs = isRentedMillRestricted
+    ? [
+        { href: "/rented-mill", label: "ড্যাশবোর্ড", icon: "📊" },
+        { href: "/rented-mill/milling-bills", label: "ছাটাই বিল", icon: "⚖️" },
+        { href: "/rented-mill/byproduct-sales", label: "ভুষি/কুঁড়া", icon: "🌾" },
+        { href: "/rented-mill/expenses", label: "মিল খরচ", icon: "💸" },
+        { href: "/account", label: "অ্যাকাউন্ট", icon: "⚙" },
+      ]
+    : MOBILE_TABS.filter((x) => moduleOn(x.module) && allowed(x.permission, x.href)).map((x) => ({ ...x, label: navLabel(x.label) }));
 
   const fy = fiscalYearRange(ctx.business.fiscalYearStartMonth);
   const alertKinds = visibleKinds((p) => allowed(p as Parameters<typeof hasPermission>[1]), ctx.features);
@@ -68,12 +138,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen">
-      <Sidebar entries={entries} businessName={ctx.business.name} />
+      <Sidebar entries={entries} businessName={millHeaderName} />
       <div className="lg:pl-60 print:p-0">
         <header className="no-print sticky top-0 z-20 flex min-h-[64px] sm:min-h-0 sm:h-14 items-center gap-2 border-b border-rule bg-white px-3 sm:px-6 pt-3.5 pb-2.5 sm:py-0 shadow-2xs">
           <div className="min-w-0 flex-1">
             <p className="truncate text-base sm:text-sm font-bold text-ink-900 leading-tight">
-              {ctx.business.name}
+              {millHeaderName}
             </p>
             <p className="truncate text-xs sm:text-[11px] text-slate-500 leading-tight mt-0.5">
               {t("অর্থবছর")} {toBnDigits(fy.label)} · {t("আজ")} {formatDate(new Date())}
@@ -101,7 +171,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <Link prefetch={false} href="/admin" className="hidden shrink-0 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100 sm:block">Super Admin</Link>
           )}
           <LangToggle />
-          <BusinessSwitcher current={ctx.business.id} businesses={ctx.businesses} group={ctx.group} />
+          {!isRentedMillRestricted && <BusinessSwitcher current={ctx.business.id} businesses={ctx.businesses} group={ctx.group} />}
           <Link prefetch={false} href="/account" className="hidden text-right leading-tight hover:opacity-80 sm:block">
             <p className="text-xs font-semibold text-ink-800">{ctx.user.name}</p>
             <p className="text-[11px] text-slate-500">{ctx.roleName}</p>
@@ -118,7 +188,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </button>
           </form>
         </header>
-        <MobileNav entries={entries} tabs={tabs} businessName={ctx.business.name} />
+        <MobileNav entries={entries} tabs={tabs} businessName={millHeaderName} />
         <SubscriptionBanner sub={ctx.subscription} canBill={hasPermission(ctx.permissions, "billing:view")} />
         <main className="mx-auto max-w-[1400px] px-3 pt-3 pb-6 sm:px-6 print:max-w-none print:p-0">
           <TopBackBar />

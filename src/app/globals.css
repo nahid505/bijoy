@@ -46,6 +46,18 @@
   color-scheme: light;
 }
 
+/* ── Disable spinner arrows on number inputs globally ──────────────────── */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 body {
   @apply bg-paper text-slate-800 antialiased;
   line-height: 1.5;

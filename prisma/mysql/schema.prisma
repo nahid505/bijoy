@@ -637,40 +637,43 @@ model JournalEntry {
 
 /// Inventory line of a sales / purchase / return / stock-journal voucher.
 model VoucherItem {
-  id             String          @id @default(cuid())
-  businessId     String?
-  business       Business?       @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  voucherId      String
-  voucher        Voucher         @relation(fields: [voucherId], references: [id], onDelete: Cascade)
-  productId      String
-  product        Product         @relation(fields: [productId], references: [id])
-  warehouseId    String?
-  warehouse      Warehouse?      @relation(fields: [warehouseId], references: [id])
-  unitId         String?
-  unit           Unit?           @relation(fields: [unitId], references: [id])
-  unitFactor     Decimal         @default(1) @db.Decimal(14, 6) // entered unit → base unit
-  quantity       Decimal         @db.Decimal(14, 3) // in entered unit
-  baseQuantity   Decimal         @db.Decimal(14, 3) // in product base unit
+  id                String          @id @default(cuid())
+  businessId        String?
+  business          Business?       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  voucherId         String
+  voucher           Voucher         @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  productId         String
+  product           Product         @relation(fields: [productId], references: [id])
+  warehouseId       String?
+  warehouse         Warehouse?      @relation(fields: [warehouseId], references: [id])
+  unitId            String?
+  unit              Unit?           @relation(fields: [unitId], references: [id])
+  unitFactor        Decimal         @default(1) @db.Decimal(14, 6) // entered unit → base unit
+  quantity          Decimal         @db.Decimal(14, 3) // in entered unit
+  baseQuantity      Decimal         @db.Decimal(14, 3) // in product base unit
   /// free / scheme quantity (entered unit) on top of quantity: moves stock (quantity + free) but is never billed
-  freeQuantity   Decimal         @default(0) @db.Decimal(14, 3)
-  juteBagQty     Int             @default(0) // চটের বস্তার সংখ্যা
-  plasticBagQty  Int             @default(0) // প্লাস্টিক বস্তার সংখ্যা
-  totalBags      Int             @default(0) // মোট বস্তা (স্বয়ংক্রিয় যোগফল)
+  freeQuantity      Decimal         @default(0) @db.Decimal(14, 3)
+  juteBagQty        Int             @default(0) // চটের বস্তার সংখ্যা
+  plasticBagQty     Int             @default(0) // প্লাস্টিক বস্তার সংখ্যা
+  totalBags         Int             @default(0) // মোট বস্তা (স্বয়ংক্রিয় যোগফল)
+  emptyBagProductId String?         @db.Text // উৎপাদিত পণ্যের খালি বস্তা আইডি (Packaging Bag Product ID)
+  bagSizeKg         Decimal?        @db.Decimal(14, 3) // বস্তার ধারণক্ষমতা / সাইজ (যেমন: ২৫, ৫০, ৫৫ কেজি)
+  bagCount          Int             @default(0) // উৎপাদিত বস্তার সংখ্যা
   /// depot delivery: the rate printed on the dealer challan (the product's purchase price at delivery); null = not a depot line
-  challanRate    Decimal?        @db.Decimal(14, 2)
-  rate           Decimal         @db.Decimal(14, 2) // per entered unit
-  discount       Decimal         @default(0) @db.Decimal(14, 2)
-  amount         Decimal         @db.Decimal(14, 2) // quantity × rate − discount
-  costRate       Decimal         @default(0) @db.Decimal(14, 4) // average cost per base unit at posting
-  costAmount     Decimal         @default(0) @db.Decimal(14, 2)
-  direction      Int             @default(0) // stock journal / production: +1 in, −1 out
-  costShare      Decimal?        @db.Decimal(7, 4) // production output: % of the run's total cost
-  batchNo        String?         @db.Text // set when the line uses exactly one batch (FEFO lines may span several — see its movements)
-  expiryDate     DateTime?
-  batchId        String?
-  batch          ProductBatch?   @relation(fields: [batchId], references: [id], onDelete: Restrict)
-  stockMovements StockMovement[]
-  lineNo         Int             @default(0)
+  challanRate       Decimal?        @db.Decimal(14, 2)
+  rate              Decimal         @db.Decimal(14, 2) // per entered unit
+  discount          Decimal         @default(0) @db.Decimal(14, 2)
+  amount            Decimal         @db.Decimal(14, 2) // quantity × rate − discount
+  costRate          Decimal         @default(0) @db.Decimal(14, 4) // average cost per base unit at posting
+  costAmount        Decimal         @default(0) @db.Decimal(14, 2)
+  direction         Int             @default(0) // stock journal / production: +1 in, −1 out
+  costShare         Decimal?        @db.Decimal(7, 4) // production output: % of the run's total cost
+  batchNo           String?         @db.Text // set when the line uses exactly one batch (FEFO lines may span several — see its movements)
+  expiryDate        DateTime?
+  batchId           String?
+  batch             ProductBatch?   @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  stockMovements    StockMovement[]
+  lineNo            Int             @default(0)
 
   @@index([businessId, id])
   @@index([voucherId])
@@ -1881,15 +1884,18 @@ model Recipe {
 }
 
 model RecipeLine {
-  id        String             @id @default(cuid())
-  recipeId  String
-  recipe    Recipe             @relation(fields: [recipeId], references: [id], onDelete: Cascade)
-  productId String
-  product   Product            @relation(fields: [productId], references: [id])
-  kind      ProductionLineKind
-  quantity  Decimal            @db.Decimal(14, 3) // base unit, per reference batch
-  costShare Decimal            @default(0) @db.Decimal(7, 4) // outputs only: % of the batch cost
-  lineNo    Int                @default(0)
+  id                String             @id @default(cuid())
+  recipeId          String
+  recipe            Recipe             @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  productId         String
+  product           Product            @relation(fields: [productId], references: [id])
+  kind              ProductionLineKind
+  quantity          Decimal            @db.Decimal(14, 3) // base unit, per reference batch
+  costShare         Decimal            @default(0) @db.Decimal(7, 4) // outputs only: % of the batch cost
+  emptyBagProductId String?            @db.Text // রেসিপি আউটপুটের খালি বস্তা আইডি
+  bagSizeKg         Decimal?           @db.Decimal(14, 3) // বস্তার সাইজ (কেজি)
+  bagCount          Int                @default(0) // বস্তা সংখ্যা
+  lineNo            Int                @default(0)
 
   @@index([recipeId])
   @@index([productId])
@@ -2294,4 +2300,280 @@ model MillVoucher {
   @@index([partyId])
   @@index([date])
   @@index([type])
+}
+
+// ───────────────────────────── ভাড়া অটো রাইস মিল (যৌথ ৫০:৫০) ─────────────────────────────
+
+model RentedMillSettings {
+  id                 Int      @id @default(1)
+  millName           String   @default("শুভংকর অটো রাইস মিল") @db.VarChar(191)
+  millAddress        String   @default("দিনাজপুর") @db.VarChar(191)
+  millPhone          String   @default("01763921505") @db.VarChar(191)
+  monthlyRent        Float    @default(280000)
+  partner1Name       String   @default("নাহিদ হাসান") @db.VarChar(191)
+  partner1Share      Float    @default(50.0)
+  partner2Name       String   @default("পার্টনার") @db.VarChar(191)
+  partner2Share      Float    @default(50.0)
+  defaultMillingRate Float    @default(100)
+  dryerNames         String   @default("[\"ডায়ার-১\",\"ডায়ার-২\",\"ডায়ার-৩\",\"ডায়ার-৪\"]") @db.VarChar(191)
+  expenseCategories  String   @default("[\"মাসিক মিল ভাড়া\",\"বিদ্যুৎ বিল\",\"লেবার খরচ\",\"কর্মচারীর বেতন\",\"যন্ত্রাংশ ক্রয়\",\"অন্যান্য খরচ\"]") @db.VarChar(191)
+  accountantUserId   String?  @db.Text
+  partnerUserId      String?  @db.Text
+  updatedAt          DateTime @updatedAt
+}
+
+model RentedMillParty {
+  id             String                   @id @default(cuid())
+  name           String
+  phone          String?                  @db.Text
+  address        String?                  @db.Text
+  isSelfParty    Boolean                  @default(false)
+  openingBalance Float                    @default(0)
+  bills          RentedMillBill[]
+  payments       RentedMillPayment[]
+  paddyReceipts  RentedMillPaddyReceipt[]
+  dryerMillings  RentedMillDryerMilling[]
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  @@index([name])
+}
+
+model RentedMillBill {
+  id              String                @id @default(cuid())
+  billNo          String                @unique
+  partyId         String
+  party           RentedMillParty       @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  date            DateTime              @default(now())
+  paddyQuantity   Float
+  unit            String                @default("বস্তা") @db.VarChar(191)
+  millingRate     Float
+  totalAmount     Float
+  paidAmount      Float                 @default(0)
+  dueAmount       Float                 @default(0)
+  status          String                @default("APPROVED")
+  notes           String?               @db.Text
+  settlementId    String?
+  settlement      RentedMillSettlement? @relation(fields: [settlementId], references: [id], onDelete: SetNull)
+  isSettled       Boolean               @default(false)
+  createdByName   String                @db.Text
+  createdByUserId String?               @db.Text
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([partyId])
+  @@index([date])
+  @@index([status])
+  @@index([isSettled])
+}
+
+model RentedMillByproductSale {
+  id              String                @id @default(cuid())
+  invoiceNo       String                @unique
+  customerName    String                @db.Text
+  customerPhone   String?               @db.Text
+  productType     String // "ভুষি", "কুঁড়া", "অন্যান্য"
+  date            DateTime              @default(now())
+  quantity        Float
+  unit            String                @default("কেজি") @db.VarChar(191)
+  rate            Float
+  totalAmount     Float
+  paidAmount      Float                 @default(0)
+  dueAmount       Float                 @default(0)
+  status          String                @default("APPROVED")
+  notes           String?               @db.Text
+  settlementId    String?
+  settlement      RentedMillSettlement? @relation(fields: [settlementId], references: [id], onDelete: SetNull)
+  isSettled       Boolean               @default(false)
+  createdByName   String                @db.Text
+  createdByUserId String?               @db.Text
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([productType])
+  @@index([date])
+  @@index([status])
+  @@index([isSettled])
+}
+
+model RentedMillExpense {
+  id              String                @id @default(cuid())
+  expenseNo       String                @unique
+  date            DateTime              @default(now())
+  category        String // "মাসিক মিল ভাড়া", "বিদ্যুৎ বিল", "লেবার খরচ", "কর্মচারীর বেতন", "যন্ত্রাংশ ক্রয়", "অন্যান্য খরচ"
+  description     String?               @db.Text
+  amount          Float
+  paidTo          String?               @db.Text
+  status          String                @default("APPROVED")
+  settlementId    String?
+  settlement      RentedMillSettlement? @relation(fields: [settlementId], references: [id], onDelete: SetNull)
+  isSettled       Boolean               @default(false)
+  createdByName   String                @db.Text
+  createdByUserId String?               @db.Text
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([category])
+  @@index([date])
+  @@index([status])
+  @@index([isSettled])
+}
+
+model RentedMillPayment {
+  id              String          @id @default(cuid())
+  receiptNo       String          @unique
+  partyId         String
+  party           RentedMillParty @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  date            DateTime        @default(now())
+  amount          Float
+  paymentMethod   String          @default("নগদ") @db.VarChar(191)
+  status          String          @default("APPROVED")
+  notes           String?         @db.Text
+  createdByName   String          @db.Text
+  createdByUserId String?         @db.Text
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([partyId])
+  @@index([date])
+  @@index([status])
+}
+
+model RentedMillPaddyReceipt {
+  id                 String                @id @default(cuid())
+  receiptNo          String                @unique
+  partyId            String
+  party              RentedMillParty       @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  date               DateTime              @default(now())
+  receiptTime        String?               @db.Text // সময় (যেমন: ১০:৩০ AM)
+  paddyName          String                @db.Text // ধানের নাম (যেমন: ব্রি-২৮, স্বর্ণা ইত্যাদি)
+  juteBags           Int                   @default(0) // চটের বস্তা সংখ্যা
+  plasticBags        Int                   @default(0) // প্লাস্টিক বস্তা সংখ্যা
+  bagsCount          Int // মোট বস্তা সংখ্যা (চট + প্লাস্টিক)
+  sklWeight          Float // মোট SKL (স্কেল মোট ওজন / কেজি)
+  dhaltaKg           Float                 @default(0) // মোট ধলতা (কেজি)
+  netSklKg           Float                 @default(0) // নিট SKL (কেজি)
+  standardBags75kg   Float // ৭৫-এ স্ট্যান্ডার্ড বস্তা সংখ্যা (নিট SKL ÷ ৭৫ কেজি)
+  ratePerStandardBag Float                 @default(100) // প্রতি ৭৫ কেজি স্ট্যান্ডার্ড বস্তার দর (টাকা)
+  totalBillAmount    Float                 @default(0) // মোট বিল (টাকা)
+  status             String                @default("APPROVED")
+  notes              String?               @db.Text
+  settlementId       String?
+  settlement         RentedMillSettlement? @relation(fields: [settlementId], references: [id], onDelete: SetNull)
+  isSettled          Boolean               @default(false)
+  createdByName      String                @db.Text
+  createdByUserId    String?               @db.Text
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  @@index([partyId])
+  @@index([date])
+  @@index([status])
+  @@index([isSettled])
+}
+
+model RentedMillDryerMilling {
+  id              String          @id @default(cuid())
+  entryNo         String          @unique
+  partyId         String
+  party           RentedMillParty @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  date            DateTime        @default(now())
+  dryerNo         String          @db.Text // ডায়ার নং (যেমন: ডায়ার-১, ডায়ার-২)
+  usedBags        Float // ব্যবহৃত বস্তার সংখ্যা (স্ট্যান্ডার্ড বস্তা)
+  milledKg        Float // ছাটাইকৃত কেজি
+  status          String          @default("APPROVED")
+  notes           String?         @db.Text
+  createdByName   String          @db.Text
+  createdByUserId String?         @db.Text
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([partyId])
+  @@index([date])
+  @@index([status])
+}
+
+model RentedMillSettlement {
+  id                   String   @id @default(cuid())
+  settlementNo         String   @unique // e.g. "RMS-0001"
+  fromDate             DateTime
+  toDate               DateTime
+  totalMillingIncome   Float    @default(0) // ধান ছাটাই বিল বাবদ মোট আয়
+  totalByproductIncome Float    @default(0) // ভুষি ও কুঁড়া বিক্রয় বাবদ মোট আয়
+  totalIncome          Float    @default(0) // সর্বমোট আয়
+  totalRentExpense     Float    @default(0) // মিল ভাড়া বাবদ ব্যয়
+  totalOtherExpense    Float    @default(0) // অন্যান্য পরিচালনা ব্যয়
+  totalExpense         Float    @default(0) // সর্বমোট ব্যয়
+  netProfit            Float    @default(0) // নিট ফলাফল (ধনাত্মক হলে লাভ, ঋণাত্মক হলে ক্ষতি)
+  partner1Name         String   @default("নাহিদ হাসান") @db.VarChar(191)
+  partner1Share        Float    @default(50.0)
+  partner1Amount       Float    @default(0) // লাভ/ক্ষতিতে ৫০% টাকার পরিমাণ
+  partner2Name         String   @default("পার্টনার") @db.VarChar(191)
+  partner2Share        Float    @default(50.0)
+  partner2Amount       Float    @default(0) // লাভ/ক্ষতিতে ৫০% টাকার পরিমাণ
+  status               String   @default("SETTLED") @db.VarChar(191) // "SETTLED"
+  notes                String?  @db.Text // মন্তব্য (যেমন: "নগদ বুঝিয়ে দেওয়া হলো")
+  settledByName        String   @db.Text
+  settledByUserId      String?  @db.Text
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  paddyReceipts    RentedMillPaddyReceipt[]
+  bills            RentedMillBill[]
+  byproductSales   RentedMillByproductSale[]
+  expenses         RentedMillExpense[]
+  fundTransactions RentedMillFundTransaction[]
+
+  @@index([fromDate, toDate])
+  @@index([createdAt])
+}
+
+model RentedMillBankAccount {
+  id             String                      @id @default(cuid())
+  bankName       String // e.g. "সোনালী ব্যাংক পিএলসি", "ইসলামী ব্যাংক"
+  accountName    String?                     @db.Text // e.g. "শুভংকর অটো রাইস মিল"
+  accountNumber  String // e.g. "0123456789"
+  branchName     String?                     @db.Text // e.g. "দিনাজপুর শাখা"
+  openingBalance Float                       @default(0)
+  currentBalance Float                       @default(0)
+  isActive       Boolean                     @default(true)
+  notes          String?                     @db.Text
+  transactions   RentedMillFundTransaction[]
+  createdAt      DateTime                    @default(now())
+  updatedAt      DateTime                    @updatedAt
+
+  @@index([bankName])
+  @@index([accountNumber])
+}
+
+model RentedMillFundTransaction {
+  id               String                 @id @default(cuid())
+  transactionNo    String                 @unique // e.g. "FT-000001"
+  date             DateTime               @default(now())
+  partyType        String // "BANK" | "OWNER_1" | "OWNER_2"
+  partnerName      String?                @db.Text // e.g. "নাহিদ হাসান" | "পার্টনার"
+  transactionType  String // "DEPOSIT" | "WITHDRAW"
+  medium           String                 @default("CASH") // "CASH" | "BANK"
+  bankAccountId    String?
+  bankAccount      RentedMillBankAccount? @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
+  amount           Float
+  reference        String?                @db.Text // চেক নং / স্লিপ নং / বিবরণ / নোট
+  status           String                 @default("PENDING") // "PENDING" | "APPROVED" | "REJECTED"
+  rejectedReason   String?                @db.Text
+  createdByName    String                 @db.Text
+  createdByUserId  String?                @db.Text
+  approvedByName   String?                @db.Text
+  approvedByUserId String?                @db.Text
+  approvedAt       DateTime?
+  settlementId     String?
+  settlement       RentedMillSettlement?  @relation(fields: [settlementId], references: [id], onDelete: SetNull)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  @@index([partyType])
+  @@index([transactionType])
+  @@index([medium])
+  @@index([date])
+  @@index([status])
+  @@index([bankAccountId])
 }

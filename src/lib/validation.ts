@@ -595,7 +595,13 @@ export const recipeSchema = z
     description: optionalText(500),
     isActive: z.boolean().default(true),
     inputs: z.array(z.object(productLine)).min(1, "কমপক্ষে একটি কাঁচামাল দিন").max(50),
-    outputs: z.array(z.object({ ...productLine, costShare })).min(1, "কমপক্ষে একটি উৎপাদিত পণ্য দিন").max(50),
+    outputs: z.array(z.object({
+      ...productLine,
+      costShare,
+      emptyBagProductId: z.string().nullable().optional(),
+      bagSizeKg: z.coerce.number().min(0).nullable().optional(),
+      bagCount: z.coerce.number().int().min(0).default(0).optional(),
+    })).min(1, "কমপক্ষে একটি উৎপাদিত পণ্য দিন").max(50),
   })
   .superRefine((v, ctx) => productionRules(v, ctx, { requireShareTotal: true }));
 export type RecipeInput = z.infer<typeof recipeSchema>;
@@ -609,7 +615,15 @@ export const productionSchema = z
     bagProductId: z.string().nullable().optional(),
     bagWeightKg: z.coerce.number().min(0).optional(),
     inputs: z.array(z.object({ ...productLine, batchNo: optionalText(60) })).min(1, "কমপক্ষে একটি কাঁচামাল দিন").max(50),
-    outputs: z.array(z.object({ ...productLine, costShare, batchNo: optionalText(60), expiryDate: optionalDate })).min(1, "কমপক্ষে একটি উৎপাদিত পণ্য দিন").max(50),
+    outputs: z.array(z.object({
+      ...productLine,
+      costShare,
+      batchNo: optionalText(60),
+      expiryDate: optionalDate,
+      emptyBagProductId: z.string().nullable().optional(),
+      bagSizeKg: z.coerce.number().min(0).nullable().optional(),
+      bagCount: z.coerce.number().int().min(0).default(0).optional(),
+    })).min(1, "কমপক্ষে একটি উৎপাদিত পণ্য দিন").max(50),
     extraCost: money.default(0),
     costAccountId: optionalId,
   })

@@ -6,6 +6,7 @@ import { Toaster } from "@/components/toaster";
 import { NavWatchdog } from "@/components/nav-watchdog";
 import { PwaRegistrar } from "@/components/pwa-registrar";
 import { DigitInputs } from "@/components/digit-inputs";
+import { NumberInputScrollGuard } from "@/components/number-input-scroll-guard";
 import { EnglishScreen } from "@/components/digit-display";
 import { getLang } from "@/server/i18n";
 
@@ -33,6 +34,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <PwaRegistrar />
           {/* number fields: Bangla / mixed digits → English as typed; English UI: remaining Bangla text and digits → English */}
           <DigitInputs />
+          <NumberInputScrollGuard />
           <EnglishScreen on={lang === "en"} />
         </LangProvider>
       </body>

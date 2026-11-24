@@ -246,9 +246,18 @@ export async function bagUnits(businessId: string): Promise<Map<string, number |
 
 /** Bags of a line: the quantity when entered in a bag unit, else base quantity ÷ the business's one bag unit; null = unknown. */
 export function lineBags(
-  item: { quantity: unknown; baseQuantity: unknown; unit: { name: string; baseUnitId: string | null } | null; product: { unit: { id?: string; name: string }; unitId?: string } },
+  item: {
+    quantity: unknown;
+    baseQuantity: unknown;
+    unit: { name: string; baseUnitId: string | null } | null;
+    product: { unit: { id?: string; name: string }; unitId?: string };
+    bagCount?: number | null;
+    totalBags?: number | null;
+  },
   bagOf: Map<string, number | null>,
 ): number | null {
+  if (typeof item.bagCount === "number" && item.bagCount > 0) return item.bagCount;
+  if (typeof item.totalBags === "number" && item.totalBags > 0) return item.totalBags;
   if (item.unit && item.unit.baseUnitId && isBag(item.unit.name)) return num(item.quantity as never);
   const per = bagOf.get(item.product.unit.id ?? item.product.unitId ?? "");
   return per ? round2(num(item.baseQuantity as never) / per) : null;

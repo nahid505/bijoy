@@ -43,7 +43,22 @@ export default async function ProductionBatchPage({ params }: { params: Promise<
   const line = (i: (typeof v.items)[number]) => {
     const qty = round3(num(i.baseQuantity));
     const unit = i.product.unit.name;
-    return { id: i.id, name: i.product.name, code: i.product.code ?? null, unit, qty, kg: WEIGHT.test(unit) ? round3(toKg(qty, unit)) : null, bags: lineBags(i, bagOf), cost: num(i.costAmount), costShare: num(i.costShare ?? 0), warehouse: i.warehouse?.name ?? null };
+    const bagCount = (i as any).bagCount ? Number((i as any).bagCount) : null;
+    const bagSizeKg = (i as any).bagSizeKg ? num((i as any).bagSizeKg) : null;
+    return {
+      id: i.id,
+      name: i.product.name,
+      code: i.product.code ?? null,
+      unit,
+      qty,
+      kg: WEIGHT.test(unit) ? round3(toKg(qty, unit)) : null,
+      bags: bagCount ?? lineBags(i, bagOf),
+      bagSizeKg,
+      emptyBagProductId: (i as any).emptyBagProductId ?? null,
+      cost: num(i.costAmount),
+      costShare: num(i.costShare ?? 0),
+      warehouse: i.warehouse?.name ?? null,
+    };
   };
   const inputs = v.items.filter((i) => i.direction < 0).map(line);
   const outputs = v.items.filter((i) => i.direction > 0).map(line);
@@ -225,7 +240,7 @@ export default async function ProductionBatchPage({ params }: { params: Promise<
                         <span className="font-semibold">{fmtKg(outKg)}</span>
                         {l.bags !== null && (
                           <span className="block text-xs text-slate-500 print:text-[9px]">
-                            {bagText(l.bags)}
+                            {bagText(l.bags)}{l.bagSizeKg ? ` (${toBnDigits(l.bagSizeKg)} কেজি)` : ""}
                           </span>
                         )}
                       </td>

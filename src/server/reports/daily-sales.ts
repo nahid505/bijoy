@@ -9,7 +9,7 @@ import { voucherScopeWhere } from "../party-scope";
 // Sales returns are not sales and are left out.
 import { prisma, num } from "@/lib/db";
 import { round2, round3 } from "@/lib/calc";
-import { dayOrToday, formatDate, formatMoney, formatQty } from "@/lib/format";
+import { dayOrToday, formatDate, formatMoney, formatQty, toBnDigits } from "@/lib/format";
 import type { ReportDef, ReportRow } from "./types";
 
 export interface SalesLine {
@@ -17,20 +17,53 @@ export interface SalesLine {
   voucherNo: string;
   /** customer, or "নগদ বিক্রয়" */
   party: string;
+  partyAddress?: string | null;
   product: string;
   unit: string;
   quantity: number;
   rate: number;
   discount: number;
   amount: number;
+  bagCount?: number | null;
+  bagSizeKg?: number | null;
   /** চালান note: reference, batch, narration */
   note: string;
+}
+
+export interface InvoiceItem {
+  product: string;
+  unit: string;
+  quantity: number;
+  rate: number;
+  discount: number;
+  amount: number;
+  bagCount: number | null;
+  bagSizeKg: number | null;
+  note: string;
+}
+
+export interface InvoiceGroup {
+  voucherId: string;
+  voucherNo: string;
+  party: string;
+  partyAddress: string | null;
+  reference: string | null;
+  totalAmount: number;
+  discount: number;
+  vat: number;
+  netAmount: number;
+  paidAmount: number;
+  dueAmount: number;
+  totalBags: number;
+  items: InvoiceItem[];
 }
 
 export interface DailySales {
   date: string;
   lines: SalesLine[];
+  invoiceGroups: InvoiceGroup[];
   invoices: number;
+  totalBags: number;
   quantityByUnit: { unit: string; quantity: number }[];
   total: number;
   discount: number;
@@ -41,6 +74,20 @@ export interface DailySales {
 }
 
 const CASH = "নগদ বিক্রয়";
+
+export function formatSalesQuantity(l: {
+  quantity: number;
+  unit: string;
+  bagCount?: number | null;
+  bagSizeKg?: number | null;
+}): string {
+  const bCount = l.bagCount && l.bagCount > 0 ? l.bagCount : null;
+  const bSize = l.bagSizeKg && l.bagSizeKg > 0 ? l.bagSizeKg : null;
+  if (bCount) {
+    return `${toBnDigits(bCount)} বস্তা${bSize ? ` (${toBnDigits(bSize)} কেজি)` : ""}`;
+  }
+  return `${formatQty(l.quantity)} ${l.unit}`;
+}
 
 /** params.scope: voucherScopeWhere(ctx) (assigned-only roles). */
 export async function dailySales(businessId: string, params: { date?: string; scope?: Prisma.VoucherWhereInput }): Promise<DailySales> {
@@ -53,26 +100,132 @@ export async function dailySales(businessId: string, params: { date?: string; sc
     where: { businessId, book: "GENERAL", type: "SALES", date: { gte: day, lt: next }, ...params.scope },
     orderBy: [{ createdAt: "asc" }],
     select: {
-      id: true, voucherNo: true, reference: true, narration: true, discount: true, vatAmount: true, amount: true, paidAmount: true,
-      partyAccount: { select: { name: true } },
-      items: { orderBy: { lineNo: "asc" }, select: { quantity: true, rate: true, discount: true, amount: true, batchNo: true, product: { select: { name: true, unit: { select: { name: true } } } }, unit: { select: { name: true } } } },
+      id: true,
+      voucherNo: true,
+      reference: true,
+      narration: true,
+      discount: true,
+      vatAmount: true,
+      amount: true,
+      paidAmount: true,
+      partyAccount: {
+        select: {
+          name: true,
+          customer: { select: { address: true } },
+        },
+      },
+      items: {
+        orderBy: { lineNo: "asc" },
+        select: {
+          quantity: true,
+          rate: true,
+          discount: true,
+          amount: true,
+          batchNo: true,
+          bagCount: true,
+          bagSizeKg: true,
+          totalBags: true,
+          product: {
+            select: {
+              name: true,
+              bagCapacityKg: true,
+              unit: { select: { name: true } },
+            },
+          },
+          unit: { select: { name: true } },
+        },
+      },
     },
   });
 
-  const lines: SalesLine[] = vouchers.flatMap((v) =>
-    v.items.map((i) => ({
+  const lines: SalesLine[] = [];
+  const invoiceGroups: InvoiceGroup[] = [];
+
+  for (const v of vouchers) {
+    const partyName = v.partyAccount?.name ?? CASH;
+    const partyAddress = v.partyAccount?.customer?.address ?? null;
+    const invTotal = num(v.amount);
+    const invDiscount = num(v.discount);
+    const invVat = num(v.vatAmount);
+    const invPaid = num(v.paidAmount);
+    const invDue = round2(invTotal - invPaid);
+
+    const items: InvoiceItem[] = [];
+
+    for (const i of v.items) {
+      let bCount: number | null = i.bagCount || i.totalBags || null;
+      let bSize: number | null = i.bagSizeKg
+        ? num(i.bagSizeKg)
+        : (i.product.bagCapacityKg ? num(i.product.bagCapacityKg) : null);
+
+      const unitName = i.unit?.name ?? i.product.unit.name;
+      if (!bCount) {
+        if (unitName.includes("বস্তা") || unitName.includes("ব্যাগ") || unitName.toLowerCase().includes("bag")) {
+          bCount = Math.round(num(i.quantity));
+        } else if (bSize && bSize > 0 && num(i.quantity) > 0) {
+          bCount = Math.round(num(i.quantity) / bSize);
+        }
+      }
+      if (!bSize && bCount && bCount > 0 && num(i.quantity) > 0) {
+        const calculated = Math.round(num(i.quantity) / bCount);
+        if (calculated === 25 || calculated === 50 || calculated === 55 || calculated === 40 || calculated === 75 || calculated === 80) {
+          bSize = calculated;
+        }
+      }
+
+      const itemNote = [v.reference ? `চালান ${v.reference}` : null, i.batchNo ? `ব্যাচ ${i.batchNo}` : null, v.narration]
+        .filter(Boolean)
+        .join(" · ");
+
+      const lineItem: InvoiceItem = {
+        product: i.product.name,
+        unit: unitName,
+        quantity: num(i.quantity),
+        rate: num(i.rate),
+        discount: num(i.discount),
+        amount: num(i.amount),
+        bagCount: bCount,
+        bagSizeKg: bSize,
+        note: itemNote,
+      };
+
+      items.push(lineItem);
+
+      lines.push({
+        voucherId: v.id,
+        voucherNo: v.voucherNo,
+        party: partyName,
+        partyAddress,
+        product: i.product.name,
+        unit: unitName,
+        quantity: num(i.quantity),
+        rate: num(i.rate),
+        discount: num(i.discount),
+        amount: num(i.amount),
+        bagCount: bCount,
+        bagSizeKg: bSize,
+        note: itemNote,
+      });
+    }
+
+    const groupBags = items.reduce((s, it) => s + (it.bagCount ?? 0), 0);
+
+    invoiceGroups.push({
       voucherId: v.id,
       voucherNo: v.voucherNo,
-      party: v.partyAccount?.name ?? CASH,
-      product: i.product.name,
-      unit: i.unit?.name ?? i.product.unit.name,
-      quantity: num(i.quantity),
-      rate: num(i.rate),
-      discount: num(i.discount),
-      amount: num(i.amount),
-      note: [v.reference ? `চালান ${v.reference}` : null, i.batchNo ? `ব্যাচ ${i.batchNo}` : null, v.narration].filter(Boolean).join(" · "),
-    })),
-  );
+      party: partyName,
+      partyAddress,
+      reference: v.reference ?? null,
+      totalAmount: invTotal,
+      discount: invDiscount,
+      vat: invVat,
+      netAmount: invTotal,
+      paidAmount: invPaid,
+      dueAmount: invDue,
+      totalBags: groupBags,
+      items,
+    });
+  }
 
   const byUnit = new Map<string, number>();
   for (const l of lines) byUnit.set(l.unit, round3((byUnit.get(l.unit) ?? 0) + l.quantity));
@@ -80,10 +233,14 @@ export async function dailySales(businessId: string, params: { date?: string; sc
   const total = round2(lines.reduce((s, l) => s + l.amount, 0));
   const net = sum((v) => v.amount);
   const collected = sum((v) => v.paidAmount);
+  const totalBags = invoiceGroups.reduce((s, g) => s + g.totalBags, 0);
+
   return {
     date,
     lines,
+    invoiceGroups,
     invoices: vouchers.length,
+    totalBags,
     quantityByUnit: [...byUnit].map(([unit, quantity]) => ({ unit, quantity })).sort((a, b) => b.quantity - a.quantity),
     total,
     discount: sum((v) => v.discount),
