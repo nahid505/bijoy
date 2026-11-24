@@ -81,9 +81,9 @@ export default async function MillingBillsPage({
           q
             ? {
                 OR: [
-                  { billNo: { contains: q, mode: "insensitive" } },
-                  { party: { name: { contains: q, mode: "insensitive" } } },
-                  { notes: { contains: q, mode: "insensitive" } },
+                  { billNo: { contains: q } },
+                  { party: { name: { contains: q } } },
+                  { notes: { contains: q } },
                 ],
               }
             : {},
@@ -101,10 +101,10 @@ export default async function MillingBillsPage({
           q
             ? {
                 OR: [
-                  { receiptNo: { contains: q, mode: "insensitive" } },
-                  { party: { name: { contains: q, mode: "insensitive" } } },
-                  { paddyName: { contains: q, mode: "insensitive" } },
-                  { notes: { contains: q, mode: "insensitive" } },
+                  { receiptNo: { contains: q } },
+                  { party: { name: { contains: q } } },
+                  { paddyName: { contains: q } },
+                  { notes: { contains: q } },
                 ],
               }
             : {},

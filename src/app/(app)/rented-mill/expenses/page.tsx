@@ -42,9 +42,9 @@ export default async function RentedMillExpensesPage({
           q
             ? {
                 OR: [
-                  { expenseNo: { contains: q, mode: "insensitive" } },
-                  { description: { contains: q, mode: "insensitive" } },
-                  { paidTo: { contains: q, mode: "insensitive" } },
+                  { expenseNo: { contains: q } },
+                  { description: { contains: q } },
+                  { paidTo: { contains: q } },
                 ],
               }
             : {},
@@ -60,9 +60,9 @@ export default async function RentedMillExpensesPage({
           q
             ? {
                 OR: [
-                  { expenseNo: { contains: q, mode: "insensitive" } },
-                  { description: { contains: q, mode: "insensitive" } },
-                  { paidTo: { contains: q, mode: "insensitive" } },
+                  { expenseNo: { contains: q } },
+                  { description: { contains: q } },
+                  { paidTo: { contains: q } },
                 ],
               }
             : {},

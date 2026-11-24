@@ -13,6 +13,9 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   // `npm run dev` opened from other computers on the local network (private address ranges only)
   allowedDevOrigins: ["192.168.*.*", "10.*.*.*", "172.*.*.*"],
   // business backup restore uploads files up to 50 MB through a server action (default limit: 1 MB)

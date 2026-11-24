@@ -38,9 +38,9 @@ export default async function ByproductSalesPage({
         q
           ? {
               OR: [
-                { invoiceNo: { contains: q, mode: "insensitive" } },
-                { customerName: { contains: q, mode: "insensitive" } },
-                { notes: { contains: q, mode: "insensitive" } },
+                { invoiceNo: { contains: q } },
+                { customerName: { contains: q } },
+                { notes: { contains: q } },
               ],
             }
           : {},
