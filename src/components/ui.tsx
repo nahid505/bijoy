@@ -18,10 +18,10 @@ export async function PageHeader({
 }) {
   const t = await getT();
   return (
-    <div className={`flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between ${className}`}>
+    <div className={`flex flex-col gap-1.5 sm:gap-3 sm:flex-row sm:items-end sm:justify-between ${className}`}>
       <div>
         {crumbs && (
-          <nav className="no-print mb-1 flex flex-wrap items-center gap-1 text-xs text-slate-500">
+          <nav className="no-print mb-0.5 sm:mb-1 hidden sm:flex flex-wrap items-center gap-1 text-xs text-slate-500">
             {crumbs.map((c, i) => (
               <span key={i} className="flex items-center gap-1">
                 {c.href ? <Link prefetch={false} href={c.href} className="hover:text-brand-700">{t(c.label)}</Link> : t(c.label)}
@@ -30,16 +30,16 @@ export async function PageHeader({
             ))}
           </nav>
         )}
-        <h1 className="text-xl font-bold text-ink-900">{typeof title === "string" ? t(title) : title}</h1>
+        <h1 className="text-lg sm:text-xl font-bold text-ink-900 leading-snug">{typeof title === "string" ? t(title) : title}</h1>
         {description && (
           typeof description === "string" ? (
-            <p className="mt-0.5 text-sm text-slate-500">{t(description)}</p>
+            <p className="mt-0.5 text-xs sm:text-sm text-slate-500">{t(description)}</p>
           ) : (
-            <div className="mt-0.5 text-sm text-slate-500">{description}</div>
+            <div className="mt-0.5 text-xs sm:text-sm text-slate-500">{description}</div>
           )
         )}
       </div>
-      {actions && <div className="no-print flex items-center gap-2 overflow-x-auto whitespace-nowrap py-2 no-scrollbar max-w-full">{actions}</div>}
+      {actions && <div className="no-print flex items-center gap-1.5 sm:gap-2 overflow-x-auto whitespace-nowrap py-1 sm:py-2 no-scrollbar max-w-full">{actions}</div>}
     </div>
   );
 }

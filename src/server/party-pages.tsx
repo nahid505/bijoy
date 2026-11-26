@@ -29,6 +29,7 @@ import { getT } from "./i18n";
 import { getSupplierBagBalance } from "./services/bag-tracking";
 import { businessModules } from "@/lib/business-types";
 import { RICE_MILL_ACCESS } from "@/lib/rice-mill";
+import { BagLedgerCollapsibleCard } from "@/components/bag-ledger-card";
 
 export type PartyKind = "CUSTOMER" | "SUPPLIER";
 /** DEALER = a depot dealer (Customer.isDepotDealer): own list / profile under the depot menu, DEPOT book */
@@ -261,7 +262,7 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
 
   const subItems: React.ReactNode[] = [];
   if (party.mobile) subItems.push(<span key="m">📞 {party.mobile}</span>);
-  if (party.address) subItems.push(<span key="a">📍 {party.address}</span>);
+  if (party.address) subItems.push(<span key="a" className="hidden sm:inline">📍 {party.address}</span>);
   subItems.push(
     <span key="due">
       {dueLabel}{" "}
@@ -272,7 +273,7 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
   );
   if (bagBal && (isRiceMill || bagBal.receivedTotalBags > 0 || bagBal.returnedTotalBags > 0)) {
     subItems.push(
-      <span key="bags" className="inline-flex items-center gap-1 font-semibold text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-300">
+      <span key="bags" className="hidden md:inline-flex items-center gap-1 font-semibold text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-300">
         📦 {t("অবশিষ্ট বস্তা পাওনা")}: <span className="tabular-nums">চট [{toBnDigits(bagBal.dueJuteBags)}] টি, প্লাস্টিক [{toBnDigits(bagBal.duePlasticBags)}] টি</span>
       </span>
     );
@@ -285,7 +286,7 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
     <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs sm:text-sm text-slate-600 mt-0.5">
       {subItems.map((item, idx) => (
         <span key={idx} className="flex items-center gap-2">
-          {idx > 0 && <span className="text-slate-300 select-none">·</span>}
+          {idx > 0 && <span className="text-slate-300 select-none hidden sm:inline">·</span>}
           {item}
         </span>
       ))}
@@ -295,59 +296,11 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
   const profile = (
     <>
       {isSupplier && bagBal && (isRiceMill || bagBal.receivedTotalBags > 0 || bagBal.returnedTotalBags > 0) && (
-        <section className="panel mb-2 sm:mb-3 p-3 sm:p-4 border-2 border-amber-300 bg-amber-50/60 shadow-xs">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-base sm:text-lg">📦</span>
-                <h3 className="text-xs sm:text-sm font-bold text-amber-950">
-                  {t("খালি বস্তা লেজার হিসাব (অটো রাইস মিল)")}
-                </h3>
-              </div>
-              <p className="text-[11px] sm:text-xs text-amber-800 mt-0.5">
-                {t("ধান ক্রয়ের সময় গৃহীত খালি বস্তা ও মিল কর্তৃক ফেরত প্রদানের চলমান স্থিতি")}
-              </p>
-            </div>
-            {can(ctx, ["auto_rice_mill:bag_return:create", ...RICE_MILL_ACCESS.paddyCreate]) && (
-              <Link
-                prefetch={false}
-                href={`/auto-rice-mill/bag-returns/new?supplierId=${party.id}`}
-                className="btn-primary text-xs py-1 px-2.5 sm:py-1.5 sm:px-3 flex items-center gap-1 shrink-0 font-medium"
-              >
-                <span>+</span>
-                <span>{t("বস্তা ফেরত দিন")}</span>
-              </Link>
-            )}
-          </div>
-          <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5">
-            <div className="rounded bg-white p-2 sm:p-2.5 border border-amber-200">
-              <span className="text-[10px] sm:text-[11px] text-slate-500 block leading-tight">{t("মোট গৃহীত বস্তা")}</span>
-              <span className="text-sm sm:text-base font-bold text-ink-900 tabular-nums">
-                {toBnDigits(bagBal.receivedTotalBags)} <span className="text-xs font-normal text-slate-500">টি</span>
-              </span>
-              <span className="text-[10px] text-slate-400 block truncate">চট: {toBnDigits(bagBal.receivedJuteBags)}, প্লা: {toBnDigits(bagBal.receivedPlasticBags)}</span>
-            </div>
-            <div className="rounded bg-white p-2 sm:p-2.5 border border-amber-200">
-              <span className="text-[10px] sm:text-[11px] text-slate-500 block leading-tight">{t("মোট ফেরত প্রদান")}</span>
-              <span className="text-sm sm:text-base font-bold text-emerald-800 tabular-nums">
-                {toBnDigits(bagBal.returnedTotalBags)} <span className="text-xs font-normal text-slate-500">টি</span>
-              </span>
-              <span className="text-[10px] text-slate-400 block truncate">চট: {toBnDigits(bagBal.returnedJuteBags)}, প্লা: {toBnDigits(bagBal.returnedPlasticBags)}</span>
-            </div>
-            <div className="rounded bg-amber-100/70 p-2 sm:p-2.5 border border-amber-300">
-              <span className="text-[10px] sm:text-[11px] font-semibold text-amber-900 block leading-tight">{t("অবশিষ্ট চটের বস্তা পাওনা")}</span>
-              <span className="text-base sm:text-lg font-black text-amber-950 tabular-nums">
-                {toBnDigits(bagBal.dueJuteBags)} <span className="text-xs font-normal text-amber-900">টি</span>
-              </span>
-            </div>
-            <div className="rounded bg-blue-50 p-2 sm:p-2.5 border border-blue-200">
-              <span className="text-[10px] sm:text-[11px] font-semibold text-blue-900 block leading-tight">{t("অবশিষ্ট প্লাস্টিক বস্তা পাওনা")}</span>
-              <span className="text-base sm:text-lg font-black text-blue-950 tabular-nums">
-                {toBnDigits(bagBal.duePlasticBags)} <span className="text-xs font-normal text-blue-900">টি</span>
-              </span>
-            </div>
-          </div>
-        </section>
+        <BagLedgerCollapsibleCard
+          bagBal={bagBal}
+          partyId={party.id}
+          canCreateReturn={can(ctx, ["auto_rice_mill:bag_return:create", ...RICE_MILL_ACCESS.paddyCreate])}
+        />
       )}
       {isDealer && (
         <section className="panel mb-2 sm:mb-3">
@@ -376,9 +329,9 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
           </div>
         </section>
       )}
-      <nav className="no-print mb-1 flex flex-wrap gap-1 border-b border-rule/60">
+      <nav className="no-print mb-1 flex items-center gap-1 sm:gap-2 border-b border-rule/60 overflow-x-auto no-scrollbar whitespace-nowrap">
         {TABS.map((x) => (
-          <Link prefetch={false} key={x.key} href={tabHref(x.key)} className={`-mb-px border-b-2 px-2 py-1 sm:px-2.5 sm:py-1.5 text-xs sm:text-sm ${tab === x.key ? "border-brand-600 font-semibold text-brand-800" : "border-transparent text-slate-600 hover:text-ink-900"}`}>
+          <Link prefetch={false} key={x.key} href={tabHref(x.key)} className={`-mb-px border-b-2 px-2 py-0.5 sm:px-2.5 sm:py-1.5 text-xs sm:text-sm shrink-0 ${tab === x.key ? "border-brand-600 font-semibold text-brand-800" : "border-transparent text-slate-600 hover:text-ink-900"}`}>
             {t(x.label)}
           </Link>
         ))}
@@ -386,9 +339,9 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
     </>
   );
 
-  const actionBtnClass = "btn-secondary shrink-0 text-xs sm:text-sm px-2.5 sm:px-3 py-1.5 flex items-center gap-1 font-medium";
-  const actionBtnPrimary = "btn-primary shrink-0 text-xs sm:text-sm px-2.5 sm:px-3 py-1.5 flex items-center gap-1 font-medium";
-  const actionBtnDanger = "btn-danger shrink-0 text-xs sm:text-sm px-2.5 sm:px-3 py-1.5 flex items-center gap-1 font-medium";
+  const actionBtnClass = "btn-secondary shrink-0 text-[11px] sm:text-sm px-2 py-1 sm:px-3 sm:py-1.5 flex items-center gap-1 font-medium";
+  const actionBtnPrimary = "btn-primary shrink-0 text-[11px] sm:text-sm px-2 py-1 sm:px-3 sm:py-1.5 flex items-center gap-1 font-medium";
+  const actionBtnDanger = "btn-danger shrink-0 text-[11px] sm:text-sm px-2 py-1 sm:px-3 sm:py-1.5 flex items-center gap-1 font-medium";
 
   const actions = (
     <>
@@ -519,8 +472,8 @@ export async function PartyDetailPage({ kind: pageKind, id, searchParams }: { ki
 
   return (
     <>
-      <div className="no-print sticky top-0 z-30 bg-white shadow-sm border-b pb-1 pt-1.5 mb-2 -mx-3 px-3 sm:-mx-6 sm:px-6">
-        <PageHeader className="mb-1 sm:mb-1.5" title={partyName(party)} description={isDealer ? `${cfg.title} প্রোফাইল` : partySubtitle} crumbs={[...(dealer ? [{ label: "ডিপো ব্যবস্থাপনা" }] : []), { label: cfg.title, href: cfg.base }, { label: partyName(party) }]} actions={actions} />
+      <div className="no-print sticky top-0 z-30 bg-white shadow-sm border-b pb-0.5 pt-1 sm:pb-1 sm:pt-1.5 mb-1 sm:mb-2 -mx-3 px-2.5 sm:-mx-6 sm:px-6">
+        <PageHeader className="mb-0.5 sm:mb-1.5" title={partyName(party)} description={isDealer ? `${cfg.title} প্রোফাইল` : partySubtitle} crumbs={[...(dealer ? [{ label: "ডিপো ব্যবস্থাপনা" }] : []), { label: cfg.title, href: cfg.base }, { label: partyName(party) }]} actions={actions} />
         {profile}
       </div>
       <section className="panel">{body}</section>

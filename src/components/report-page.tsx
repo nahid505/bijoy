@@ -71,9 +71,9 @@ export async function ReportPage({
   return (
     <>
       {/* the printed sheet has its own heading (PrintHeader below) */}
-      <div className={stickyHeader ? "no-print sticky top-0 z-30 bg-white shadow-sm border-b pb-1 pt-1.5 mb-2 -mx-3 px-3 sm:-mx-6 sm:px-6" : "no-print"}>
+      <div className={stickyHeader ? "no-print sticky top-0 z-30 bg-white shadow-sm border-b pb-0.5 pt-1 sm:pb-1 sm:pt-1.5 mb-1 sm:mb-2 -mx-3 px-2.5 sm:-mx-6 sm:px-6" : "no-print"}>
         <PageHeader
-          className={stickyHeader ? "mb-1 sm:mb-1.5" : "mb-5"}
+          className={stickyHeader ? "mb-0.5 sm:mb-1.5" : "mb-5"}
           title={title ?? def.title}
           description={description ?? def.description}
           crumbs={crumbs ?? [{ label: "রিপোর্ট", href: can(ctx, "reports:view") ? "/reports" : undefined }, { label: def.title }]}
@@ -82,9 +82,9 @@ export async function ReportPage({
               {extraActions}
               {report.rows.length > 0 && (
                 <>
-                  <PrintButton label="প্রিন্ট / PDF" className="btn-secondary shrink-0 text-xs sm:text-sm px-2.5 sm:px-3 py-1.5 flex items-center gap-1 font-medium" />
-                  <a href={`${exportHref}${exportHref.includes("?") ? "&" : "?"}format=xlsx`} className="btn-secondary shrink-0 text-xs sm:text-sm px-2.5 sm:px-3 py-1.5 flex items-center gap-1 font-medium text-slate-700 hover:text-emerald-700"><span>📊</span><span>Excel (XLSX)</span></a>
-                  <a href={exportHref} className="btn-secondary shrink-0 text-xs sm:text-sm px-2.5 sm:px-3 py-1.5 flex items-center gap-1 font-medium text-slate-700 hover:text-brand-700"><span>📥</span><span>CSV</span></a>
+                  <PrintButton label="প্রিন্ট / PDF" className="btn-secondary shrink-0 text-[11px] sm:text-sm px-2 py-1 sm:px-3 sm:py-1.5 flex items-center gap-1 font-medium" />
+                  <a href={`${exportHref}${exportHref.includes("?") ? "&" : "?"}format=xlsx`} className="btn-secondary shrink-0 text-[11px] sm:text-sm px-2 py-1 sm:px-3 sm:py-1.5 flex items-center gap-1 font-medium text-slate-700 hover:text-emerald-700"><span>📊</span><span>Excel (XLSX)</span></a>
+                  <a href={exportHref} className="btn-secondary shrink-0 text-[11px] sm:text-sm px-2 py-1 sm:px-3 sm:py-1.5 flex items-center gap-1 font-medium text-slate-700 hover:text-brand-700"><span>📥</span><span>CSV</span></a>
                 </>
               )}
             </>
