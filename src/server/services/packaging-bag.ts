@@ -420,6 +420,7 @@ export async function recordPackagingBagWastage(ctx: Ctx, input: PackagingBagWas
   });
   if (!bagItem) throw new UserError("খালি বস্তা আইটেম পাওয়া যায়নি");
 
+
   const available = await warehouseStock(prisma as never, bagItem.productId, input.warehouseId);
   if (available < input.quantity) {
     throw new UserError(`গুদামে পর্যাপ্ত খালি বস্তা নেই (বর্তমান স্টক: ${available} টি)`);

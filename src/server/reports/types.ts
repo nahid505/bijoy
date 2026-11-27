@@ -28,7 +28,7 @@ export interface ReportResult {
   isLedger?: boolean;
 }
 
-export type FilterKey = "range" | "asOf" | "q" | "account" | "cashAccount" | "bankAccount" | "warehouse" | "voucherType" | "customer" | "supplier" | "dueStatus" | "period" | "department" | "employee" | "verification";
+export type FilterKey = "range" | "asOf" | "q" | "account" | "cashAccount" | "bankAccount" | "warehouse" | "voucherType" | "customer" | "supplier" | "dueStatus" | "period" | "department" | "employee" | "verification" | "negativeStock";
 
 export type ReportParams = Record<string, string | undefined>;
 

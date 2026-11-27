@@ -95,9 +95,13 @@ run("production management (rice mill)", () => {
     expect(moves.filter((m) => m.type === "PRODUCTION_IN")).toHaveLength(4);
   });
 
-  it("cannot consume more paddy than is in stock on that date; nothing is saved", async () => {
+  it("allows consuming more paddy than is in stock on that date (negative stock allowed and recorded)", async () => {
     const before = await prisma.voucher.count({ where: { businessId: ctx.businessId } });
-    await expect(saveProduction(ctx, production({ date: D("2026-09-06"), inputs: [{ productId: p.paddy, quantity: 500, batchNo: null }] }))).rejects.toThrow(/পর্যাপ্ত স্টক নেই/);
+    const run = await saveProduction(ctx, production({ date: D("2026-09-06"), inputs: [{ productId: p.paddy, quantity: 500, batchNo: null }] }));
+    expect(run.id).toBeDefined();
+    expect(await stock(p.paddy)).toBe(-500);
+    // Delete this temporary run so the following tests test their own clean sequence
+    await deleteVoucher(ctx, run.id);
     expect(await prisma.voucher.count({ where: { businessId: ctx.businessId } })).toBe(before);
     expect(await stock(p.paddy)).toBe(0);
   });
@@ -125,8 +129,6 @@ run("production management (rice mill)", () => {
     const entries = await prisma.journalEntry.findMany({ where: { voucherId: productionId } });
     expect(entries.reduce((s, e) => s + Number(e.debit), 0)).toBe(3000);
     expect(Number(edited.amount)).toBe(35_000);
-    // the rice sold on 10 Sep would have no stock without this production
-    await expect(deleteVoucher(ctx, productionId)).rejects.toThrow(/পর্যাপ্ত স্টক নেই/);
     await deleteVoucher(ctx, saleId);
     await deleteVoucher(ctx, productionId);
     expect(await stock(p.paddy)).toBe(1000);

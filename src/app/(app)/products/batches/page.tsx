@@ -77,8 +77,9 @@ export default async function BatchesPage({ searchParams }: { searchParams: Sear
               <td className="text-xs">{r.mfgDate ? formatDate(r.mfgDate) : "—"}</td>
               <td className="whitespace-nowrap">{r.expiryDate ? formatDate(r.expiryDate) : "—"}</td>
               <td><ExpiryBadge status={r.status} /></td>
-              <td className="num font-semibold">{formatQty(r.quantity)} {r.unit}</td>
-              <td className="num">{formatMoney(r.costPrice, cur)}</td>
+              <td className={`num font-semibold ${r.quantity < 0 ? "text-red-600 font-bold" : ""}`}>
+                {r.quantity < 0 ? `-${formatQty(Math.abs(r.quantity))}` : formatQty(r.quantity)} {r.unit}
+              </td>
               <td className="num">{formatMoney(r.value, cur)}</td>
               <td className="text-xs">{r.supplierName ?? "—"}{r.purchaseDate && <span className="block text-slate-400">{formatDate(r.purchaseDate)}</span>}</td>
               <td className="no-print text-right">

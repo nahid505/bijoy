@@ -3,7 +3,7 @@ import type { Prisma, VoucherType } from "@prisma/client";
 import { prisma, num } from "@/lib/db";
 import { round2, round3 } from "@/lib/calc";
 import { naturalBalance, VOUCHER_TYPES, type Nature, type VoucherTypeKey } from "@/lib/accounting";
-import { dayRange, formatDate, formatDrCr, formatMoney, toDateInput } from "@/lib/format";
+import { dayRange, formatDate, formatDrCr, formatMoney, toBnDigits, toDateInput } from "@/lib/format";
 import { reportPeriod } from "../period";
 import { listAccounts, partySummaries, statement } from "../services/ledger";
 import { balanceSheet, profitAndLoss, trialBalance } from "../services/report";
@@ -412,13 +412,14 @@ export const REPORTS: ReportDef[] = [
     slug: "stock",
     title: "স্টক রিপোর্ট",
     description: "পণ্যভিত্তিক প্রারম্ভিক, আগমন, নির্গমন, সমাপনী মজুদ ও মূল্য",
-    filters: ["range", "q", "warehouse"],
+    filters: ["range", "q", "warehouse", "negativeStock"],
     permission: "reports:view",
     async run(ctx, p) {
       const { from, to, range } = reportPeriod(p, ctx.business.fiscalYearStartMonth);
       const cur = ctx.business.currencySymbol;
       const q = p.q?.trim();
       const warehouseId = p.warehouseId || undefined;
+      const onlyNegative = p.negative === "true" || p.negativeStock === "true" || p.negative === "1";
       const products = await prisma.product.findMany({
         where: { businessId: ctx.business.id, isDepotProduct: false, ...(q ? { OR: [...digitVariants(q).map((v) => ({ name: ci(v) })), { code: ci(toAsciiDigits(q)) }, { barcode: { contains: toAsciiDigits(q) } }] } : {}) }, // depot products: /depot/products
         orderBy: { name: "asc" },
@@ -432,23 +433,28 @@ export const REPORTS: ReportDef[] = [
       const bMap = new Map(before.map((r) => [r.productId, num(r._sum.quantityIn) - num(r._sum.quantityOut)]));
       const dMap = new Map(during.map((r) => [r.productId, { in: num(r._sum.quantityIn), out: num(r._sum.quantityOut) }]));
       let totalValue = 0;
-      const rows: ReportRow[] = products.map((pr) => {
+      let negCount = 0;
+      const productRows: ReportRow[] = [];
+      for (const pr of products) {
         const opening = round3(bMap.get(pr.id) ?? 0);
         const d = dMap.get(pr.id) ?? { in: 0, out: 0 };
         const closing = round3(opening + d.in - d.out);
         const value = round2(closing * num(pr.avgCost));
+        if (closing < 0) negCount++;
+        if (onlyNegative && closing >= 0) continue;
         totalValue += value;
-        return {
+        productRows.push({
           href: `/products/${pr.id}`,
           cells: { product: pr.name, unit: pr.unit.name, opening, in: d.in || null, out: d.out || null, closing, rate: num(pr.avgCost), value },
-        };
-      });
+        });
+      }
+      const rows: ReportRow[] = [...productRows];
       rows.push({ kind: "total", cells: { product: "মোট", unit: "", opening: null, in: null, out: null, closing: null, rate: null, value: round2(totalValue) } });
       // the printout says which warehouse (godown) it covers
       const warehouse = warehouseId ? (await prisma.warehouse.findFirst({ where: { id: warehouseId, businessId: ctx.business.id }, select: { name: true } }))?.name : null;
       return {
         title: "স্টক রিপোর্ট",
-        subtitle: `${periodText(from, to)} — ${warehouse ? `গুদাম: ${warehouse}` : "সব গুদাম"}`,
+        subtitle: `${periodText(from, to)} — ${warehouse ? `গুদাম: ${warehouse}` : "সব গুদাম"}${onlyNegative ? " (শুধু নেগেটিভ স্টক)" : ""}`,
         columns: [
           { key: "product", label: "পণ্য" },
           { key: "unit", label: "ইউনিট" },
@@ -460,7 +466,10 @@ export const REPORTS: ReportDef[] = [
           { key: "value", label: "মজুদ মূল্য", format: "money" },
         ],
         rows,
-        summary: [{ label: "মোট মজুদ মূল্য", value: formatMoney(totalValue, cur), tone: "blue" }],
+        summary: [
+          { label: "মোট মজুদ মূল্য", value: formatMoney(totalValue, cur), tone: "blue" },
+          ...(negCount > 0 ? [{ label: "নেগেটিভ মজুদ পণ্য", value: `${toBnDigits(negCount)} টি`, tone: "red" as const }] : []),
+        ],
         notes: ["মজুদ মূল্য = সমাপনী পরিমাণ × বর্তমান গড় ক্রয়মূল্য (মুভিং অ্যাভারেজ)।"],
       };
     },

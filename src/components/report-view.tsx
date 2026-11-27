@@ -91,7 +91,14 @@ export async function ReportTable({
                 const raw = r.cells[c.key];
                 const text = formatCell(raw, c.format, currency);
                 const numeric = c.format && c.format !== "text" && c.format !== "date";
-                const tone = c.format === "drcr" && typeof raw === "number" ? (raw > 0 ? "dr" : raw < 0 ? "cr" : "") : c.format === "money" && typeof raw === "number" && raw < 0 ? "cr" : "";
+                const tone =
+                  c.format === "drcr" && typeof raw === "number"
+                    ? raw > 0 ? "dr" : raw < 0 ? "cr" : ""
+                    : c.format === "money" && typeof raw === "number" && raw < 0
+                    ? "cr"
+                    : c.format === "qty" && typeof raw === "number" && raw < 0
+                    ? "text-red-600 font-bold tabular-nums"
+                    : "";
                 const firstText = ci === report.columns.findIndex((x) => !x.format || x.format === "text");
                 return (
                   <td key={c.key} className={`${numeric ? "num" : ""} ${c.format === "date" ? "whitespace-nowrap" : ""} ${tone}`} style={firstText && r.indent ? { paddingLeft: `${0.75 + r.indent * 1.1}rem` } : undefined}>

@@ -183,12 +183,11 @@ export function PosScreen({
                   key={p.id}
                   type="button"
                   onClick={() => add(p)}
-                  disabled={p.stock <= 0}
-                  className="rounded-md border border-rule bg-white p-2 text-left transition hover:border-brand-500 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="rounded-md border border-rule bg-white p-2 text-left transition hover:border-brand-500 hover:bg-brand-50"
                 >
                   <p className="line-clamp-2 text-xs font-semibold text-ink-900">{p.name}</p>
                   <p className="mt-1 text-sm font-bold tabular-nums text-brand-700">{formatMoney(priceOf(p), currency)}</p>
-                  <p className={`text-[10px] ${p.stock <= 0 ? "text-credit" : "text-slate-500"}`}>{t("মজুদ")} {formatQty(p.stock)} {unitMap.get(p.unitId)?.name}</p>
+                  <p className={`text-[10px] ${p.stock < 0 ? "text-red-600 font-bold" : p.stock === 0 ? "text-amber-600 font-semibold" : "text-slate-500"}`}>{t("মজুদ")} {formatQty(p.stock)} {unitMap.get(p.unitId)?.name}</p>
                 </button>
               ))}
               {results.length === 0 && <p className="col-span-full py-4 text-center text-sm text-slate-400">{t("কোনো পণ্য পাওয়া যায়নি")}</p>}
@@ -211,7 +210,11 @@ export function PosScreen({
                         <tr key={l.key}>
                           <td>
                             <p className="font-medium">{p.name}</p>
-                            {short && <p className="text-xs text-credit">{t("মজুদ মাত্র")} {formatQty(p.stock)}</p>}
+                            {short && (
+                              <p className="text-xs text-amber-700 bg-amber-50 p-1 rounded border border-amber-200 mt-0.5">
+                                ⚠️ {t("সতর্কতা: স্টক অপর্যাপ্ত")} ({t("মজুদ")}: {formatQty(p.stock)}) — {t("সংরক্ষণ করলে নেগেটিভ (-) হবে")}
+                              </p>
+                            )}
                             <FieldError name={`items.${idx}.quantity`} />
                           </td>
                           <td><BatchCell product={p} inbound={false} batches={batches} warehouseId={warehouseId} batchNo={l.batchNo} expiryDate="" fefo blockExpired={!allowExpiredSale} onChange={(x) => update(l.key, { batchNo: x.batchNo ?? l.batchNo })} /></td>

@@ -80,7 +80,7 @@ run("Warehouse Stock Transfer Integration Tests", () => {
     ).toThrow();
   });
 
-  it("rejects transfer when quantity exceeds sender warehouse stock", async () => {
+  it("successfully allows transfer when quantity exceeds sender warehouse stock (allows negative stock)", async () => {
     const input = stockTransferSchema.parse({
       date: new Date().toISOString().slice(0, 10),
       fromWarehouseId: wh1Id,
@@ -88,7 +88,16 @@ run("Warehouse Stock Transfer Integration Tests", () => {
       items: [{ productId, quantity: 150 }], // Available is 100
     });
 
-    await expect(createStockTransfer(ctx, input)).rejects.toThrow("পর্যাপ্ত মজুদ নেই");
+    const res = await createStockTransfer(ctx, input);
+    expect(res.transferNo).toMatch(/^TRF-\d{5}$/);
+
+    const stockWh1 = await warehouseStock(prisma as never, productId, wh1Id);
+    const stockWh2 = await warehouseStock(prisma as never, productId, wh2Id);
+    expect(stockWh1).toBe(-50);
+    expect(stockWh2).toBe(150);
+
+    // Delete this transfer to restore clean state for following tests
+    await deleteStockTransfer(ctx, res.id);
   });
 
   it("successfully transfers stock from wh1 to wh2 and generates TRF-XXXXX", async () => {

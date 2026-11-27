@@ -16,7 +16,7 @@ type Line = {
   quantity: string;
   costShare: string;
   batchNo: string;
-  emptyBagProductId?: string;
+  emptyBagProductId?: string | null;
   bagSizeKg?: string;
   bagCount?: string;
 };
@@ -25,7 +25,7 @@ const newLine = (
   p: ProductOption | null = null,
   quantity = "",
   costShare = "",
-  emptyBagProductId = "NONE",
+  emptyBagProductId = "",
   bagSizeKg = "",
   bagCount = "",
 ): Line => ({
@@ -70,6 +70,9 @@ export interface RecipeLineData {
   product: ProductOption;
   quantity: number;
   costShare: number;
+  emptyBagProductId?: string | null;
+  bagSizeKg?: number | null;
+  bagCount?: number;
 }
 export interface RecipeData {
   id: string;
@@ -141,17 +144,7 @@ function LineTable({
                         kind="products"
                         value={l.product}
                         onChange={(p) => {
-                          const patch: Partial<Line> = { product: p };
-                          if (packagingBags && (!l.emptyBagProductId || l.emptyBagProductId === "NONE")) {
-                            const def = defaultBagForProduct(p, packagingBags);
-                            patch.emptyBagProductId = def.emptyBagProductId;
-                            patch.bagSizeKg = def.bagSizeKg;
-                            const cap = Number(def.bagSizeKg) || 0;
-                            if (cap > 0 && n(l.quantity) > 0) {
-                              patch.bagCount = String(Math.round(n(l.quantity) / cap));
-                            }
-                          }
-                          update(l.key, patch);
+                          update(l.key, { product: p });
                         }}
                         placeholder="পণ্য খুঁজুন — নাম, কোড, বারকোড"
                         currency={currency}
@@ -164,11 +157,11 @@ function LineTable({
                     <td>
                       <select
                         className="input text-xs font-semibold py-1 bg-white text-slate-800"
-                        value={l.emptyBagProductId ?? "NONE"}
+                        value={l.emptyBagProductId && l.emptyBagProductId !== "NONE" ? l.emptyBagProductId : ""}
                         onChange={(e) => {
                           const bagId = e.target.value;
-                          if (bagId === "NONE") {
-                            update(l.key, { emptyBagProductId: "NONE", bagSizeKg: "", bagCount: "" });
+                          if (!bagId || bagId === "NONE") {
+                            update(l.key, { emptyBagProductId: "", bagSizeKg: "", bagCount: "" });
                           } else {
                             const bag = packagingBags?.find((b) => b.productId === bagId);
                             const cap = bag ? bag.capacityKg : 50;
@@ -186,19 +179,21 @@ function LineTable({
                         }}
                         aria-label={`খালি বস্তা, সারি ${i + 1}`}
                       >
-                        <option value="NONE">🚫 খোলা / বস্তা ছাড়া</option>
+                        <option value="">🚫 খোলা / বস্তা ছাড়া</option>
                         {packagingBags?.map((bag) => (
                           <option key={bag.productId} value={bag.productId}>
                             {bag.name} ({toBnDigits(bag.capacityKg)} কেজি) — মজুদ: {toBnDigits(bag.stock)} {bag.unit}
                           </option>
                         ))}
                       </select>
-                      {l.emptyBagProductId && l.emptyBagProductId !== "NONE" && selectedBag && (
+                      {Boolean(l.emptyBagProductId && l.emptyBagProductId !== "NONE" && selectedBag) && (
                         <div className="mt-1 flex items-center justify-between text-[11px]">
-                          <span className="text-slate-500">মজুদ: {toBnDigits(selectedBag.stock)} {selectedBag.unit}</span>
+                          <span className={`tabular-nums ${Number(selectedBag!.stock) < 0 ? "text-red-600 font-bold" : "text-slate-500"}`}>
+                            মজুদ: {toBnDigits(selectedBag!.stock)} {selectedBag!.unit}
+                          </span>
                           {isShortage && (
-                            <span className="font-bold text-red-600 bg-red-50 border border-red-200 rounded px-1.5 py-0.2">
-                              ⚠️ ঘাটতি
+                            <span className="font-bold text-amber-700 bg-amber-50 border border-amber-300 rounded px-1.5 py-0.2" title="সংরক্ষণ করলে খালি বস্তার মজুদ নেগেটিভ (-) হবে">
+                              ⚠️ নেগেটিভ হবে
                             </span>
                           )}
                         </div>
@@ -210,7 +205,7 @@ function LineTable({
                         inputMode="decimal"
                         data-numeric
                         disabled={!l.emptyBagProductId || l.emptyBagProductId === "NONE"}
-                        value={l.bagSizeKg ?? ""}
+                        value={(!l.emptyBagProductId || l.emptyBagProductId === "NONE") ? "" : (l.bagSizeKg ?? "")}
                         onChange={(e) => {
                           const cap = n(e.target.value);
                           const patch: Partial<Line> = { bagSizeKg: e.target.value };
@@ -231,7 +226,7 @@ function LineTable({
                         inputMode="numeric"
                         data-numeric
                         disabled={!l.emptyBagProductId || l.emptyBagProductId === "NONE"}
-                        value={l.bagCount ?? ""}
+                        value={(!l.emptyBagProductId || l.emptyBagProductId === "NONE") ? "" : (l.bagCount ?? "")}
                         onChange={(e) => {
                           const count = n(e.target.value);
                           const cap = n(l.bagSizeKg);
@@ -303,7 +298,11 @@ function LineTable({
                   <td className="text-xs text-slate-400">{toBnDigits(i + 1)}</td>
                   <td>
                     <SearchSelect kind="products" value={l.product} onChange={(p) => update(l.key, { product: p })} placeholder="পণ্য খুঁজুন — নাম, কোড, বারকোড" currency={currency} unitName={(id) => units.find((u) => u.id === id)?.name ?? ""} priceOf={(p) => p.avgCost || p.purchasePrice} ariaLabel={`${title}, সারি ${i + 1}`} />
-                    {short && <p className="mt-1 text-xs text-credit">মজুদ মাত্র {formatQty(l.product!.stock)} {unitName(l.product)}</p>}
+                    {short && (
+                      <p className="mt-1 text-xs text-amber-700 bg-amber-50 p-1 rounded border border-amber-200">
+                        ⚠️ সতর্কতা: বর্তমান মজুদ অপর্যাপ্ত ({formatQty(l.product!.stock)} {unitName(l.product)}) — সংরক্ষণ করলে স্টক নেগেটিভ (-) হবে এবং পরবর্তীতে উৎপাদন/ক্রয় হলে সমন্বয় হবে।
+                      </p>
+                    )}
                     <FieldError name={`${prefix}.${i}.productId`} />
                   </td>
                   <td>
@@ -330,12 +329,7 @@ function LineTable({
         type="button"
         className="btn-secondary btn-sm mt-2"
         onClick={() => {
-          if (isMultiBagOutput && packagingBags && packagingBags.length > 0) {
-            const p = packagingBags[0];
-            setLines([...lines, newLine(null, "", "", p.productId, String(p.capacityKg), "")]);
-          } else {
-            setLines([...lines, newLine()]);
-          }
+          setLines([...lines, newLine()]);
         }}
       >
         + সারি যোগ করুন
@@ -379,7 +373,7 @@ function LineTable({
                       key={bagProdId}
                       className={`inline-flex flex-wrap items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs border font-medium ${
                         isShort
-                          ? "bg-red-50 text-red-900 border-red-300"
+                          ? "bg-amber-50/80 text-amber-950 border-amber-300"
                           : "bg-white text-slate-800 border-amber-200/80 shadow-2xs"
                       }`}
                     >
@@ -391,12 +385,12 @@ function LineTable({
                       <span
                         className={
                           isShort
-                            ? "text-red-700 font-bold ml-1"
+                            ? "text-amber-800 font-semibold ml-1"
                             : "text-emerald-700 text-[11px] ml-1 font-semibold"
                         }
                       >
                         {isShort
-                          ? `(⚠️ ঘাটতি! মজুদ আছে মাত্র ${toBnDigits(bag.stock)} টি)`
+                          ? `(⚠️ ঘাটতি—সংরক্ষণ করলে নেগেটিভ হবে, মজুদ: ${toBnDigits(bag.stock)} টি)`
                           : `(মজুদ: ${toBnDigits(bag.stock)} টি ✓)`}
                       </span>
                     </div>
@@ -533,19 +527,17 @@ export function ProductionForm({
   const [outputs, setOutputs] = useState<Line[]>(() => {
     if (defaults?.outputs.length) {
       return defaults.outputs.map((l) => {
-        const def = defaultBagForProduct(l.product, packagingBags);
-        const bagId = l.emptyBagProductId ?? def.emptyBagProductId;
-        const bagSize = l.bagSizeKg ? String(l.bagSizeKg) : def.bagSizeKg;
+        const bagId = l.emptyBagProductId && l.emptyBagProductId !== "NONE" ? l.emptyBagProductId : "";
+        const bagSize = bagId && l.bagSizeKg ? String(l.bagSizeKg) : "";
         const cap = Number(bagSize) || 0;
-        const count = l.bagCount ? String(l.bagCount) : (cap > 0 && l.quantity > 0 ? String(Math.round(l.quantity / cap)) : "");
+        const count = bagId && l.bagCount ? String(l.bagCount) : (bagId && cap > 0 && l.quantity > 0 ? String(Math.round(l.quantity / cap)) : "");
         return {
           ...newLine(l.product, fmtNum(l.quantity), fmtNum(l.costShare ?? 0), bagId, bagSize, count),
           batchNo: l.batchNo ?? "",
         };
       });
     }
-    const def = defaultBagForProduct(null, packagingBags);
-    return [newLine(null, "", "", def.emptyBagProductId, def.bagSizeKg, "")];
+    return [newLine()];
   });
   const recipe = recipes.find((r) => r.id === recipeId) ?? null;
   const [mainQty, setMainQty] = useState(() => (defaults?.inputs[0] ? fmtNum(defaults.inputs[0].quantity) : ""));
@@ -559,11 +551,12 @@ export function ProductionForm({
     setInputs(r.inputs.map((l) => newLine(l.product, fmtNum(l.quantity * b))));
     setOutputs(r.outputs.map((l) => {
       const q = l.quantity * b;
-      const def = defaultBagForProduct(l.product, packagingBags);
-      const cap = Number(def.bagSizeKg) || 0;
-      const count = cap > 0 && q > 0 ? String(Math.round(q / cap)) : "";
+      const bagId = l.emptyBagProductId && l.emptyBagProductId !== "NONE" ? l.emptyBagProductId : "";
+      const bagSize = bagId && l.bagSizeKg ? String(l.bagSizeKg) : "";
+      const cap = Number(bagSize) || 0;
+      const count = bagId && cap > 0 && q > 0 ? String(Math.round(q / cap)) : "";
       return {
-        ...newLine(l.product, fmtNum(q), fmtNum(l.costShare), def.emptyBagProductId, def.bagSizeKg, count),
+        ...newLine(l.product, fmtNum(q), fmtNum(l.costShare), bagId, bagSize, count),
       };
     }));
   };
@@ -574,16 +567,19 @@ export function ProductionForm({
     bagProductId: null,
     bagWeightKg: 0,
     inputs: inputs.filter((l) => l.product || l.quantity).map((l) => ({ productId: l.product?.id ?? "", quantity: l.quantity, batchNo: l.batchNo || null })),
-    outputs: outputs.filter((l) => l.product || l.quantity).map((l) => ({
-      productId: l.product?.id ?? "",
-      quantity: l.quantity,
-      costShare: 0,
-      batchNo: l.batchNo || null,
-      expiryDate: null,
-      emptyBagProductId: l.emptyBagProductId === "NONE" ? null : (l.emptyBagProductId || null),
-      bagSizeKg: l.bagSizeKg ? Number(l.bagSizeKg) : null,
-      bagCount: l.bagCount ? Math.round(Number(l.bagCount)) : 0,
-    })),
+    outputs: outputs.filter((l) => l.product || l.quantity).map((l) => {
+      const isLoose = !l.emptyBagProductId || l.emptyBagProductId === "NONE";
+      return {
+        productId: l.product?.id ?? "",
+        quantity: l.quantity,
+        costShare: 0,
+        batchNo: l.batchNo || null,
+        expiryDate: null,
+        emptyBagProductId: isLoose ? null : l.emptyBagProductId,
+        bagSizeKg: isLoose ? null : (l.bagSizeKg ? Number(l.bagSizeKg) : null),
+        bagCount: isLoose ? 0 : (l.bagCount ? Math.round(Number(l.bagCount)) : 0),
+      };
+    }),
   });
 
   return (

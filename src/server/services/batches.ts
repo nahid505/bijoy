@@ -138,14 +138,24 @@ export async function allocateSaleBatches(
     opts.saleDate,
   );
   if (shortfall > 0) {
-    const usable = round3(opts.baseQuantity - shortfall);
-    const expiredQty = round3(pool.filter((p) => p.quantity > 0 && isExpired(p.batch.expiryDate, opts.saleDate)).reduce((s, p) => s + p.quantity, 0));
-    if (expiredQty > 0) {
-      throw new UserError(
-        `"${product.name}" — মেয়াদ আছে এমন স্টক মাত্র ${formatQty(usable)}; বাকি ${formatQty(expiredQty)} মেয়াদোত্তীর্ণ। ${EXPIRED_SALE_MESSAGE}`,
-      );
+    if (allocations.length > 0) {
+      allocations[allocations.length - 1].quantity = round3(allocations[allocations.length - 1].quantity + shortfall);
+    } else if (batches.length > 0) {
+      const nonExpired = opts.allowExpiredSale ? batches[0] : (batches.find((b) => !isExpired(b.expiryDate, opts.saleDate)) ?? batches[0]);
+      allocations.push({ batchNo: nonExpired.batchNo, quantity: opts.baseQuantity });
+    } else {
+      const prod = await tx.product.findUniqueOrThrow({ where: { id: product.id }, select: { businessId: true } });
+      const defaultBatch = await tx.productBatch.create({
+        data: {
+          businessId: prod.businessId,
+          productId: product.id,
+          batchNo: "BATCH-DEFAULT",
+          purchaseDate: opts.saleDate,
+        },
+      });
+      batches.push(defaultBatch);
+      allocations.push({ batchNo: defaultBatch.batchNo, quantity: opts.baseQuantity });
     }
-    throw new UserError(`"${product.name}" এর পর্যাপ্ত স্টক নেই — এই গুদামে আছে ${formatQty(usable)}`);
   }
   const byNo = new Map(batches.map((b) => [b.batchNo, b]));
   return allocations.map((a) => {

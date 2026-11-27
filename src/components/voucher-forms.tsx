@@ -807,7 +807,11 @@ export function TradeVoucherForm({
                           priceOf={baseRate}
                           ariaLabel={`${t("পণ্য")}, ${t("সারি")} ${idx + 1}`}
                         />
-                        {short && <p className="mt-1 text-xs text-credit">{t("মজুদ মাত্র")} {formatQty(p!.stock)} {unitMap.get(p!.unitId)?.name}</p>}
+                        {short && (
+                          <p className="mt-1 text-xs text-amber-700 bg-amber-50 p-1 rounded border border-amber-200">
+                            ⚠️ {t("সতর্কতা: বর্তমান স্টক অপর্যাপ্ত")} ({t("মজুদ")}: {formatQty(p!.stock)} {unitMap.get(p!.unitId)?.name}) — {t("সংরক্ষণ করলে স্টক নেগেটিভ (-) হবে এবং পরবর্তীতে সমন্বয় হবে।")}
+                          </p>
+                        )}
                         {l.maxQty !== undefined && <p className="mt-1 text-xs text-amber-700">{t("ফেরতযোগ্য সর্বোচ্চ")} {formatQty(l.maxQty)}</p>}
                         <FieldError name={`items.${idx}.productId`} />
                       </td>

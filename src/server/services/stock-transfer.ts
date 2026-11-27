@@ -48,15 +48,9 @@ export async function createStockTransfer(ctx: Ctx, input: StockTransferInput) {
       qtyByProduct.set(item.productId, round3((qtyByProduct.get(item.productId) ?? 0) + item.quantity));
     }
 
-    for (const [pId, reqQty] of qtyByProduct.entries()) {
+    for (const pId of qtyByProduct.keys()) {
       const p = productMap.get(pId);
       if (!p) throw new UserError("নির্বাচিত পণ্য পাওয়া যায়নি");
-      const currentStock = await warehouseStock(tx, pId, input.fromWarehouseId);
-      if (reqQty > currentStock) {
-        throw new UserError(
-          `"${p.name}" এর পর্যাপ্ত মজুদ নেই (প্রেরক গুদাম "${fromWh.name}"-এ বর্তমান মজুদ: ${formatQty(currentStock)} ${p.unit.name}, হস্তান্তর চাওয়া হয়েছে: ${formatQty(reqQty)} ${p.unit.name})`
-        );
-      }
     }
 
     // Generate sequence number TRF-00001

@@ -38,6 +38,9 @@ export async function ProductListPage({ searchParams }: { searchParams: SearchPa
   const lowIds = p.low
     ? (await rawRows<{ id: string }>(prisma, sql`SELECT "id" FROM "Product" WHERE "businessId" = ${businessId} AND "isDepotProduct" = false AND ("stock" <= "minStock" OR "stock" <= 0)`)).map((r) => r.id)
     : null;
+  const negIds = p.negative
+    ? (await rawRows<{ id: string }>(prisma, sql`SELECT "id" FROM "Product" WHERE "businessId" = ${businessId} AND "isDepotProduct" = false AND "stock" < 0`)).map((r) => r.id)
+    : null;
   const where: Prisma.ProductWhereInput = {
     businessId,
     isDepotProduct: false, // depot (dealership) products: /depot/products
@@ -46,8 +49,9 @@ export async function ProductListPage({ searchParams }: { searchParams: SearchPa
     ...(p.brand ? { brandId: p.brand } : {}),
     ...(p.status === "inactive" ? { isActive: false } : p.status === "all" ? {} : { isActive: true }),
     ...(lowIds ? { id: { in: lowIds } } : {}),
+    ...(negIds ? { id: { in: negIds } } : {}),
   };
-  const [rows, total, categories, brands, value] = await Promise.all([
+  const [rows, total, categories, brands, value, negCount] = await Promise.all([
     prisma.product.findMany({
       where,
       orderBy: p.sort === "stock" ? { stock: p.dir === "desc" ? "desc" : "asc" } : p.sort === "price" ? { salePrice: p.dir === "desc" ? "desc" : "asc" } : p.sort === "code" ? { code: p.dir === "desc" ? "desc" : "asc" } : { name: p.dir === "desc" ? "desc" : "asc" },
@@ -59,6 +63,7 @@ export async function ProductListPage({ searchParams }: { searchParams: SearchPa
     prisma.category.findMany({ where: { businessId }, orderBy: { name: "asc" } }),
     prisma.brand.findMany({ where: { businessId }, orderBy: { name: "asc" } }),
     rawRows<{ v: string | null; n: bigint }>(prisma, sql`SELECT SUM("stock" * "avgCost")::text AS v, COUNT(*) AS n FROM "Product" WHERE "businessId" = ${businessId} AND "isActive" = true AND "isDepotProduct" = false`),
+    prisma.product.count({ where: { businessId, isDepotProduct: false, stock: { lt: 0 } } }),
   ]);
 
   // nearest expiry among in-stock batches of the products on this page
@@ -92,6 +97,10 @@ export async function ProductListPage({ searchParams }: { searchParams: SearchPa
             <select name="status" defaultValue={p.status ?? "active"} className="input w-28"><option value="active">{t("সক্রিয়")}</option><option value="inactive">{t("নিষ্ক্রিয়")}</option><option value="all">{t("সব")}</option></select>
           </FilterField>
           <label className="flex items-center gap-1.5 pb-2 text-sm"><input type="checkbox" name="low" value="1" defaultChecked={!!p.low} /> {t("কম মজুদ")}</label>
+          <label className={`flex items-center gap-1.5 pb-2 text-sm font-semibold cursor-pointer ${negCount > 0 ? "text-red-700" : "text-slate-500"}`}>
+            <input type="checkbox" name="negative" value="1" defaultChecked={!!p.negative} />
+            ⚠️ {t("নেগেটিভ স্টক")} {negCount > 0 ? `(${toBnDigits(negCount)})` : ""}
+          </label>
         </FilterBar>
         {rows.length === 0 ? <EmptyState /> : (
           <TableWrap>
@@ -101,8 +110,9 @@ export async function ProductListPage({ searchParams }: { searchParams: SearchPa
                 {rows.map((r) => {
                   const stock = num(r.stock);
                   const low = stock <= num(r.minStock);
+                  const isNeg = stock < 0;
                   return (
-                    <tr key={r.id}>
+                    <tr key={r.id} className={isNeg ? "bg-red-50/40" : ""}>
                       <td>
                         <Link prefetch={false} href={`/products/${r.id}`} className="font-semibold text-brand-700 hover:underline">{r.name}</Link>
                         <span className="block text-xs text-slate-400">{[r.code, r.barcode].filter(Boolean).join(" · ")}</span>
@@ -111,7 +121,7 @@ export async function ProductListPage({ searchParams }: { searchParams: SearchPa
                       <td className="num">{formatMoney(num(r.avgCost) || num(r.purchasePrice), cur)}</td>
                       <td className="num">{formatMoney(num(r.salePrice), cur)}</td>
                       <td className="num">{num(r.wholesalePrice) ? formatMoney(num(r.wholesalePrice), cur) : "—"}</td>
-                      <td className="num"><Badge tone={stock <= 0 ? "red" : low ? "amber" : "green"}>{formatQty(stock)} {r.unit.name}</Badge></td>
+                      <td className="num"><Badge tone={isNeg ? "red" : stock === 0 ? "slate" : low ? "amber" : "green"}>{isNeg ? `-${formatQty(Math.abs(stock))}` : formatQty(stock)} {r.unit.name}</Badge></td>
                       <td className="num">{formatMoney(round2(stock * num(r.avgCost)), cur)}</td>
                       <td>
                         {!r.trackBatch ? <span className="text-xs text-slate-300">—</span> : nearest.get(r.id) ? (
@@ -187,23 +197,23 @@ export async function ProductDetailPage({ id, kind = "GENERAL" }: { id: string; 
         <div className="grid grid-cols-2 divide-x divide-y divide-rule sm:grid-cols-6 sm:divide-y-0">
           {(depot
             ? [
-                [t("বর্তমান ডিপো স্টক"), `${formatQty(num(pr.stock))} ${pr.unit.name}`],
-                [t("কোম্পানি ক্রয় মূল্য / ডিপি"), formatMoney(num(pr.purchasePrice), cur)],
-                [t("ডিলার বিক্রয় রেট"), formatMoney(num(pr.salePrice), cur)],
-                [t("কমিশন"), commissionText(prices, (n) => formatMoney(n, cur))],
-                [t("মজুদ মূল্য (গড় দরে)"), formatMoney(round2(num(pr.stock) * num(pr.avgCost)), cur)],
-                [t("ন্যূনতম মজুদ"), `${formatQty(num(pr.minStock))} ${pr.unit.name}`],
+                [t("বর্তমান ডিপো স্টক"), `${num(pr.stock) < 0 ? `-${formatQty(Math.abs(num(pr.stock)))}` : formatQty(num(pr.stock))} ${pr.unit.name}`, num(pr.stock) < 0],
+                [t("কোম্পানি ক্রয় মূল্য / ডিপি"), formatMoney(num(pr.purchasePrice), cur), false],
+                [t("ডিলার বিক্রয় রেট"), formatMoney(num(pr.salePrice), cur), false],
+                [t("কমিশন"), commissionText(prices, (n) => formatMoney(n, cur)), false],
+                [t("মজুদ মূল্য (গড় দরে)"), formatMoney(round2(num(pr.stock) * num(pr.avgCost)), cur), false],
+                [t("ন্যূনতম মজুদ"), `${formatQty(num(pr.minStock))} ${pr.unit.name}`, false],
               ]
             : [
-                [t("বর্তমান মজুদ"), `${formatQty(num(pr.stock))} ${pr.unit.name}`],
-                [t("গড় ক্রয়মূল্য"), formatMoney(num(pr.avgCost), cur)],
-                [t("মজুদ মূল্য"), formatMoney(round2(num(pr.stock) * num(pr.avgCost)), cur)],
-                [t("সর্বশেষ ক্রয়মূল্য"), formatMoney(num(pr.purchasePrice), cur)],
-                [t("বিক্রয় / পাইকারি"), `${formatMoney(num(pr.salePrice), cur)} / ${formatMoney(num(pr.wholesalePrice), cur)}`],
-                [t("ন্যূনতম মজুদ"), `${formatQty(num(pr.minStock))} ${pr.unit.name}`],
+                [t("বর্তমান মজুদ"), `${num(pr.stock) < 0 ? `-${formatQty(Math.abs(num(pr.stock)))}` : formatQty(num(pr.stock))} ${pr.unit.name}`, num(pr.stock) < 0],
+                [t("গড় ক্রয়মূল্য"), formatMoney(num(pr.avgCost), cur), false],
+                [t("মজুদ মূল্য"), formatMoney(round2(num(pr.stock) * num(pr.avgCost)), cur), false],
+                [t("সর্বশেষ ক্রয়মূল্য"), formatMoney(num(pr.purchasePrice), cur), false],
+                [t("বিক্রয় / পাইকারি"), `${formatMoney(num(pr.salePrice), cur)} / ${formatMoney(num(pr.wholesalePrice), cur)}`, false],
+                [t("ন্যূনতম মজুদ"), `${formatQty(num(pr.minStock))} ${pr.unit.name}`, false],
               ]
-          ).map(([l, v]) => (
-            <div key={l} className="px-4 py-3"><p className="text-[11px] text-slate-500">{l}</p><p className="text-sm font-bold tabular-nums text-ink-900">{v}</p></div>
+          ).map(([l, v, neg]) => (
+            <div key={l as string} className="px-4 py-3"><p className="text-[11px] text-slate-500">{l as string}</p><p className={`text-sm font-bold tabular-nums ${neg ? "text-red-600" : "text-ink-900"}`}>{v as string}</p></div>
           ))}
         </div>
       </section>
@@ -213,7 +223,16 @@ export async function ProductDetailPage({ id, kind = "GENERAL" }: { id: string; 
           <table className="table"><tbody>
             {warehouses.map((w) => {
               const s = perWarehouse.find((x) => x.warehouseId === w.id);
-              return <tr key={w.id}><td>{w.name}</td><td className="num">{formatQty(num(s?._sum.quantityIn) - num(s?._sum.quantityOut))} {pr.unit.name}</td></tr>;
+              const whStock = num(s?._sum.quantityIn) - num(s?._sum.quantityOut);
+              const isWhNeg = whStock < 0;
+              return (
+                <tr key={w.id}>
+                  <td>{w.name}</td>
+                  <td className={`num ${isWhNeg ? "text-red-600 font-bold tabular-nums" : ""}`}>
+                    {isWhNeg ? `-${formatQty(Math.abs(whStock))}` : formatQty(whStock)} {pr.unit.name}
+                  </td>
+                </tr>
+              );
             })}
           </tbody></table>
           {pr.trackBatch && (
@@ -221,12 +240,15 @@ export async function ProductDetailPage({ id, kind = "GENERAL" }: { id: string; 
               <div className="panel-head border-t border-rule"><h2 className="panel-title">{t("ব্যাচ ও মেয়াদ")}</h2></div>
               {batches.length === 0 ? <EmptyState message={t("কোনো ব্যাচ নেই")} /> : (
                 <table className="table"><tbody>
-                  {batches.map((b) => (
-                    <tr key={`${b.warehouseId}-${b.batchNo}`}>
-                      <td>{b.batchNo}<span className="block text-xs text-slate-500">{b.expiryDate ? `${t("মেয়াদ")} ${formatDate(b.expiryDate)}` : t("মেয়াদ নেই")}</span><ExpiryBadge status={expiryStatus(b.expiryDate, businessToday(), ctx.business.expiryWarningDays)} /></td>
-                      <td className="num">{formatQty(b.quantity)} {pr.unit.name}</td>
-                    </tr>
-                  ))}
+                  {batches.map((b) => {
+                    const isBatchNeg = b.quantity < 0;
+                    return (
+                      <tr key={`${b.warehouseId}-${b.batchNo}`}>
+                        <td>{b.batchNo}<span className="block text-xs text-slate-500">{b.expiryDate ? `${t("মেয়াদ")} ${formatDate(b.expiryDate)}` : t("মেয়াদ নেই")}</span><ExpiryBadge status={expiryStatus(b.expiryDate, businessToday(), ctx.business.expiryWarningDays)} /></td>
+                        <td className={`num ${isBatchNeg ? "text-red-600 font-bold tabular-nums" : ""}`}>{isBatchNeg ? `-${formatQty(Math.abs(b.quantity))}` : formatQty(b.quantity)} {pr.unit.name}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody></table>
               )}
             </>
@@ -254,7 +276,9 @@ export async function ProductDetailPage({ id, kind = "GENERAL" }: { id: string; 
                       <td className="num text-brand-700">{num(m.quantityIn) ? formatQty(num(m.quantityIn)) : ""}</td>
                       <td className="num text-credit">{num(m.quantityOut) ? formatQty(num(m.quantityOut)) : ""}</td>
                       <td className="num">{formatMoney(num(m.unitCost), cur)}</td>
-                      <td className="num font-semibold">{formatQty(m.running)}</td>
+                      <td className={`num font-semibold tabular-nums ${m.running < 0 ? "text-red-600 font-bold" : ""}`}>
+                        {m.running < 0 ? `-${formatQty(Math.abs(m.running))}` : formatQty(m.running)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

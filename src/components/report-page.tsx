@@ -196,6 +196,14 @@ export async function ReportPage({
               </select>
             </FilterField>
           )}
+          {f.has("negativeStock") && (
+            <FilterField label="স্টক অবস্থা">
+              <select name="negative" defaultValue={params.negative ?? ""} className="input w-44 font-medium">
+                <option value="">সকল স্টক</option>
+                <option value="true">⚠️ শুধু নেগেটিভ (-) স্টক</option>
+              </select>
+            </FilterField>
+          )}
           {f.has("q") && (
             <FilterField label="খুঁজুন">
               <input name="q" defaultValue={params.q} placeholder="নাম, নম্বর, বিবরণ…" className="input w-52" />

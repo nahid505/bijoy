@@ -143,18 +143,7 @@ export function StockTransferClient({
       return;
     }
 
-    // Check stock availability
-    for (const item of validItems) {
-      const avail = getAvailableStock(fromWarehouseId, item.productId);
-      const req = Number(item.quantity);
-      const pr = products.find((p) => p.id === item.productId);
-      if (req > avail) {
-        setErrorMsg(
-          `"${pr?.name ?? "পণ্য"}" এর পর্যাপ্ত মজুদ নেই! বর্তমান মজুদ: ${formatQty(avail)} ${pr?.unit.name ?? ""}, দিতে চেয়েছেন: ${formatQty(req)} ${pr?.unit.name ?? ""}`
-        );
-        return;
-      }
-    }
+    // Prepare payload (negative stock is allowed and will reconcile on subsequent receipts)
 
     const payload = {
       date,
@@ -387,7 +376,7 @@ export function StockTransferClient({
                       const isOverStock = reqQty > currentStock && Boolean(row.productId);
 
                       return (
-                        <tr key={idx} className={isOverStock ? "bg-red-50/60" : "hover:bg-slate-50/50"}>
+                        <tr key={idx} className={isOverStock ? "bg-amber-50/40" : "hover:bg-slate-50/50"}>
                           <td className="text-center font-medium text-slate-500">{toBn(idx + 1)}</td>
                           <td>
                             <select
@@ -408,7 +397,11 @@ export function StockTransferClient({
                             {row.productId ? (
                               <span
                                 className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-semibold tabular-nums ${
-                                  currentStock > 0 ? "bg-slate-100 text-slate-800" : "bg-red-100 text-red-700"
+                                  currentStock > 0
+                                    ? "bg-slate-100 text-slate-800"
+                                    : currentStock < 0
+                                    ? "bg-red-100 text-red-700 font-bold"
+                                    : "bg-slate-100 text-slate-500"
                                 }`}
                               >
                                 {formatQty(currentStock)} {selectedPr?.unit.name}
@@ -427,13 +420,13 @@ export function StockTransferClient({
                                 value={row.quantity}
                                 onChange={(e) => handleItemChange(idx, "quantity", e.target.value)}
                                 className={`input w-full text-right font-semibold tabular-nums text-xs ${
-                                  isOverStock ? "border-red-400 bg-red-50 text-red-700" : ""
+                                  isOverStock ? "border-amber-400 bg-amber-50/60 text-amber-900" : ""
                                 }`}
                                 required
                               />
                               {isOverStock && (
-                                <span className="absolute -bottom-4 right-0 text-[10px] text-red-600 font-bold whitespace-nowrap">
-                                  মজুদ ছাড়িয়েছে!
+                                <span className="absolute -bottom-4 right-0 text-[10px] text-amber-700 font-semibold whitespace-nowrap">
+                                  ⚠️ স্টক নেগেটিভ (-) হবে
                                 </span>
                               )}
                             </div>

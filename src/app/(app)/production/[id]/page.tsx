@@ -43,8 +43,10 @@ export default async function ProductionBatchPage({ params }: { params: Promise<
   const line = (i: (typeof v.items)[number]) => {
     const qty = round3(num(i.baseQuantity));
     const unit = i.product.unit.name;
-    const bagCount = (i as any).bagCount ? Number((i as any).bagCount) : null;
-    const bagSizeKg = (i as any).bagSizeKg ? num((i as any).bagSizeKg) : null;
+    const rawBagId = (i as any).emptyBagProductId;
+    const isNoBag = i.direction > 0 && (!rawBagId || rawBagId === "NONE");
+    const bagCount = !isNoBag && (i as any).bagCount ? Number((i as any).bagCount) : (!isNoBag && (i as any).totalBags ? Number((i as any).totalBags) : null);
+    const bagSizeKg = !isNoBag && (i as any).bagSizeKg ? num((i as any).bagSizeKg) : null;
     return {
       id: i.id,
       name: i.product.name,
@@ -52,9 +54,9 @@ export default async function ProductionBatchPage({ params }: { params: Promise<
       unit,
       qty,
       kg: WEIGHT.test(unit) ? round3(toKg(qty, unit)) : null,
-      bags: bagCount ?? lineBags(i, bagOf),
+      bags: isNoBag ? null : (bagCount ?? lineBags(i, bagOf)),
       bagSizeKg,
-      emptyBagProductId: (i as any).emptyBagProductId ?? null,
+      emptyBagProductId: isNoBag ? null : rawBagId,
       cost: num(i.costAmount),
       costShare: num(i.costShare ?? 0),
       warehouse: i.warehouse?.name ?? null,

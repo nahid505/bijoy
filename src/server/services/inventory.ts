@@ -127,11 +127,13 @@ export async function setOpeningStock(
   tx: Tx,
   ctx: Ctx,
   productId: string,
-  qty: number,
-  rate: number,
+  rawQty: number | undefined | null,
+  rawRate: number | undefined | null,
   book: BookKey = "GENERAL",
   warehouseId?: string | null,
 ) {
+  const qty = Number(rawQty) || 0;
+  const rate = Number(rawRate) || 0;
   const business = await tx.business.findUniqueOrThrow({ where: { id: ctx.businessId } });
   const sourceKey = `opening:product:${productId}`;
   let existing = await tx.voucher.findUnique({ where: { businessId_sourceKey: { businessId: ctx.businessId, sourceKey } } });

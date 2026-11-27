@@ -53,9 +53,11 @@ export default async function EditProductionPage({ params }: { params: Promise<{
             bagWeightKg: 0,
             inputs: rawInputs.map((i) => ({ product: toProductOption(i.product), quantity: num(i.baseQuantity), batchNo: i.batchNo })),
             outputs: v.items.filter((i) => i.direction === 1).map((i) => {
-              const emptyBagProdId = (i as any).emptyBagProductId ?? (usedBagItem ? usedBagItem.productId : "NONE");
-              const bagSize = (i as any).bagSizeKg ? num((i as any).bagSizeKg) : (matchedBag ? matchedBag.capacityKg : null);
-              const bCount = (i as any).bagCount ? Number((i as any).bagCount) : ((i as any).totalBags ? Number((i as any).totalBags) : null);
+              const rawBagId = (i as any).emptyBagProductId;
+              const isNoBag = !rawBagId || rawBagId === "NONE";
+              const emptyBagProdId = isNoBag ? null : rawBagId;
+              const bagSize = !isNoBag && (i as any).bagSizeKg ? num((i as any).bagSizeKg) : null;
+              const bCount = !isNoBag && (i as any).bagCount ? Number((i as any).bagCount) : (!isNoBag && (i as any).totalBags ? Number((i as any).totalBags) : null);
               return {
                 product: toProductOption(i.product),
                 quantity: num(i.baseQuantity),

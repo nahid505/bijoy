@@ -342,4 +342,107 @@ run("rice mill packaging bag inventory & consumption tracking", () => {
     const bag50After = await prisma.product.findUniqueOrThrow({ where: { id: p.bag50 } });
     expect(Number(bag50After.stock)).toBe(Number(bag50Before.stock));
   });
+
+  it("8. Per-line emptyBagProductId: null (loose / বস্তা ছাড়া) explicitly saves null/0 and does not consume bags", async () => {
+    // Purchase more paddy
+    await saveTradeVoucher(ctx, "PURCHASE", {
+      date: D("2026-10-13"),
+      partyAccountId: bagSupplier.accountId,
+      warehouseId,
+      reference: "PADDY-IN-2",
+      narration: "ধান অতিরিক্ত স্টক",
+      discount: 0,
+      vatPercent: 0,
+      payments: [],
+      returnOfId: null,
+      dueDate: null,
+      items: [{ productId: p.paddy, quantity: 10000, freeQuantity: 0, rate: 30, discount: 0, unitId: null, batchNo: null, expiryDate: null, mfgDate: null }],
+    });
+
+    const bag50Before = await prisma.product.findUniqueOrThrow({ where: { id: p.bag50 } });
+    const bag50StockBefore = Number(bag50Before.stock);
+
+    const loosePerLineInput: ProductionInput = {
+      date: D("2026-10-14"),
+      reference: "MILL-PERLINE-LOOSE",
+      narration: "ব্রান ও চাল খোলা / বস্তা ছাড়া",
+      recipeId: null,
+      batches: 1,
+      warehouseId,
+      inputs: [{ productId: p.paddy, quantity: 1000, batchNo: null }],
+      outputs: [
+        { productId: p.rice, quantity: 650, costShare: 90, batchNo: null, expiryDate: null, emptyBagProductId: null, bagSizeKg: null, bagCount: 0 },
+        { productId: p.bran, quantity: 80, costShare: 10, batchNo: null, expiryDate: null, emptyBagProductId: null, bagSizeKg: null, bagCount: 0 },
+      ],
+      extraCost: 0,
+      costAccountId: null,
+    };
+
+    const run = await saveProduction(ctx, loosePerLineInput);
+    expect(run.id).toBeDefined();
+
+    // Verify database record has emptyBagProductId: null and bagCount: 0
+    const items = await prisma.voucherItem.findMany({
+      where: { voucherId: run.id, direction: 1 },
+    });
+    for (const item of items) {
+      expect((item as any).emptyBagProductId).toBeNull();
+      expect((item as any).bagCount).toBe(0);
+    }
+
+    // Verify bag stock did not decrease
+    const bag50After = await prisma.product.findUniqueOrThrow({ where: { id: p.bag50 } });
+    expect(Number(bag50After.stock)).toBe(bag50StockBefore);
+  });
+
+  it("9. Editing a production run from packed bags to loose (বস্তা ছাড়া) restores consumed empty bags to inventory", async () => {
+    const bag50Initial = await prisma.product.findUniqueOrThrow({ where: { id: p.bag50 } });
+    const initialStock = Number(bag50Initial.stock);
+
+    // Create production with 50kg bag (50 bags consumed for 2500 kg rice)
+    const packedInput: ProductionInput = {
+      date: D("2026-10-15"),
+      reference: "MILL-EDIT-TEST",
+      narration: "প্যাক করা চাল",
+      recipeId: null,
+      batches: 1,
+      warehouseId,
+      inputs: [{ productId: p.paddy, quantity: 4000, batchNo: null }],
+      outputs: [
+        { productId: p.rice, quantity: 2500, costShare: 90, batchNo: null, expiryDate: null, emptyBagProductId: p.bag50, bagSizeKg: 50, bagCount: 50 },
+        { productId: p.bran, quantity: 200, costShare: 10, batchNo: null, expiryDate: null, emptyBagProductId: null, bagSizeKg: null, bagCount: 0 },
+      ],
+      extraCost: 0,
+      costAccountId: null,
+    };
+
+    const packedRun = await saveProduction(ctx, packedInput);
+    const stockAfterPacked = await prisma.product.findUniqueOrThrow({ where: { id: p.bag50 } });
+    expect(Number(stockAfterPacked.stock)).toBe(initialStock - 50);
+
+    // Now edit the run: change rice to loose (emptyBagProductId: null)
+    const editedInput: ProductionInput = {
+      ...packedInput,
+      outputs: [
+        { productId: p.rice, quantity: 2500, costShare: 90, batchNo: null, expiryDate: null, emptyBagProductId: null, bagSizeKg: null, bagCount: 0 },
+        { productId: p.bran, quantity: 200, costShare: 10, batchNo: null, expiryDate: null, emptyBagProductId: null, bagSizeKg: null, bagCount: 0 },
+      ],
+    };
+
+    const editedRun = await saveProduction(ctx, editedInput, packedRun.id);
+    expect(editedRun.id).toBe(packedRun.id);
+
+    // Verify database record now has emptyBagProductId: null and bagCount: 0
+    const items = await prisma.voucherItem.findMany({
+      where: { voucherId: editedRun.id, direction: 1 },
+    });
+    for (const item of items) {
+      expect((item as any).emptyBagProductId).toBeNull();
+      expect((item as any).bagCount).toBe(0);
+    }
+
+    // Verify empty bags were RESTORED to stock!
+    const restoredBagStock = await prisma.product.findUniqueOrThrow({ where: { id: p.bag50 } });
+    expect(Number(restoredBagStock.stock)).toBe(initialStock);
+  });
 });

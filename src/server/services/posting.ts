@@ -82,7 +82,7 @@ type Move = Prisma.StockMovementGetPayload<{ include: { voucher: { select: { typ
 export async function revalueProducts(tx: Tx, businessId: string, productIds: Iterable<string>, opts: { skipRepost?: Set<string>; depth?: number } = {}) {
   const changedVouchers = new Set<string>();
   for (const productId of new Set(productIds)) {
-    const product = await tx.product.findUniqueOrThrow({ where: { id: productId }, select: { id: true, name: true, purchasePrice: true, trackBatch: true } });
+    const product = await tx.product.findUniqueOrThrow({ where: { id: productId }, select: { id: true, name: true, purchasePrice: true, salePrice: true, trackBatch: true } });
     const moves: Move[] = await tx.stockMovement.findMany({
       where: {
         productId,
@@ -101,7 +101,9 @@ export async function revalueProducts(tx: Tx, businessId: string, productIds: It
       const qout = Number(m.quantityOut);
       const key = `${m.warehouseId}|${product.trackBatch ? m.batchNo ?? "" : ""}`;
       let unitCost = Number(m.unitCost);
-      const fallback = avg > 0 ? avg : Number(product.purchasePrice);
+      const purchasePrice = Number(product.purchasePrice) || 0;
+      const salePrice = Number(product.salePrice) || 0;
+      const fallback = avg > 0 ? avg : (purchasePrice > 0 ? purchasePrice : (salePrice > 0 ? salePrice : (unitCost > 0 ? unitCost : 0)));
       if (qin > 0) {
         if (m.voucher?.type === "SALES_RETURN") unitCost = fallback; // returned goods come back at current average
         avg = weightedAverageCost(qty, avg, qin, unitCost);
@@ -112,12 +114,8 @@ export async function revalueProducts(tx: Tx, businessId: string, productIds: It
         qty = round3(qty - qout);
         const left = round3((byKey.get(key) ?? 0) - qout);
         byKey.set(key, left);
-        if (left < -1e-9) {
-          const batch = product.trackBatch && m.batchNo ? ` (ব্যাচ ${m.batchNo})` : "";
-          throw new UserError(`"${product.name}"${batch} এর পর্যাপ্ত স্টক নেই — ${formatDate(m.date)} তারিখে মজুদ ঋণাত্মক হয়ে যায়`);
-        }
       }
-      unitCost = round4(unitCost);
+      unitCost = Number.isFinite(unitCost) && unitCost >= 0 ? round4(unitCost) : 0;
       if (Math.abs(unitCost - Number(m.unitCost)) > 0.00005) {
         const value = round2((qin || qout) * unitCost);
         await tx.stockMovement.update({ where: { id: m.id }, data: { unitCost, value } });
@@ -141,7 +139,13 @@ export async function revalueProducts(tx: Tx, businessId: string, productIds: It
         changedVouchers.add(c.voucherId);
       }
     }
-    await tx.product.update({ where: { id: productId }, data: { stock: round3(qty), avgCost: round4(avg) } });
+    await tx.product.update({
+      where: { id: productId },
+      data: {
+        stock: Number.isFinite(qty) ? round3(qty) : 0,
+        avgCost: Number.isFinite(avg) && avg >= 0 ? round4(avg) : 0,
+      },
+    });
     await syncBatchQuantities(tx, productId);
   }
 

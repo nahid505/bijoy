@@ -43,12 +43,18 @@ export function computeTotals(lines: LineInput[], discount = 0, vatPercent = 0):
   return { subtotal, discount: safeDiscount, vatAmount, total: round2(taxable + vatAmount) };
 }
 
-/** Moving weighted-average cost after receiving stock. */
+/** Moving weighted-average cost after receiving stock (negative stock safe, zero-division guarded). */
 export function weightedAverageCost(currentStock: number, currentCost: number, receivedQty: number, receivedUnitCost: number): number {
-  const existing = Math.max(currentStock, 0);
-  const totalQty = existing + receivedQty;
-  if (totalQty <= 0) return round4(receivedUnitCost);
-  return round4((existing * currentCost + receivedQty * receivedUnitCost) / totalQty);
+  const safeStock = Number.isFinite(currentStock) ? currentStock : 0;
+  const safeCost = Number.isFinite(currentCost) && currentCost > 0 ? currentCost : 0;
+  const safeReceivedQty = Number.isFinite(receivedQty) && receivedQty > 0 ? receivedQty : 0;
+  const safeReceivedCost = Number.isFinite(receivedUnitCost) && receivedUnitCost >= 0 ? receivedUnitCost : safeCost;
+
+  const existing = Math.max(safeStock, 0);
+  const totalQty = existing + safeReceivedQty;
+  if (totalQty <= 0) return round4(safeReceivedCost);
+  const result = (existing * safeCost + safeReceivedQty * safeReceivedCost) / totalQty;
+  return Number.isFinite(result) ? round4(result) : round4(safeReceivedCost);
 }
 
 export type PaymentStatus = "PAID" | "PARTIAL" | "DUE";

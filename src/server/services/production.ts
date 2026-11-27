@@ -47,7 +47,7 @@ async function resolvePackagingBagsForOutputs(
   const bagNeeds = new Map<string, number>();
 
   // Check if per-line empty bag selection is present
-  const hasPerLineConfig = outputs.some((o) => o.emptyBagProductId !== undefined);
+  const hasPerLineConfig = outputs.some((o) => o.emptyBagProductId !== undefined || o.bagCount !== undefined);
 
   if (hasPerLineConfig) {
     // 1. Process per-line empty bags
@@ -216,17 +216,20 @@ export async function saveRecipe(ctx: Ctx, input: RecipeInput, id?: string) {
       await tx.recipeLine.createMany({
         data: [
           ...input.inputs.map((l, i) => ({ recipeId: recipeId!, productId: l.productId, kind: "INPUT" as const, quantity: l.quantity, costShare: 0, lineNo: i })),
-          ...input.outputs.map((l, i) => ({
-            recipeId: recipeId!,
-            productId: l.productId,
-            kind: "OUTPUT" as const,
-            quantity: l.quantity,
-            costShare: l.costShare,
-            emptyBagProductId: l.emptyBagProductId || null,
-            bagSizeKg: l.bagSizeKg ?? null,
-            bagCount: l.bagCount || 0,
-            lineNo: i,
-          })),
+          ...input.outputs.map((l, i) => {
+            const isLoose = !l.emptyBagProductId || l.emptyBagProductId === "NONE" || l.emptyBagProductId === "no-bag";
+            return {
+              recipeId: recipeId!,
+              productId: l.productId,
+              kind: "OUTPUT" as const,
+              quantity: l.quantity,
+              costShare: l.costShare,
+              emptyBagProductId: isLoose ? null : l.emptyBagProductId,
+              bagSizeKg: isLoose ? null : (l.bagSizeKg ?? null),
+              bagCount: isLoose ? 0 : (l.bagCount || 0),
+              lineNo: i,
+            };
+          }),
         ],
       });
       return tx.recipe.findUniqueOrThrow({ where: { id: recipeId } });
@@ -287,14 +290,17 @@ export async function productionFormData(businessId: string) {
 }
 
 export function recipeData(r: Prisma.RecipeGetPayload<{ include: { lines: { include: { product: typeof lineProduct } } } }>) {
-  const line = (l: (typeof r.lines)[number]) => ({
-    product: toProductOption(l.product),
-    quantity: num(l.quantity),
-    costShare: num(l.costShare),
-    emptyBagProductId: l.emptyBagProductId ?? null,
-    bagSizeKg: l.bagSizeKg ? num(l.bagSizeKg) : null,
-    bagCount: l.bagCount ?? 0,
-  });
+  const line = (l: (typeof r.lines)[number]) => {
+    const isLoose = !l.emptyBagProductId || l.emptyBagProductId === "NONE" || l.emptyBagProductId === "no-bag";
+    return {
+      product: toProductOption(l.product),
+      quantity: num(l.quantity),
+      costShare: num(l.costShare),
+      emptyBagProductId: isLoose ? null : l.emptyBagProductId,
+      bagSizeKg: isLoose ? null : (l.bagSizeKg ? num(l.bagSizeKg) : null),
+      bagCount: isLoose ? 0 : (l.bagCount ?? 0),
+    };
+  };
   return {
     id: r.id, name: r.name, code: r.code, description: r.description, isActive: r.isActive,
     inputs: r.lines.filter((l) => l.kind === "INPUT").map(line),
@@ -372,6 +378,7 @@ export async function saveProduction(ctx: Ctx, input: ProductionInput, editId?: 
       const batch = p.trackBatch
         ? await ensureInboundBatch(tx, ctx.businessId, { productId: p.id, productName: p.name, batchNo: l.batchNo || voucher.voucherNo, expiryDate: l.expiryDate, mfgDate: input.date, date: input.date, unitCost: 0, salePrice: Number(p.salePrice) })
         : null;
+      const isLoose = !l.emptyBagProductId || l.emptyBagProductId === "NONE" || l.emptyBagProductId === "no-bag";
       items.push({
         id: itemId,
         voucherId: voucher.id,
@@ -388,10 +395,10 @@ export async function saveProduction(ctx: Ctx, input: ProductionInput, editId?: 
         batchNo: batch?.batchNo ?? null,
         expiryDate: batch?.expiryDate ?? null,
         lineNo: effectiveInputs.length + i,
-        emptyBagProductId: l.emptyBagProductId === "NONE" ? null : (l.emptyBagProductId || null),
-        bagSizeKg: l.bagSizeKg !== undefined && l.bagSizeKg !== null ? l.bagSizeKg : null,
-        bagCount: l.bagCount || 0,
-        totalBags: l.bagCount || 0,
+        emptyBagProductId: isLoose ? null : l.emptyBagProductId,
+        bagSizeKg: isLoose ? null : (l.bagSizeKg !== undefined && l.bagSizeKg !== null ? l.bagSizeKg : null),
+        bagCount: isLoose ? 0 : (l.bagCount || 0),
+        totalBags: isLoose ? 0 : (l.bagCount || 0),
       });
       moves.push({ productId: p.id, warehouseId, voucherItemId: itemId, type: "PRODUCTION_IN", quantityIn: l.quantity, unitCost: 0, batchId: batch?.id ?? null, batchNo: batch?.batchNo ?? null, expiryDate: batch?.expiryDate ?? null });
     }
